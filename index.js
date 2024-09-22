@@ -22,6 +22,7 @@ const Aerb = require('./routes/Master/Aerb');
 const Customer = require('./routes/Upload/Customer');
 const Amccontracts = require('./routes/Upload/AMCContract');
 const DealerStock = require('./routes/Upload/DealerStock');
+const overlayRoutes = require('./routes/Upload/overlays');
 const Hubstocks = require('./routes/Upload/HubStock');
 const Pendinginstallations = require('./routes/Upload/PendingInstallation');
 const Pendingcomplaints = require('./routes/Upload/PendingCompliants');
@@ -31,6 +32,8 @@ const app = express();
 app.use(cors());
 // Middleware
 app.use(bodyParser.json());
+app.use(express.json({ limit: '50mb' })); // Increase JSON body parser limit
+app.use(express.urlencoded({ limit: '50mb', extended: true })); // Increase URL-encoded body parser limit
 
 // MongoDB connection
 mongoose.connect('mongodb+srv://shivamt2023:ft123shivam123@cluster0.qcx5f1c.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
@@ -46,6 +49,7 @@ mongoose.connect('mongodb+srv://shivamt2023:ft123shivam123@cluster0.qcx5f1c.mong
   });
 
 // Import routes
+app.use('/api/overlays', overlayRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/collections', Country);
 app.use('/collections', State);
