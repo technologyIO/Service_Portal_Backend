@@ -7,59 +7,83 @@ const PendingComplaintsSchema = new mongoose.Schema({
     },
     notification_complaintid: {
         type: String,
-        required: true
+        // required: true
     },
     notificationdate: {
         type: String,
-        required: true
+        // required: true
     },
     userstatus: {
         type: String,
-        required: true
+        // required: true
     },
     materialdescription: {
         type: String,
-        required: true
+        // required: true
     },
     serialnumber: {
         type: String,
-        required: true
+        // required: true
     },
     devicedata: {
         type: String,
-        required: true
+        // required: true
     },
     salesoffice: {
         type: String,
-        required: true
+        // required: true
     },
     materialcode: {
         type: String,
-        required: true
+        // required: true
     },
     reportedproblem: {
         type: String,
-        required: true
+        // required: true
     },
     dealercode: {
         type: String,
-        required: true
+        // required: true
     },
     customercode: {
         type: String,
-        required: true
+        // required: true
     },
     partnerresp: {
         type: String,
-        required: true
+        // required: true
     },
     breakdown: {
-        type: String,
-        required: true
+        type: Boolean,
+        // required: true
     },
     status: {
         type: String,
-        required: true
+        // required: true
+    },
+    productgroup: {
+        type: String,
+        // required: true
+    },
+    problemtype: {
+        type: String,
+        // required: true
+    },
+    problemname: {
+        type: String,
+        // required: true
+    },
+    sparerequest: {
+        type: String,
+        // required: true
+    },
+    remark: {
+        type: String,
+        // required: true
+    },
+    requesteupdate: {
+        type: Boolean,
+        default: false
     },
     createdAt: {
         type: Date,

@@ -55,6 +55,54 @@ router.get('/dealerstocks', async (req, res) => {
     }
 });
 
+// GET all DealerStock IDs
+router.get('/dealerstocks/ids', async (req, res) => {
+    try {
+        // Using distinct() to get unique dealercodeid
+        const dealerStockIds = await DealerStock.distinct('dealercodeid');
+        res.json(dealerStockIds);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET dealer stock count by dealercodeid and group by dealercity
+router.get('/dealerstocks/count/:dealercodeid', async (req, res) => {
+    const { dealercodeid } = req.params;
+
+    try {
+        const dealerStocks = await DealerStock.aggregate([
+            {
+                // Filter records by the provided `dealercodeid`
+                $match: {
+                    dealercodeid: dealercodeid
+                }
+            },
+            {
+                // Group by `dealercity` and count the stocks in each city for the given `dealercodeid`
+                $group: {
+                    _id: "$dealercity",
+                    stockCount: { $sum: 1 }
+                }
+            },
+            {
+                // Project the fields as per the desired output
+                $project: {
+                    _id: 0,
+                    dealercity: "$_id",
+                    stockCount: 1
+                }
+            }
+        ]);
+
+        res.json(dealerStocks);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+
+
 
 // GET DealerStock by ID
 router.get('/dealerstocks/:id', getDealerStockById, (req, res) => {
@@ -118,14 +166,53 @@ router.put('/dealerstocks/:id', getDealerStockById, checkDuplicateMaterialCode, 
 // DELETE a DealerStock
 router.delete('/dealerstocks/:id', getDealerStockById, async (req, res) => {
     try {
-       const deletedDealerStock = await DealerStock.deleteOne({_id: req.params.id});
-       if (deletedDealerStock.deletedCount === 0) {
-            return res.status(404).json({message: 'DealerStock Not Found'});
-       }
+        const deletedDealerStock = await DealerStock.deleteOne({ _id: req.params.id });
+        if (deletedDealerStock.deletedCount === 0) {
+            return res.status(404).json({ message: 'DealerStock Not Found' });
+        }
         res.json({ message: 'Deleted DealerStock' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
+router.get('/dealerstocksearch', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        // Check if query parameter 'q' exists
+        if (!q || q.trim() === '') {
+            return res.status(400).json({ message: 'The "q" query parameter is required and cannot be empty.' });
+        }
+
+        // Parse 'q' to a number if it's numeric
+        const numericQuery = !isNaN(q) ? Number(q) : null;
+
+        // Build the query
+        const query = {
+            $or: [
+                { dealercodeid: { $regex: q, $options: 'i' } },
+                { dealername: { $regex: q, $options: 'i' } },
+                { dealercity: { $regex: q, $options: 'i' } },
+                { materialcode: { $regex: q, $options: 'i' } },
+                { materialdescription: { $regex: q, $options: 'i' } },
+                { plant: { $regex: q, $options: 'i' } },
+                ...(numericQuery !== null ? [{ unrestrictedquantity: numericQuery }] : []), // Add numeric query conditionally
+                { status: { $regex: q, $options: 'i' } },
+            ]
+        };
+
+        // Fetch the matching dealer stocks
+        const dealerstocks = await DealerStock.find(query);
+
+        // Respond with the fetched data
+        res.json(dealerstocks);
+    } catch (err) {
+        console.error(err); // Log the error for debugging
+        res.status(500).json({ message: 'An error occurred while processing your request.', error: err.message });
+    }
+});
+
+
 
 module.exports = router;

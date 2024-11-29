@@ -126,4 +126,31 @@ router.delete('/product/:id', async (req, res) => {
     }
 });
 
+
+router.get('/searchProduct', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { productgroup: { $regex: q, $options: 'i' } },
+                { partnoid: { $regex: q, $options: 'i' } },
+                { product: { $regex: q, $options: 'i' } },
+                { subgrp: { $regex: q, $options: 'i' } },
+                { frequency: { $regex: q, $options: 'i' } }
+            ]
+        };
+
+        const users = await Product.find(query);
+
+        res.json(users);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 module.exports = router;

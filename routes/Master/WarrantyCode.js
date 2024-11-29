@@ -76,6 +76,29 @@ router.post('/warrantycode', checkDuplicateWarrantyCode, async (req, res) => {
     }
 });
 
+router.get('/searchwarrantycode', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { warrantycodeid: { $regex: q, $options: 'i' } },
+                { description: { $regex: q, $options: 'i' } }
+            ]
+        };
+
+        const users = await WarrantyCode.find(query);
+
+        res.json(users);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // UPDATE a warranty code
 router.put('/warrantycode/:id', getWarrantyCodeById, checkDuplicateWarrantyCode, async (req, res) => {
     if (req.body.warrantycodeid != null) {

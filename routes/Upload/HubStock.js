@@ -116,4 +116,33 @@ router.delete('/hubstocks/:id', getHubStockById, async (req, res) => {
     }
 });
 
+router.get('/hubstocksearch', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const isNumeric = !isNaN(q); // Check if the query is a numeric value
+
+        const query = {
+            $or: [
+                { materialcode: { $regex: q, $options: 'i' } },
+                { materialdescription: { $regex: q, $options: 'i' } },
+                ...(isNumeric ? [{ quantity: Number(q) }] : []), // Add numeric search for quantity
+                { storagelocation: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
+            ]
+        };
+
+        const hubstocks = await HubStock.find(query);
+        res.json(hubstocks);
+
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+
 module.exports = router;

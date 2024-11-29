@@ -83,6 +83,32 @@ router.post('/reportedproblem', checkDuplicateReportedProblem, async (req, res) 
     }
 });
 
+router.get('/searchreportedproblem', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { catalog: { $regex: q, $options: 'i' } },
+                { codegroup: { $regex: q, $options: 'i' } },
+                { prodgroup: { $regex: q, $options: 'i' } },
+                { name: { $regex: q, $options: 'i' } },
+                { shorttextforcode: { $regex: q, $options: 'i' } }
+            ]
+        };
+
+        const users = await ReportedProblem.find(query);
+
+        res.json(users);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // UPDATE a reported problem
 router.put('/reportedproblem/:id', getReportedProblemById, checkDuplicateReportedProblem, async (req, res) => {
     if (req.body.catalog != null) {

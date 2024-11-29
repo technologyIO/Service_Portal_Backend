@@ -139,8 +139,8 @@ router.put('/pendinginstallations/:id', getPendingInstallationById, checkDuplica
     if (req.body.description != null) {
         res.pendingInstallation.description = req.body.description;
     }
-    if (req.body.serialnumber  != null) {
-        res.pendingInstallation.serialnumber  = req.body.serialnumber ;
+    if (req.body.serialnumber != null) {
+        res.pendingInstallation.serialnumber = req.body.serialnumber;
     }
     if (req.body.salesdist != null) {
         res.pendingInstallation.salesdist = req.body.salesdist;
@@ -208,5 +208,53 @@ router.delete('/pendinginstallations/:id', getPendingInstallationById, async (re
         res.status(500).json({ message: err.message });
     }
 });
+
+router.get('/pendinginstallationsearch', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' })
+
+        }
+
+        const query = {
+            $or: [
+                { invoiceno: { $regex: q, $options: 'i' } },
+                { distchnl: { $regex: q, $options: 'i' } },
+                { customerid: { $regex: q, $options: 'i' } },
+                { customername1: { $regex: q, $options: 'i' } },
+                { customername2: { $regex: q, $options: 'i' } },
+                { customercity: { $regex: q, $options: 'i' } },
+                { customerpostalcode: { $regex: q, $options: 'i' } },
+                { material: { $regex: q, $options: 'i' } },
+                { description: { $regex: q, $options: 'i' } },
+                { serialnumber: { $regex: q, $options: 'i' } },
+                { salesdist: { $regex: q, $options: 'i' } },
+                { salesoff: { $regex: q, $options: 'i' } },
+                { customercountry: { $regex: q, $options: 'i' } },
+                { customerregion: { $regex: q, $options: 'i' } },
+                { currentcustomerid: { $regex: q, $options: 'i' } },
+                { currentcustomername1: { $regex: q, $options: 'i' } },
+                { currentcustomername2: { $regex: q, $options: 'i' } },
+                { currentcustomercity: { $regex: q, $options: 'i' } },
+                { currentcustomerregion: { $regex: q, $options: 'i' } },
+                { currentcustomerpostalcode: { $regex: q, $options: 'i' } },
+                { currentcustomercountry: { $regex: q, $options: 'i' } },
+                { mtl_grp4: { $regex: q, $options: 'i' } },
+                { palnumber: { $regex: q, $options: 'i' } },
+                { key: { $regex: q, $options: 'i' } },
+            ]
+        }
+
+        const pendinginstallations = await PendingInstallation.find(query);
+        res.json(pendinginstallations)
+
+
+    } catch (err) {
+        res.status(500).json({ message: err.message })
+    }
+})
+
 
 module.exports = router;

@@ -113,14 +113,37 @@ router.put('/amccontracts/:id', getAMCContractById, checkDuplicateSalesDoc, asyn
 // DELETE an AMC Contract
 router.delete('/amccontracts/:id', getAMCContractById, async (req, res) => {
     try {
-       const deletedAMCContract = await AMCContract.deleteOne({_id:req.params.id});
-       if(deletedAMCContract.deletedCount === 0){
-        return res.status(404).json({message:'AMC Contract Not Found'});
-       }
+        const deletedAMCContract = await AMCContract.deleteOne({ _id: req.params.id });
+        if (deletedAMCContract.deletedCount === 0) {
+            return res.status(404).json({ message: 'AMC Contract Not Found' });
+        }
         res.json({ message: 'Deleted AMC Contract' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
+router.get('/amcsearch', async (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' })
+        }
+
+        const query = {
+            $or: [
+                { salesdoc: { $regex: q, $options: 'i' } },
+                { satypeZDRC_ZDRN: { $regex: q, $options: 'i' } },
+                { serialnumber: { $regex: q, $options: 'i' } },
+                { materialcode: { $regex: q, $options: 'i' } },
+            ]
+        }
+        const amc = await AMCContract.find(query);
+        res.json(amc)
+
+    } catch (err) {
+        res.status(500).json({ message: err.message })
+    }
+})
 
 module.exports = router;

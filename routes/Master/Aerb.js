@@ -98,14 +98,47 @@ router.put('/aerb/:id', getAerbById, checkDuplicateAerb, async (req, res) => {
 // DELETE an Aerb entry
 router.delete('/aerb/:id', async (req, res) => {
     try {
-       const deleteAerb = await Aerb.deleteOne({_id:req.params.id})
-       if(deleteAerb.deletedCount === 0){
-        res.status(404).json({message:"AERB Not Found"})
-       }
+        const deleteAerb = await Aerb.deleteOne({ _id: req.params.id })
+        if (deleteAerb.deletedCount === 0) {
+            res.status(404).json({ message: "AERB Not Found" })
+        }
         res.json({ message: 'Deleted Aerb entry' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+router.get('/searchaerb', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        // Check if the query parameter is missing
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter "q" is required' });
+        }
+
+        const query = {
+            $or: [
+                { materialcode: { $regex: q, $options: 'i' } },  
+                { materialdescription: { $regex: q, $options: 'i' } } 
+            ]
+        };
+
+        // Fetch the results from the database
+        const aerb = await Aerb.find(query);
+
+        // If no results found, send a 404 response
+        if (!aerb || aerb.length === 0) {
+            return res.status(404).json({ message: 'No results found' });
+        }
+
+        // Return the found data
+        res.json(aerb);
+
+    } catch (err) {
+        // Handle unexpected errors and send a detailed message
+        res.status(500).json({ message: 'Server error: ' + err.message });
+    }
+});
+
 
 module.exports = router;

@@ -33,6 +33,37 @@ async function checkDuplicateComplaintId(req, res, next) {
     next();
 }
 
+// PATCH request to update `requesteupdate` field to true
+router.patch('/pendingcomplaints/:id/requestupdate', getPendingComplaintById, async (req, res) => {
+    // Set requesteupdate to true
+    res.pendingComplaint.requesteupdate = true;
+
+    // Update status if provided in the request body
+    if (req.body.status != null) {
+        res.pendingComplaint.status = req.body.status;
+    }
+
+    // Update remark if provided in the request body
+    if (req.body.remark != null) {
+        res.pendingComplaint.remark = req.body.remark;
+    }
+
+    // Update sparerequest if provided in the request body
+    if (req.body.sparerequest != null) {
+        res.pendingComplaint.sparerequest = req.body.sparerequest;
+    }
+
+    // Update modifiedAt timestamp
+    res.pendingComplaint.modifiedAt = Date.now();
+
+    try {
+        const updatedPendingComplaint = await res.pendingComplaint.save();
+        res.json(updatedPendingComplaint);
+    } catch (err) {
+        res.status(400).json({ message: err.message });
+    }
+});
+
 // GET all PendingComplaints
 router.get('/pendingcomplaints', async (req, res) => {
     try {
@@ -62,7 +93,7 @@ router.get('/pendingcomplaints/:id', getPendingComplaintById, (req, res) => {
 });
 
 // CREATE a new PendingComplaint
-router.post('/pendingcomplaints', checkDuplicateComplaintId, async (req, res) => {
+router.post('/pendingcomplaints', async (req, res) => {
     const pendingComplaint = new PendingComplaints({
         notificationtype: req.body.notificationtype,
         notification_complaintid: req.body.notification_complaintid,
@@ -78,7 +109,12 @@ router.post('/pendingcomplaints', checkDuplicateComplaintId, async (req, res) =>
         customercode: req.body.customercode,
         partnerresp: req.body.partnerresp,
         breakdown: req.body.breakdown,
-        status: req.body.status
+        status: req.body.status,
+        productgroup: req.body.productgroup,
+        problemtype: req.body.problemtype,
+        problemname: req.body.problemname,
+        sparerequest: req.body.sparerequest,
+        remark: req.body.remark
     });
     try {
         const newPendingComplaint = await pendingComplaint.save();
@@ -156,5 +192,36 @@ router.delete('/pendingcomplaints/:id', getPendingComplaintById, async (req, res
         res.status(500).json({ message: err.message });
     }
 });
+
+router.get('/pendinginstallationsearch', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'query parameter is required' })
+        }
+
+        const query = {
+            $or: [
+                { notificationtype: { $regex: q, $options: 'i' } },
+                { notification_complaintid: { $regex: q, $options: 'i' } },
+                { materialdescription: { $regex: q, $options: 'i' } },
+                { serialnumber: { $regex: q, $options: 'i' } },
+                { devicedata: { $regex: q, $options: 'i' } },
+                { salesoffice: { $regex: q, $options: 'i' } },
+                { materialcode: { $regex: q, $options: 'i' } },
+                { reportedproblem: { $regex: q, $options: 'i' } },
+                { dealercode: { $regex: q, $options: 'i' } },
+                { customercode: { $regex: q, $options: 'i' } },
+                { partnerresp: { $regex: q, $options: 'i' } },
+            ]
+        }
+        const pendingComplaint = await PendingComplaints.find(query)
+        res.json(pendingComplaint)
+
+    } catch (err) {
+        res.status(500).json({ message: err.message })
+    }
+})
 
 module.exports = router;

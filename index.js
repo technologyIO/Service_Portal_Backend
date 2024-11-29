@@ -27,7 +27,12 @@ const Hubstocks = require('./routes/Upload/HubStock');
 const Pendinginstallations = require('./routes/Upload/PendingInstallation');
 const Pendingcomplaints = require('./routes/Upload/PendingCompliants');
 const authRoutes = require('./routes/User/authRoutes')
+const installationRoutes = require('./routes/PhoneRouts/EquipmentInstallation')
 const cors = require('cors');
+const ComplaintType = require('./routes/Complaints/ComplaintType');
+const ProblemType = require('./routes/Complaints/ProblemType');
+const ProblemName = require('./routes/Complaints/ProblemName');
+
 const app = express();
 app.use(cors());
 // Middleware
@@ -75,7 +80,10 @@ app.use('/collections', DealerStock);
 app.use('/collections', Hubstocks);
 app.use('/collections', Pendinginstallations);
 app.use('/collections', Pendingcomplaints);
-
+app.use('/installations', installationRoutes)
+app.use('/complaints', ComplaintType)
+app.use('/complaints', ProblemType)
+app.use('/complaints', ProblemName)
 // Routes
 app.get('/', (req, res) => {
   res.send('Hello World!');

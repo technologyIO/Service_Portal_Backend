@@ -150,14 +150,50 @@ router.put('/customer/:id', getCustomerById, checkDuplicateCustomer, async (req,
 // DELETE a customer
 router.delete('/customer/:id', async (req, res) => {
     try {
-        const deleteCustomer = await Customer.deleteOne({_id:req.params.id})
-        if(deleteCustomer.deletedCount===0){
-            res.status(404).json({message:"Customer Not Found"})
+        const deleteCustomer = await Customer.deleteOne({ _id: req.params.id })
+        if (deleteCustomer.deletedCount === 0) {
+            res.status(404).json({ message: "Customer Not Found" })
         }
         res.json({ message: 'Deleted customer' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
+
+router.get('/searchcustomer', async (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' })
+        }
+
+        const query = {
+            $or: [
+                { customercodeid: { $regex: q, $options: 'i' } },
+                { customername: { $regex: q, $options: 'i' } },
+                { hospitalname: { $regex: q, $options: 'i' } },
+                { street: { $regex: q, $options: 'i' } },
+                { city: { $regex: q, $options: 'i' } },
+                { postalcode: { $regex: q, $options: 'i' } },
+                { district: { $regex: q, $options: 'i' } },
+                { region: { $regex: q, $options: 'i' } },
+                { country: { $regex: q, $options: 'i' } },
+                { telephone: { $regex: q, $options: 'i' } },
+                { taxnumber1: { $regex: q, $options: 'i' } },
+                { taxnumber2: { $regex: q, $options: 'i' } },
+                { email: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } },
+                { customertype: { $regex: q, $options: 'i' } },
+            ]
+        }
+        const customer = await Customer.find(query)
+
+        res.json(customer);
+
+    } catch (err) {
+        res.json(500).json({ message: err.message })
+    }
+})
 
 module.exports = router;

@@ -170,4 +170,39 @@ router.delete('/dealer/:id', async (req, res) => {
     }
 });
 
+
+router.get('/searchdealer', async (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q) {
+            return res.status(400).json({ message: 'query parameter is required' })
+
+        }
+
+        const query = {
+            $or: [
+                { name: { $regex: q, $options: 'i' } },
+                { personresponsible: { $regex: q, $options: 'i' } },
+                { email: { $regex: q, $options: 'i' } },
+                { mobilenumber: { $regex: q, $options: 'i' } },
+                { branch: { $regex: q, $options: 'i' } },
+                { dealerid: { $regex: q, $options: 'i' } },
+                { country: { $regex: q, $options: 'i' } },
+                { state: { $regex: q, $options: 'i' } },
+                { city: { $regex: q, $options: 'i' } },
+                { department: { $regex: q, $options: 'i' } },
+                { pincode: { $regex: q, $options: 'i' } },
+                { manageremail: { $regex: q, $options: 'i' } },
+                { skills: { $regex: q, $options: 'i' } },
+                { deviceid: { $regex: q, $options: 'i' } },
+            ]
+        }
+        const delear = await Dealer.find(query)
+        res.json(delear);
+
+    } catch (err) {
+        res.status(500).json({ message: err.message })
+    }
+})
+
 module.exports = router;
