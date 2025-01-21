@@ -44,10 +44,9 @@ app.use(express.json({ limit: '50mb' })); // Increase JSON body parser limit
 app.use(express.urlencoded({ limit: '50mb', extended: true })); // Increase URL-encoded body parser limit
 
 // MongoDB connection
-mongoose.connect('mongodb+srv://shivamt2023:ft123shivam123@cluster0.qcx5f1c.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
-  useNewUrlParser: true, // Remove deprecated option
-  useUnifiedTopology: true, // Remove deprecated option
-  // dbName: 'Service-Portal' // Add your actual database name here
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
 })
   .then(() => {
     console.log('Connected to MongoDB');
