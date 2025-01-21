@@ -11,6 +11,8 @@ const DepartMent = require('./routes/Collections/Department');
 const ProductGroup = require('./routes/Collections/ProductGroup');
 const CheckList = require('./routes/Collections/CheckList');
 const PmMaster = require('./routes/Collections/PmMaster');
+const CheckListType = require('./routes/Collections/CheckListType');
+const CheckPointType = require('./routes/Collections/CheckPointType');
 const User = require('./routes/Master/User');
 const Dealer = require('./routes/Master/Dealer');
 const Equipment = require('./routes/Master/Equipment');
@@ -32,6 +34,7 @@ const cors = require('cors');
 const ComplaintType = require('./routes/Complaints/ComplaintType');
 const ProblemType = require('./routes/Complaints/ProblemType');
 const ProblemName = require('./routes/Complaints/ProblemName');
+const PreventiveMaintenance = require('./routes/Upload/PreventiveMaintenance');
 
 const app = express();
 app.use(cors());
@@ -80,10 +83,13 @@ app.use('/collections', DealerStock);
 app.use('/collections', Hubstocks);
 app.use('/collections', Pendinginstallations);
 app.use('/collections', Pendingcomplaints);
+app.use('/collections', CheckListType);
+app.use('/collections', CheckPointType);
 app.use('/installations', installationRoutes)
 app.use('/complaints', ComplaintType)
 app.use('/complaints', ProblemType)
 app.use('/complaints', ProblemName)
+app.use('/upload', PreventiveMaintenance)
 // Routes
 app.get('/', (req, res) => {
   res.send('Hello World!');

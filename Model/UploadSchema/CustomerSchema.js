@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const CustomerSchema = new mongoose.Schema({
     customercodeid: {
         type: String,
-        required: true,
+        // required: true,
         // unique: true
     },
     customername: {
@@ -12,7 +12,7 @@ const CustomerSchema = new mongoose.Schema({
     },
     hospitalname: {
         type: String,
-        required: true
+        // required: true
     },
     street: {
         type: String,
@@ -44,11 +44,11 @@ const CustomerSchema = new mongoose.Schema({
     },
     taxnumber1: {
         type: String,
-        required: true
+        // required: true
     },
     taxnumber2: {
         type: String,
-        required: true
+        // required: true
     },
     email: {
         type: String,
@@ -57,7 +57,7 @@ const CustomerSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        required: true
+        // required: true
     },
     customertype: {
         type: String,

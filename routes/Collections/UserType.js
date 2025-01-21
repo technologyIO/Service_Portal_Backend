@@ -102,5 +102,29 @@ router.delete('/usertype/:id', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+router.get('/searchusertype', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [ 
+                { name: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } },
+                { roles: { $regex: q, $options: 'i' } },
+
+            ]
+        };
+
+        const userType = await UserType.find(query);
+
+        res.json(userType);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 module.exports = router;

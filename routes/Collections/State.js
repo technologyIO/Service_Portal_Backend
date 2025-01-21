@@ -40,6 +40,14 @@ router.post('/state', checkDuplicateState, async (req, res) => {
         res.status(400).json({ message: err.message });
     }
 });
+router.get('/allstate', async (req, res) => {
+    try {
+        const state = await State.find();  
+        res.json(state);  
+    } catch (err) {
+        res.status(500).json({ message: err.message });  
+    }
+});
 
 // Get all states
 router.get('/state', async (req, res) => {
@@ -99,6 +107,31 @@ router.delete('/state/:id', async (req, res) => {
             return res.status(404).json({ message: 'State not found' });
         }
         res.json({ message: 'Deleted State' }); // Return success message
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+router.get('/searchState', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { name: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } },
+                { country: { $regex: q, $options: 'i' } },
+
+            ]
+        };
+
+        const state = await State.find(query);
+
+        res.json(state);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

@@ -71,7 +71,6 @@ router.post('/dealer', checkDuplicateEmail, async (req, res) => {
         dealerid: req.body.dealerid,
         country: req.body.country,
         state: req.body.state,
-        region: req.body.region,
         city: req.body.city,
         department: req.body.department,
         pincode: req.body.pincode,
@@ -120,9 +119,6 @@ router.put('/dealer/:id', getDealerById, checkDuplicateEmail, async (req, res) =
     }
     if (req.body.state != null) {
         res.dealer.state = req.body.state;
-    }
-    if (req.body.region != null) {
-        res.dealer.region = req.body.region;
     }
     if (req.body.city != null) {
         res.dealer.city = req.body.city;

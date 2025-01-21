@@ -56,6 +56,17 @@ router.get('/country/:id', getCountry, (req, res) => {
     res.json(res.country); // Return single country fetched by middleware
 });
 
+
+// Get all countries without pagination
+router.get('/allCountries', async (req, res) => {
+    try {
+        const countries = await Country.find(); // Fetch all countries
+        res.json(countries); // Return all countries as JSON
+    } catch (err) {
+        res.status(500).json({ message: err.message }); // Handle error and return JSON response
+    }
+});
+
 // Update a country
 router.patch('/country/:id', getCountry, async (req, res) => {
     if (req.body.name) {
@@ -81,6 +92,30 @@ router.delete('/country/:id', async (req, res) => {
             return res.status(404).json({ message: 'Country not found' });
         }
         res.json({ message: 'Deleted Country' }); // Return success message
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+router.get('/searchCountry', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [ 
+                { name: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } },
+
+            ]
+        };
+
+        const country = await Country.find(query);
+
+        res.json(country);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

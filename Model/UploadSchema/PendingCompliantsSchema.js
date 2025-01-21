@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const PendingComplaintsSchema = new mongoose.Schema({
     notificationtype: {
         type: String,
-        required: true
+        // required: true
     },
     notification_complaintid: {
         type: String,

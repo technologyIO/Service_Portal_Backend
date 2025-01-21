@@ -9,6 +9,11 @@ const CitySchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    cityID: {
+        type: String,
+        required: true,
+        unique: true // Ensure cityID is unique
+    },
     createdAt: {
         type: Date,
         default: Date.now

@@ -40,6 +40,17 @@ router.post('/productgroup', checkDuplicateProductGroup, async (req, res) => {
     }
 })
 
+router.get('/allproductgroup', async (req, res) => {
+    try {
+        const productgroup = await ProductGroup.find();
+        console.log("Fetched productgroup:", productgroup); // Debug log
+        res.json(productgroup);
+    } catch (error) {
+        console.error("Error fetching productgroup :", error); // Debug log
+        res.status(500).json({ message: 'Server Error' });
+    }
+});
+
 router.get('/productgroup', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1; // Current page number, defaulting to 1
@@ -108,5 +119,32 @@ router.delete('/productgroup/:id', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 })
+router.get('/searchproductgroupy', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [ 
+                { name: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } },
+                { shortcode: { $regex: q, $options: 'i' } },
+                { RevNo: { $regex: q, $options: 'i' } },
+                { type: { $regex: q, $options: 'i' } },
+                { ChlNo: { $regex: q, $options: 'i' } },
+
+            ]
+        };
+
+        const productgroup = await ProductGroup.find(query);
+
+        res.json(productgroup);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 module.exports = router;

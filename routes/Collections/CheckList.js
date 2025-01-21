@@ -60,7 +60,7 @@ router.get('/checklist/:id', getChecklistById, (req, res) => {
 });
 
 // CREATE a new checklist
-router.post('/checklist', checkDuplicate, async (req, res) => {
+router.post('/checklist', async (req, res) => {
     const checklist = new CheckList({
         checklisttype: req.body.checklisttype,
         status: req.body.status,
@@ -118,6 +118,35 @@ router.delete('/checklist/:id', async (req, res) => {
             return res.status(404).json({ message: 'CheckList Not found' })
         }
         res.json({ message: 'Deleted Checklist' });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+router.get('/searchchecklist', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [ 
+                { checklisttype: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } },
+                { checkpointtype: { $regex: q, $options: 'i' } },
+                { checkpoint: { $regex: q, $options: 'i' } },
+                { prodGroup: { $regex: q, $options: 'i' } },
+                { result: { $regex: q, $options: 'i' } },
+                { resulttype: { $regex: q, $options: 'i' } },
+
+            ]
+        };
+
+        const checklist = await CheckList.find(query);
+
+        res.json(checklist);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

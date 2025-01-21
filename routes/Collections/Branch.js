@@ -67,6 +67,14 @@ router.get('/branch', async (req, res) => {
 router.get('/branch/:id', getBranch, (req, res) => {
     res.json(res.branch); // Return single branch fetched by middleware
 });
+router.get('/allbranch', async (req, res) => {
+    try {
+        const branch = await Branch.find(); // Fetch all countries
+        res.json(branch); // Return all countries as JSON
+    } catch (err) {
+        res.status(500).json({ message: err.message }); // Handle error and return JSON response
+    }
+});
 
 router.patch('/branch/:id', getBranch, async (req, res) => {
     const { name, status, city, branchShortCode, state } = req.body;
@@ -110,6 +118,32 @@ router.delete('/branch/:id', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 })
+router.get('/searchbranch', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { name: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } },
+                { city: { $regex: q, $options: 'i' } },
+                { branchShortCode: { $regex: q, $options: 'i' } },
+                { state: { $regex: q, $options: 'i' } },
+
+            ]
+        };
+
+        const branch = await Branch.find(query);
+
+        res.json(branch);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 
 

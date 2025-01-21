@@ -70,6 +70,14 @@ router.get('/depart/:id', getDepartment, (req, res) => {
 })
 
 
+router.get('/alldepart', async (req, res) => {
+    try {
+        const depart = await Department.find();  
+        res.json(depart);  
+    } catch (err) {
+        res.status(500).json({ message: err.message });  
+    }
+});
 router.patch('/depart/:id', getDepartment, async (req, res) => {
     if (req.body.name != null) {
         res.department.name = req.body.name;
@@ -100,6 +108,28 @@ router.delete('/depart/:id', async (req, res) => {
     }
 })
 
+router.get('/searchdepartment', async (req, res) => {
+    try {
+        const { q } = req.query;
 
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [ 
+                { name: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } },
+
+            ]
+        };
+
+        const departments = await Department.find(query);
+
+        res.json(departments);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 module.exports = router;

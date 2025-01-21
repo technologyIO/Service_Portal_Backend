@@ -31,7 +31,7 @@ const CheckListSchema = new mongoose.Schema({
     },
     result: {
         type: String,
-        required: true
+        // required: true
     },
     resulttype: {
         type: String,

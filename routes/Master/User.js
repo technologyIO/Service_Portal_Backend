@@ -58,6 +58,17 @@ router.get('/user/:id', getUserById, (req, res) => {
     res.json(res.user);
 });
 
+router.get('/alluser', async (req, res) => {
+    try {
+        const user = await User.find();
+        console.log("Fetched user:", user); // Debug log
+        res.json(user);
+    } catch (error) {
+        console.error("Error fetching user :", error); // Debug log
+        res.status(500).json({ message: 'Server Error' });
+    }
+});
+
 // CREATE a new user
 router.post('/user', checkDuplicateEmail, async (req, res) => {
     const user = new User({

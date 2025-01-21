@@ -148,5 +148,39 @@ router.delete('/pmmaster/:id', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+router.get('/searchpmmaster', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [ 
+                { pmtype: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } },
+                { pmumber: { $regex: q, $options: 'i' } },
+                { documentnumber: { $regex: q, $options: 'i' } },
+                { materialdescription: { $regex: q, $options: 'i' } },
+                { serialnumber: { $regex: q, $options: 'i' } },
+                { customercode: { $regex: q, $options: 'i' } },
+                { region: { $regex: q, $options: 'i' } },
+                { pmduemonth: { $regex: q, $options: 'i' } },
+                { pmvendorcode: { $regex: q, $options: 'i' } },
+                { pmengineercode: { $regex: q, $options: 'i' } },
+                { pmstatus: { $regex: q, $options: 'i' } },
+                { assignedto: { $regex: q, $options: 'i' } },
+
+            ]
+        };
+
+        const pmmaster = await PmMaster.find(query);
+
+        res.json(pmmaster);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 module.exports = router;

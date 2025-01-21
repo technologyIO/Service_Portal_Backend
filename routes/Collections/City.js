@@ -1,27 +1,29 @@
-const express = require('express')
+const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
-const City = require("../../Model/CollectionSchema/CitySchema")
+const City = require("../../Model/CollectionSchema/CitySchema");
 
+// Middleware: Get City by ID
 async function getCity(req, res, next) {
     try {
         const city = await City.findById(req.params.id);
         if (!city) {
-            return res.status(404).json({ message: 'City Not Found' })
+            return res.status(404).json({ message: 'City Not Found' });
         }
         res.city = city;
         next();
-
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
 }
 
+// Middleware: Check Duplicate City
 async function checkDuplicateCity(req, res, next) {
-    const { name, state } = req.body;
+    const { name, state, cityID } = req.body;
     try {
-        const existingCity = await City.findOne({ name, state });
+        const existingCity = await City.findOne({ $or: [{ name, state }, { cityID }] });
         if (existingCity) {
-            return res.status(400).json({ message: 'City with the same name and State already exists' });
+            return res.status(400).json({ message: 'City with the same name/state or cityID already exists' });
         }
         next();
     } catch (err) {
@@ -29,19 +31,18 @@ async function checkDuplicateCity(req, res, next) {
     }
 }
 
-
+// Create City
 router.post('/city', checkDuplicateCity, async (req, res) => {
     try {
         const newCity = new City(req.body);
         const savedCity = await newCity.save();
         res.status(201).json(savedCity);
     } catch (err) {
-        res.status(400).json({ message: err.message })
+        res.status(400).json({ message: err.message });
     }
-})
+});
 
-
-
+// Get All Cities with Pagination
 router.get('/city', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -65,22 +66,31 @@ router.get('/city', async (req, res) => {
 
 
 
+// Get City by ID
 router.get('/city/:id', getCity, (req, res) => {
-    res.json(res.city)
-})
+    res.json(res.city);
+});
+
+router.get('/allcity', async (req, res) => {
+    try {
+        const city = await City.find(); // Fetch all countries
+        res.json(city); // Return all countries as JSON
+    } catch (err) {
+        res.status(500).json({ message: err.message }); // Handle error and return JSON response
+    }
+});
 
 
+// Update City
 router.patch('/city/:id', getCity, async (req, res) => {
-    if (req.body.name != null) {
-        res.city.name = req.body.name;
-    }
-    if (req.body.status != null) {
-        res.city.status = req.body.status;
-    }
-    if (req.body.state != null) {
-        res.city.state = req.body.state;
-    }
-    res.city.modifiedAt = Date.now(); // Update modifiedAt field
+    const { name, status, state, cityID } = req.body;
+    if (name != null) res.city.name = name;
+    if (status != null) res.city.status = status;
+    if (state != null) res.city.state = state;
+    if (cityID != null) res.city.cityID = cityID;
+
+    res.city.modifiedAt = Date.now();
+
     try {
         const updatedCity = await res.city.save();
         res.json(updatedCity);
@@ -89,19 +99,42 @@ router.patch('/city/:id', getCity, async (req, res) => {
     }
 });
 
-
+// Delete City
 router.delete('/city/:id', async (req, res) => {
     try {
         const deletedCity = await City.deleteOne({ _id: req.params.id });
         if (deletedCity.deletedCount === 0) {
             return res.status(404).json({ message: 'City not found' });
         }
-        res.json({ message: 'Deleted City' }); // Return success message
+        res.json({ message: 'Deleted City' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
+// Search City
+router.get('/searchCity', async (req, res) => {
+    try {
+        const { q } = req.query;
 
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { name: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } },
+                { state: { $regex: q, $options: 'i' } },
+                { cityID: { $regex: q, $options: 'i' } }
+            ]
+        };
+
+        const cities = await City.find(query);
+        res.json(cities);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 module.exports = router;

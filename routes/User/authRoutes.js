@@ -1,15 +1,14 @@
 const express = require('express');
-const { registerUser, loginUser } = require('./User');
-// const jwt = require('jsonwebtoken');
-// const User = require('../../Model/UserSchema/UserSchema');
+const { registerUser, loginUser } = require('./adminUser');
+ 
 
 const router = express.Router();
 
 // Register Route
-router.post('/register', registerUser);
+router.post('/adminregister', registerUser);
 
 // Login Route
-router.post('/login', loginUser);
+router.post('/adminlogin', loginUser);
 
 
 
