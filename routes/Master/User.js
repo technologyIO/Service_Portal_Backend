@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../../Model/MasterSchema/UserSchema');
-
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken'); 
 // Middleware to get user by ID
 async function getUserById(req, res, next) {
     let user;
@@ -16,6 +17,22 @@ async function getUserById(req, res, next) {
     res.user = user;
     next();
 }
+// Middleware to get user by employeeid
+async function getUserByEmployeeId(req, res, next) {
+    let user;
+    try {
+        // Find the user by employeeid
+        user = await User.findOne({ employeeid: req.body.employeeid });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+    res.user = user;
+    next();
+}
+
 
 // Middleware to check for duplicate email
 async function checkDuplicateEmail(req, res, next) {
@@ -71,6 +88,9 @@ router.get('/alluser', async (req, res) => {
 
 // CREATE a new user
 router.post('/user', checkDuplicateEmail, async (req, res) => {
+    const salt = await bcrypt.genSalt(10); // Create salt
+    const hashedPassword = await bcrypt.hash(req.body.password, salt); // Hash password
+
     const user = new User({
         firstname: req.body.firstname,
         lastname: req.body.lastname,
@@ -84,7 +104,7 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
         state: req.body.state,
         city: req.body.city,
         department: req.body.department,
-        password: req.body.password,
+        password: hashedPassword, // Store the hashed password
         manageremail: req.body.manageremail,
         skills: req.body.skills,
         profileimage: req.body.profileimage,
@@ -97,6 +117,49 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
         res.status(400).json({ message: err.message });
     }
 });
+
+router.post('/login', getUserByEmployeeId, async (req, res) => {
+    try {
+        // Compare the entered password with the hashed password in the database
+        const isMatch = await bcrypt.compare(req.body.password, res.user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid password' });
+        }
+
+        // Generate a JWT token with user data
+        const token = jwt.sign(
+            { id: res.user._id, email: res.user.email },
+            "myservice-secret", // Hardcoded secret key
+            // No expiresIn, so token will never expire
+        );
+
+        // Send the token and user data
+        res.json({
+            token,
+            user: {
+                id: res.user._id,
+                firstname: res.user.firstname,
+                lastname: res.user.lastname,
+                email: res.user.email,
+                mobilenumber: res.user.mobilenumber,
+                status: res.user.status,
+                branch: res.user.branch,
+                loginexpirydate: res.user.loginexpirydate,
+                employeeid: res.user.employeeid,
+                country: res.user.country,
+                state: res.user.state,
+                city: res.user.city,
+                department: res.user.department,
+                skills: res.user.skills,
+                profileimage: res.user.profileimage,
+                deviceid: res.user.deviceid
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 
 // UPDATE a user
 router.put('/user/:id', getUserById, checkDuplicateEmail, async (req, res) => {

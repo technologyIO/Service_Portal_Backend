@@ -64,6 +64,7 @@ router.get('/customer/:id', getCustomerById, (req, res) => {
 });
 
 // CREATE a new customer
+// Example of your backend route
 router.post('/customer', checkDuplicateCustomer, async (req, res) => {
     const customer = new Customer({
         customercodeid: req.body.customercodeid,
@@ -90,6 +91,7 @@ router.post('/customer', checkDuplicateCustomer, async (req, res) => {
         res.status(400).json({ message: err.message });
     }
 });
+
 
 // UPDATE a customer
 router.put('/customer/:id', getCustomerById, checkDuplicateCustomer, async (req, res) => {

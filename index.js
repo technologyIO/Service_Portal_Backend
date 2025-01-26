@@ -35,6 +35,7 @@ const ComplaintType = require('./routes/Complaints/ComplaintType');
 const ProblemType = require('./routes/Complaints/ProblemType');
 const ProblemName = require('./routes/Complaints/ProblemName');
 const PreventiveMaintenance = require('./routes/Upload/PreventiveMaintenance');
+require('dotenv').config();
 
 const app = express();
 app.use(cors());
@@ -54,6 +55,7 @@ mongoose.connect(process.env.MONGODB_URI, {
   .catch((err) => {
     console.error('Error connecting to MongoDB:', err);
   });
+
 
 // Import routes
 app.use('/api/overlays', overlayRoutes);
