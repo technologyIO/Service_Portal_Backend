@@ -125,60 +125,86 @@ router.post('/pendingcomplaints', async (req, res) => {
 });
 
 // UPDATE a PendingComplaint
-router.put('/pendingcomplaints/:id', getPendingComplaintById, checkDuplicateComplaintId, async (req, res) => {
-    if (req.body.notificationtype != null) {
-        res.pendingComplaint.notificationtype = req.body.notificationtype;
+router.put(
+    "/pendingcomplaints/:id",
+    getPendingComplaintById,
+    async (req, res) => {
+        // Update existing fields if they exist in req.body:
+        if (req.body.notificationtype != null) {
+            res.pendingComplaint.notificationtype = req.body.notificationtype;
+        }
+        if (req.body.notification_complaintid != null) {
+            res.pendingComplaint.notification_complaintid = req.body.notification_complaintid;
+        }
+        if (req.body.notificationdate != null) {
+            res.pendingComplaint.notificationdate = req.body.notificationdate;
+        }
+        if (req.body.userstatus != null) {
+            res.pendingComplaint.userstatus = req.body.userstatus;
+        }
+        if (req.body.materialdescription != null) {
+            res.pendingComplaint.materialdescription = req.body.materialdescription;
+        }
+        if (req.body.serialnumber != null) {
+            res.pendingComplaint.serialnumber = req.body.serialnumber;
+        }
+        if (req.body.devicedata != null) {
+            res.pendingComplaint.devicedata = req.body.devicedata;
+        }
+        if (req.body.salesoffice != null) {
+            res.pendingComplaint.salesoffice = req.body.salesoffice;
+        }
+        if (req.body.materialcode != null) {
+            res.pendingComplaint.materialcode = req.body.materialcode;
+        }
+        if (req.body.reportedproblem != null) {
+            res.pendingComplaint.reportedproblem = req.body.reportedproblem;
+        }
+        if (req.body.dealercode != null) {
+            res.pendingComplaint.dealercode = req.body.dealercode;
+        }
+        if (req.body.customercode != null) {
+            res.pendingComplaint.customercode = req.body.customercode;
+        }
+        if (req.body.partnerresp != null) {
+            res.pendingComplaint.partnerresp = req.body.partnerresp;
+        }
+        if (req.body.breakdown != null) {
+            res.pendingComplaint.breakdown = req.body.breakdown;
+        }
+        if (req.body.status != null) {
+            res.pendingComplaint.status = req.body.status;
+        }
+
+        // NEW FIELDS: Spares required, problem type, problem name, remarks, etc.
+        if (req.body.sparerequest != null) {
+            res.pendingComplaint.sparerequest = req.body.sparerequest;
+        }
+        if (req.body.problemtype != null) {
+            res.pendingComplaint.problemtype = req.body.problemtype;
+        }
+        if (req.body.problemname != null) {
+            res.pendingComplaint.problemname = req.body.problemname;
+        }
+        if (req.body.remark != null) {
+            res.pendingComplaint.remark = req.body.remark;
+        }
+        if (req.body.requesteupdate != null) {
+            res.pendingComplaint.requesteupdate = req.body.requesteupdate;
+        }
+
+        // Always update the modification timestamp
+        res.pendingComplaint.modifiedAt = Date.now();
+
+        try {
+            const updatedPendingComplaint = await res.pendingComplaint.save();
+            res.json(updatedPendingComplaint);
+        } catch (err) {
+            res.status(400).json({ message: err.message });
+        }
     }
-    if (req.body.notification_complaintid != null) {
-        res.pendingComplaint.notification_complaintid = req.body.notification_complaintid;
-    }
-    if (req.body.notificationdate != null) {
-        res.pendingComplaint.notificationdate = req.body.notificationdate;
-    }
-    if (req.body.userstatus != null) {
-        res.pendingComplaint.userstatus = req.body.userstatus;
-    }
-    if (req.body.materialdescription != null) {
-        res.pendingComplaint.materialdescription = req.body.materialdescription;
-    }
-    if (req.body.serialnumber != null) {
-        res.pendingComplaint.serialnumber = req.body.serialnumber;
-    }
-    if (req.body.devicedata != null) {
-        res.pendingComplaint.devicedata = req.body.devicedata;
-    }
-    if (req.body.salesoffice != null) {
-        res.pendingComplaint.salesoffice = req.body.salesoffice;
-    }
-    if (req.body.materialcode != null) {
-        res.pendingComplaint.materialcode = req.body.materialcode;
-    }
-    if (req.body.reportedproblem != null) {
-        res.pendingComplaint.reportedproblem = req.body.reportedproblem;
-    }
-    if (req.body.dealercode != null) {
-        res.pendingComplaint.dealercode = req.body.dealercode;
-    }
-    if (req.body.customercode != null) {
-        res.pendingComplaint.customercode = req.body.customercode;
-    }
-    if (req.body.partnerresp != null) {
-        res.pendingComplaint.partnerresp = req.body.partnerresp;
-    }
-    if (req.body.breakdown != null) {
-        res.pendingComplaint.breakdown = req.body.breakdown;
-    }
-    if (req.body.status != null) {
-        res.pendingComplaint.status = req.body.status;
-    }
-    res.pendingComplaint.modifiedAt = Date.now();
-    try {
-        const updatedPendingComplaint = await res.pendingComplaint.save();
-        res.json(updatedPendingComplaint);
-    } catch (err) {
-        res.status(400).json({ message: err.message });
-    }
-});
+);
+
 
 // DELETE a PendingComplaint
 router.delete('/pendingcomplaints/:id', getPendingComplaintById, async (req, res) => {
