@@ -9,10 +9,10 @@ const EquipmentSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    serialnumber : {
+    serialnumber: {
         type: String,
         required: true,
-        unique: true // Ensure serial number uniqueness
+        unique: true
     },
     materialcode: {
         type: String,
@@ -20,7 +20,6 @@ const EquipmentSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        required: true
     },
     createdAt: {
         type: Date,
@@ -32,16 +31,18 @@ const EquipmentSchema = new mongoose.Schema({
     },
     currentcustomer: {
         type: String,
-        required: true
+        // required: true
     },
     endcustomer: {
-        type: Date,
-        required: true
+        type: Date
     },
+    // equipmentid is now auto-generated (or you can use _id)
     equipmentid: {
         type: String,
-        required: true,
-        unique: true // Ensure equipment ID uniqueness
+        default: function() {
+          return new mongoose.Types.ObjectId().toString();
+        },
+        unique: true
     },
     custWarrantystartdate: {
         type: String,
@@ -52,20 +53,16 @@ const EquipmentSchema = new mongoose.Schema({
         required: true
     },
     dealerwarrantystartdate: {
-        type: String,
-        required: true
+        type: String
     },
     dealerwarrantyenddate: {
-        type: String,
-        required: true
+        type: String
     },
     dealer: {
-        type: String,
-        required: true
+        type: String
     },
     palnumber: {
-        type: String,
-        required: true
+        type: String
     }
 });
 

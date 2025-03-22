@@ -16,6 +16,7 @@ const CheckPointType = require('./routes/Collections/CheckPointType');
 const User = require('./routes/Master/User');
 const Dealer = require('./routes/Master/Dealer');
 const Equipment = require('./routes/Master/Equipment');
+const SpareMaster = require('./routes/Master/SpareMaster');
 const Product = require('./routes/Master/Product');
 const ReportedProblemSchema = require('./routes/Master/ReportedProblem');
 const WarrantyCode = require('./routes/Master/WarrantyCode');
@@ -84,6 +85,7 @@ app.use('/collections', DealerStock);
 app.use('/collections', Hubstocks);
 app.use('/collections', Pendinginstallations);
 app.use('/collections', Pendingcomplaints);
+app.use('/collections', SpareMaster);
 app.use('/collections', CheckListType);
 app.use('/collections', CheckPointType);
 app.use('/installations', installationRoutes)

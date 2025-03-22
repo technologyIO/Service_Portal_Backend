@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const PendingInstallation = require('../../Model/UploadSchema/PendingInstallationSchema');
-
+const WarrantyCode = require('../../Model/MasterSchema/WarrantyCodeSchema');
+const Aerb = require('../../Model/MasterSchema/AerbSchema');
 // Middleware to get a PendingInstallation by ID
 async function getPendingInstallationById(req, res, next) {
     let pendingInstallation;
@@ -33,12 +34,83 @@ async function checkDuplicateInvoiceNo(req, res, next) {
     next();
 }
 
+/** 
+ * Specific Routes must come before generic parameterized routes.
+ */
+
+// GET all serial numbers
+router.get('/pendinginstallations/serialnumbers', async (req, res) => {
+    try {
+        const equipment = await PendingInstallation.find({}, 'serialnumber');
+        const serialNumbers = equipment.map(item => item.serialnumber);
+        res.json(serialNumbers);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET PendingInstallation by Serial Number
+router.get('/pendinginstallations/serial/:serialnumber', async (req, res) => {
+    try {
+        const serialnumber = req.params.serialnumber;
+        const pendingInstallation = await PendingInstallation.findOne({ serialnumber: serialnumber });
+        if (!pendingInstallation) {
+            return res.status(404).json({ message: 'No Pending Installation found with the provided serial number.' });
+        }
+
+        // WarrantyCode ke liye mtl_grp4 field ka use karke match karein
+        const warrantyCode = await WarrantyCode.findOne({ warrantycodeid: pendingInstallation.mtl_grp4 });
+        let warrantyMonths = 0;
+        if (warrantyCode && warrantyCode.months) {
+            warrantyMonths = warrantyCode.months;
+        }
+
+        // Warranty start date ko pending installation ke createdAt se lein (agar available ho)
+        const warrantyStartDate = pendingInstallation.createdAt || new Date();
+
+        // Warranty end date calculate karne ke liye, start date mein warrantyMonths add kar dein
+        const warrantyEndDate = new Date(warrantyStartDate);
+        warrantyEndDate.setMonth(warrantyEndDate.getMonth() + warrantyMonths);
+
+        // Extra fields add karte hue pending installation object ko convert karein
+        const pendingInstallationObj = pendingInstallation.toObject();
+        pendingInstallationObj.warrantyStartDate = warrantyStartDate;
+        pendingInstallationObj.warrantyEndDate = warrantyEndDate;
+
+        // Aerb collection se check karein: agar pending installation ka material Aerb ke materialcode se match karta hai,
+        // to palnumber field ko show karenge; agar match nahi hota, to ise remove kar denge.
+        const aerbRecord = await Aerb.findOne({ materialcode: pendingInstallation.material });
+        if (!aerbRecord) {
+            delete pendingInstallationObj.palnumber;
+        }
+
+        res.json(pendingInstallationObj);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+
+ // DELETE PendingInstallation by Serial Number
+router.delete('/pendinginstallations/serial/:serialnumber', async (req, res) => {
+    try {
+        const serialnumber = req.params.serialnumber;
+        const result = await PendingInstallation.deleteOne({ serialnumber: serialnumber });
+        if (result.deletedCount === 0) {
+            return res.status(404).json({ message: 'Pending Installation with the given serial number not found.' });
+        }
+        res.json({ message: 'Deleted Pending Installation successfully.' });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+
 // GET all PendingInstallations
 router.get('/pendinginstallations', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
-
         const skip = (page - 1) * limit;
 
         const pendingInstallations = await PendingInstallation.find().skip(skip).limit(limit);
@@ -214,8 +286,7 @@ router.get('/pendinginstallationsearch', async (req, res) => {
         const { q } = req.query;
 
         if (!q) {
-            return res.status(400).json({ message: 'Query parameter is required' })
-
+            return res.status(400).json({ message: 'Query parameter is required' });
         }
 
         const query = {
@@ -245,16 +316,13 @@ router.get('/pendinginstallationsearch', async (req, res) => {
                 { palnumber: { $regex: q, $options: 'i' } },
                 { key: { $regex: q, $options: 'i' } },
             ]
-        }
+        };
 
         const pendinginstallations = await PendingInstallation.find(query);
-        res.json(pendinginstallations)
-
-
+        res.json(pendinginstallations);
     } catch (err) {
-        res.status(500).json({ message: err.message })
+        res.status(500).json({ message: err.message });
     }
-})
-
+});
 
 module.exports = router;

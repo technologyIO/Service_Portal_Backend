@@ -2,7 +2,21 @@ const express = require('express');
 const router = express.Router();
 const Equipment = require('../../Model/MasterSchema/EquipmentSchema');
 const PendingInstallation = require('../../Model/UploadSchema/PendingInstallationSchema'); // Adjust the path based on your folder structure
+const nodemailer = require('nodemailer');
+const pdf = require('html-pdf');
+const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
+const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
+const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 
+// In-memory OTP store (for demonstration; consider a persistent store in production)
+const otpStore = {};
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'webadmin@skanray-access.com',
+        pass: 'rdzegwmzirvbjcpm'
+    }
+});
 // Middleware to get equipment by ID
 async function getEquipmentById(req, res, next) {
     let equipment;
@@ -46,6 +60,77 @@ router.get('/allequipment/serialnumbers', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+router.get('/equipment-details/:serialnumber', async (req, res) => {
+    try {
+      const { serialnumber } = req.params;
+  
+      // 1. Retrieve equipment data using the serial number
+      const equipmentData = await Equipment.findOne({ serialnumber });
+      if (!equipmentData) {
+        return res.status(404).json({ message: 'No equipment data found for the provided serial number' });
+      }
+  
+      // 2. Using the material code from the equipment, find AMC contract data (only startdate and enddate)
+      const materialCode = equipmentData.materialcode;
+      const amcContract = await AMCContract.findOne({ materialcode: materialCode });
+      const amcContractDates = amcContract
+        ? { startdate: amcContract.startdate, enddate: amcContract.enddate }
+        : {};
+  
+      // 3. Using the current customer code from the equipment, find customer details
+      const customerCode = equipmentData.currentcustomer;
+      const customerData = await Customer.findOne({ customercodeid: customerCode });
+      const customerDetails = customerData
+        ? {
+            hospitalname: customerData.hospitalname,
+            city: customerData.city,
+            pincode: customerData.postalcode, // Assuming postalcode is used as pincode
+            telephone: customerData.telephone,
+            email: customerData.email,
+          }
+        : {};
+  
+      // 4. Find all equipments that have used this same customer code
+      const customerEquipments = await Equipment.find(
+        { currentcustomer: customerCode },
+        'serialnumber materialcode name'
+      );
+  
+      // 5. Combine the data and return it
+      const combinedData = {
+        equipment: equipmentData,
+        amcContract: amcContractDates,
+        customer: customerDetails,
+        customerEquipments // Array of equipments with serial number, material code, and name
+      };
+  
+      res.json(combinedData);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+  
+  router.get('/checkequipments/:customerCode', async (req, res) => {
+    try {
+      const { customerCode } = req.params;
+  
+      // 1. Find all equipments that belong to the provided customer code
+      const equipments = await Equipment.find({ currentcustomer: customerCode });
+  
+      if (equipments.length === 0) {
+        return res.status(404).json({ message: 'No equipment found for the provided customer code' });
+      }
+  
+      // 2. Return full equipment details
+      res.json({ equipments });
+  
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+  
+  
+
 
 router.get('/getbyserialno/:serialnumber', async (req, res) => {
     try {
@@ -119,31 +204,141 @@ router.get('/equipment/:id', getEquipmentById, (req, res) => {
     res.json(res.equipment);
 });
 
-// CREATE new equipment
-router.post('/equipment', checkDuplicateSerialNumber, async (req, res) => {
-    const equipment = new Equipment({
-        name: req.body.name,
-        materialdescription: req.body.materialdescription,
-        serialnumber: req.body.serialnumber,
-        materialcode: req.body.materialcode,
-        status: req.body.status,
-        currentcustomer: req.body.currentcustomer,
-        endcustomer: req.body.endcustomer,
-        equipmentid: req.body.equipmentid,
-        custWarrantystartdate: req.body.custWarrantystartdate,
-        custWarrantyenddate: req.body.custWarrantyenddate,
-        dealerwarrantystartdate: req.body.dealerwarrantystartdate,
-        dealerwarrantyenddate: req.body.dealerwarrantyenddate,
-        dealer: req.body.dealer,
-        palnumber: req.body.palnumber
-    });
+router.post('/send-otp', async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ message: 'Email is required' });
+    }
+    // Generate a 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // Store OTP with a 5-minute expiry
+    otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
+
+    const mailOptions = {
+        from: process.env.GMAIL_USER,
+        to: email,
+        subject: 'Your OTP for Equipment Installation',
+        text: `Your OTP is: ${otp}. It is valid for 5 minutes.`
+    };
+
     try {
-        const newEquipment = await equipment.save();
-        res.status(201).json(newEquipment);
-    } catch (err) {
-        res.status(400).json({ message: err.message });
+        await transporter.sendMail(mailOptions);
+        res.status(200).json({ message: 'OTP sent successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Failed to send OTP', error: error.message });
     }
 });
+
+// Endpoint to verify OTP
+router.post('/verify-otp', (req, res) => {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+        return res.status(400).json({ message: 'Email and OTP are required' });
+    }
+    const record = otpStore[email];
+    if (!record) {
+        return res.status(400).json({ message: 'No OTP found for this email' });
+    }
+    if (Date.now() > record.expiresAt) {
+        delete otpStore[email];
+        return res.status(400).json({ message: 'OTP has expired' });
+    }
+    if (record.otp !== otp) {
+        return res.status(400).json({ message: 'Invalid OTP' });
+    }
+    // If verified, remove OTP from store and return success
+    delete otpStore[email];
+    res.status(200).json({ message: 'OTP verified successfully' });
+});
+
+// Updated equipment creation endpoint
+router.post("/equipment", async (req, res) => {
+    try {
+        // Extract the equipment and PDF data from request body
+        const { equipmentPayload, pdfData } = req.body;
+
+        // LOG the PDF data (including OTP) so you can see exactly what's arriving
+        console.log("PDF data received for PDF creation:", pdfData);
+
+        // 1) Create new Equipment in DB
+        const equipment = new Equipment({
+            name: equipmentPayload.name,
+            materialdescription: equipmentPayload.materialdescription,
+            serialnumber: equipmentPayload.serialnumber,
+            materialcode: equipmentPayload.materialcode,
+            status: equipmentPayload.status,
+            currentcustomer: equipmentPayload.currentcustomer,
+            custWarrantystartdate: equipmentPayload.custWarrantystartdate,
+            custWarrantyenddate: equipmentPayload.custWarrantyenddate,
+            palnumber: equipmentPayload.palnumber,
+        });
+
+        const newEquipment = await equipment.save();
+        console.log("Equipment saved:", newEquipment._id);
+
+        // 2) Merge DB fields + PDF-only fields (includes OTP)
+        const dataForPDF = {
+            // from DB
+            name: newEquipment.name,
+            serialnumber: newEquipment.serialnumber,
+            materialcode: newEquipment.materialcode,
+            materialdescription: newEquipment.materialdescription,
+            status: newEquipment.status,
+            currentcustomer: newEquipment.currentcustomer,
+            custWarrantystartdate: newEquipment.custWarrantystartdate,
+            custWarrantyenddate: newEquipment.custWarrantyenddate,
+            palnumber: newEquipment.palnumber,
+
+            // from pdfData (NOT stored in DB), includes the OTP
+            ...pdfData,
+        };
+
+        // 3) Generate PDF
+        const htmlContent = getCertificateHTML(dataForPDF);
+        pdf.create(htmlContent, { format: "A4" }).toBuffer(async (err, buffer) => {
+            if (err) {
+                console.error("PDF creation error:", err);
+                return res.status(500).json({ message: "Failed to create PDF" });
+            }
+
+            // 4) Email the PDF to pdfData.email
+            const mailOptions = {
+                from: "webadmin@skanray-access.com",
+                to: pdfData.email || "fallback@example.com",
+                subject: "Skanray Installation Report & Warranty Certificate",
+                text: "Dear Customer,\n\nPlease find attached your Installation Report & Warranty Certificate.\n\nRegards,\nSkanray Technologies",
+                attachments: [
+                    {
+                        filename: "InstallationReport.pdf",
+                        content: buffer,
+                    },
+                ],
+            };
+
+            try {
+                await transporter.sendMail(mailOptions);
+                console.log("Email sent with PDF attachment.");
+                return res.status(201).json(newEquipment);
+            } catch (emailErr) {
+                console.error("Error sending email with PDF:", emailErr);
+                return res.status(500).json({
+                    message: "Equipment created, but failed to send email",
+                    error: emailErr.message,
+                });
+            }
+        });
+    } catch (err) {
+        console.error("Error saving equipment:", err);
+        if (err.code === 11000) {
+            return res.status(400).json({ message: "Serial number already exists." });
+        }
+        return res.status(400).json({ message: err.message });
+    }
+});
+
+
+
+
 
 // UPDATE equipment
 router.put('/equipment/:id', getEquipmentById, checkDuplicateSerialNumber, async (req, res) => {

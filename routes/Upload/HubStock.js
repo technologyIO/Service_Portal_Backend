@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const HubStock = require('../../Model/UploadSchema/HubStockSchema');
+const DealerStock = require('../../Model/UploadSchema/DealerStockSchema');
 
 // Middleware to get a HubStock by ID
 async function getHubStockById(req, res, next) {
@@ -53,8 +54,57 @@ router.get('/hubstocks', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+router.get('/hubstocks/material-list', async (req, res) => {
+    try {
+        const results = await HubStock.aggregate([
+            {
+                $group: {
+                    _id: {
+                        materialcode: '$materialcode',
+                        materialdescription: '$materialdescription'
+                    }
+                }
+            },
+            {
+                // Reshape the output to have the fields directly
+                $project: {
+                    _id: 0,
+                    materialcode: '$_id.materialcode',
+                    materialdescription: '$_id.materialdescription'
+                }
+            }
+        ]);
 
+        res.json(results);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
+// Example route: /collections/hubstocks/check-material/:materialcode
+router.get('/hubstocks/check-material/:materialcode', async (req, res) => {
+    try {
+      const { materialcode } = req.params;
+  
+      // 1) Fetch matching documents from HubStock
+      const hubStockData = await HubStock.find(
+        { materialcode },
+        { storagelocation: 1, quantity: 1, _id: 0 }
+      );
+  
+      // 2) Fetch matching documents from DealerStock
+      const dealerStockData = await DealerStock.find(
+        { materialcode },
+        { dealercity: 1, unrestrictedquantity: 1, _id: 0 }
+      );
+  
+      // 3) Send both results back
+      res.json({ hubStockData, dealerStockData });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+  
 // GET HubStock by ID
 router.get('/hubstocks/:id', getHubStockById, (req, res) => {
     res.json(res.hubStock);

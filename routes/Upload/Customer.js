@@ -1,6 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
+const nodemailer = require('nodemailer');
+
+
+const transporter = nodemailer.createTransport({
+    service: 'Gmail', // ya koi bhi service use kar rahe ho, jaise Outlook, Yahoo, etc.
+    auth: {
+        user: 'webadmin@skanray-access.com',
+        pass: 'rdzegwmzirvbjcpm'
+    }
+});
+
 
 // Middleware to get a customer by ID
 async function getCustomerById(req, res, next) {
@@ -15,6 +26,19 @@ async function getCustomerById(req, res, next) {
     }
     res.customer = customer;
     next();
+}
+async function getCustomerByCode(req, res) {
+    try {
+        const customer = await Customer.findOne({ customercode: req.params.customercodeid });
+
+        if (!customer) {
+            return res.status(404).json({ message: 'Customer not found' });
+        }
+
+        res.json(customer);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
 }
 
 // Middleware to check for duplicate customer code or email
@@ -35,6 +59,126 @@ async function checkDuplicateCustomer(req, res, next) {
     }
     next();
 }
+
+router.post('/customer/send-email', async (req, res) => {
+    // Extract the fields from req.body (ensure your frontend sends these)
+    const {
+        customername,
+        hospitalname,
+        street,
+        city,
+        postalcode,
+        district,
+        region,
+        country,
+        telephone,
+        taxnumber1,
+        taxnumber2,
+        email,
+        status,
+        customertype
+    } = req.body;
+
+    // Create a nicely formatted HTML email body
+    let emailContent = `
+      <p style="font-size: 14px; margin-bottom: 16px;">
+        <strong>Dear CIC,</strong>
+      </p>
+  
+      <p style="font-size: 14px; margin-bottom: 16px;">
+        Please update the notification details as below:
+      </p>
+  
+      <table style="border-collapse: collapse; width: 100%; font-size: 14px;">
+       <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Customer Type :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${customertype || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Customer Name :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${customername || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Hospital name :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${hospitalname || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Street :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${street || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Postal Code :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${postalcode || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>District :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${district || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>City :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${city || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Region :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${region || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Country :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${country || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Telephone :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${telephone || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Taxnumber 1 :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${taxnumber1 || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Taxnumber 2 :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${taxnumber2 || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Email :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${email || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Status :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${status || ''}</td>
+        </tr>
+       
+      </table>
+  
+      <br/>
+      <p style="font-size: 14px; margin-bottom: 16px;">
+        Regards,<br/>
+        <strong>Skanray Service Support Team</strong>
+      </p>
+      <p style="font-size: 12px; color: #666;">
+        Please consider the environment before printing this email.
+      </p>
+    `;
+
+    // Email options
+    const mailOptions = {
+        from: 'webadmin@skanray-access.com', // Replace if needed
+        to: 'mrshivamtiwari2025@gmail.com',  // Replace with actual CIC email
+        subject: 'New Customer Submission',
+        html: emailContent
+    };
+
+    try {
+        // Send the email
+        await transporter.sendMail(mailOptions);
+        res.status(200).json({ message: 'Email sent successfully' });
+    } catch (error) {
+        res.status(500).json({
+            message: 'Failed to send email',
+            error: error.toString()
+        });
+    }
+});
+
 
 router.get('/customer', async (req, res) => {
     try {
@@ -57,6 +201,7 @@ router.get('/customer', async (req, res) => {
     }
 });
 
+router.get('/customer/by-code/:customercode', getCustomerByCode);
 
 // GET customer by ID
 router.get('/customer/:id', getCustomerById, (req, res) => {
@@ -94,7 +239,7 @@ router.post('/customer', checkDuplicateCustomer, async (req, res) => {
 
 
 // UPDATE a customer
-router.put('/customer/:id', getCustomerById, checkDuplicateCustomer, async (req, res) => {
+router.put('/customer/:id', getCustomerById, async (req, res) => {
     if (req.body.customercodeid != null) {
         res.customer.customercodeid = req.body.customercodeid;
     }

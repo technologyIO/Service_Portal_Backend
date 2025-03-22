@@ -101,7 +101,27 @@ router.get('/dealerstocks/count/:dealercodeid', async (req, res) => {
     }
 });
 
-
+router.get('/dealerstocks/materials/:dealercodeid', async (req, res) => {
+    try {
+      const { dealercodeid } = req.params;
+  
+      // Query DealerStock where dealercodeid matches
+      // Only return materialcode, materialdescription, and unrestrictedquantity
+      const results = await DealerStock.find(
+        { dealercodeid },
+        {
+          materialcode: 1,
+          materialdescription: 1,
+          unrestrictedquantity: 1,
+          _id: 0
+        }
+      );
+  
+      res.json(results);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 
 
 // GET DealerStock by ID

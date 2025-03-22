@@ -3,7 +3,6 @@ const mongoose = require("mongoose")
 const HubStockSchema = new mongoose.Schema({
     materialcode: {
         type: String,
-        required: true
     },
     materialdescription: {
         type: String,

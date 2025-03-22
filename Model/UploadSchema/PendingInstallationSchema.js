@@ -100,7 +100,6 @@ const PendingInstallationSchema = new mongoose.Schema({
     },
     palnumber: {
         type: String,
-        required: true
     },
     status: {
         type: String,

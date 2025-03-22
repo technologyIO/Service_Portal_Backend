@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const PendingComplaints = require('../../Model/UploadSchema/PendingCompliantsSchema');
+const nodemailer = require('nodemailer');
+const Equipment = require('../../Model/MasterSchema/EquipmentSchema');
+const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 
 // Middleware to get a PendingComplaint by ID
 async function getPendingComplaintById(req, res, next) {
@@ -32,7 +35,266 @@ async function checkDuplicateComplaintId(req, res, next) {
     }
     next();
 }
+router.post('/sendComplaintEmail', async (req, res) => {
+    try {
+        // 1. Destructure data coming from the frontend
+        const {
+            serialnumber,
+            notificationtype,
+            productgroup,
+            problemtype,
+            problemname,
+            sparesrequested,
+            breakdown,
+            remark,
+            user // User info included from frontend
+        } = req.body;
 
+        // 2. Find the equipment data by serial number
+        const equipmentData = await Equipment.findOne({ serialnumber });
+        if (!equipmentData) {
+            return res
+                .status(404)
+                .json({ message: 'No equipment found for the provided serial number.' });
+        }
+
+        // 3. Combine the equipment data with the data from the frontend
+        const combinedData = {
+            complaintType: notificationtype,
+            serialNo: serialnumber,
+            productGroup: productgroup,
+            problemType: problemtype,
+            problemName: problemname,
+            sparesrequested: sparesrequested,
+            breakdown: breakdown,
+            remark: remark,
+
+            // Equipment Data
+            description: equipmentData.materialdescription || '',
+            partno: equipmentData.materialcode || '',
+            customer: equipmentData.currentcustomer || '',
+            
+            // User (Service Engineer) Data
+            serviceEngineer: {
+                firstName: user.firstName || 'N/A',
+                lastName: user.lastName || 'N/A',
+                email: user.email || 'N/A',
+                mobilenumber: user.mobilenumber || 'N/A',
+                branch: user.branch || 'N/A'
+            }
+        };
+
+        // 4. Find customer details (hospital name & city) using the customer code from equipmentData
+        const foundCustomer = await Customer.findOne({ customercodeid: combinedData.customer });
+        // Default values if customer is not found
+        let finalHospitalName = 'N/A';
+        let finalCity = 'N/A';
+
+        if (foundCustomer) {
+            finalHospitalName = foundCustomer.hospitalname || 'N/A';
+            finalCity = foundCustomer.city || 'N/A';
+        }
+
+        // 5. Construct the email body including hospital name and city after customer
+        const emailBody = 
+`Dear CIC,
+
+Please create a new complaint as below
+
+Complaint Type : ${combinedData.complaintType}
+Serial No : ${combinedData.serialNo}
+Description : ${combinedData.description}
+ProductGroup : ${combinedData.productGroup}
+ProblemType : ${combinedData.problemType}
+Part No : ${combinedData.partno}
+Customer : ${combinedData.customer}
+Hospital Name : ${finalHospitalName}
+City : ${finalCity}
+ProblemName : ${combinedData.problemName}
+SparesRequested : ${combinedData.sparesrequested}
+Breakdown : ${combinedData.breakdown ? 'Yes' : 'No'}
+Remarks : ${combinedData.remark}
+
+----------------------------------------------------
+Service Engineer Details:
+Name : ${combinedData.serviceEngineer.firstName} ${combinedData.serviceEngineer.lastName}
+Email : ${combinedData.serviceEngineer.email}
+Mobile Number : ${combinedData.serviceEngineer.mobilenumber}
+Branch : ${combinedData.serviceEngineer.branch}
+----------------------------------------------------
+
+Regards,
+Skanray Service Support Team
+
+Please consider the Environment before printing this e-mail.`;
+
+        // 6. Configure nodemailer transporter
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: 'webadmin@skanray-access.com',
+                pass: 'rdzegwmzirvbjcpm'
+            },
+        });
+
+        // 7. Set up mail options
+        const mailOptions = {
+            from: 'webadmin@skanray-access.com',
+            to: 'mrshivamtiwari2025@gmail.com', // Recipient email
+            subject: 'New Complaint',
+            text: emailBody,
+        };
+
+        // 8. Send the email
+        await transporter.sendMail(mailOptions);
+
+        // 9. Send a success response to the frontend
+        return res.status(200).json({
+            message: 'Email sent successfully.',
+            combinedData, // Returning the full data for verification
+        });
+
+    } catch (error) {
+        console.error('Error sending complaint email:', error);
+        return res.status(500).json({
+            message: 'Error sending email',
+            error: error.message
+        });
+    }
+});
+
+router.post('/sendUpdatedComplaintEmail', async (req, res) => {
+    try {
+        // 1. Destructure fields from the request body
+        const {
+            notification_no,
+            serial_no,
+            description,
+            part_no,
+            // 'customer' here is the customer code we receive from frontend
+            // which we'll use to look up the actual hospital name & city
+            customer,
+            name,
+            city,
+            serviceEngineer,
+            spareRequested,
+            remarks,
+            serviceEngineerMobile,
+            serviceEngineerEmail,
+            branchName
+        } = req.body;
+
+        // 2. Look up the customer in the DB by its code
+        const foundCustomer = await Customer.findOne({ customercodeid: customer });
+
+        // 3. If found, override 'name' and 'city' with DB values
+        let finalHospitalName = name;
+        let finalCity = city;
+
+        if (foundCustomer) {
+            finalHospitalName = foundCustomer.hospitalname || name;
+            finalCity = foundCustomer.city || city;
+        }
+
+        // 4. Build the HTML email
+        const emailHTML = `
+            <div style="font-family: Arial, sans-serif; margin: 20px;">
+              <p>Dear CIC,</p>
+              <p>Please Update the notification int as below</p>
+              <table style="border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 4px;">Notification No:</td>
+                  <td style="padding: 4px;">${notification_no}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">Serial no:</td>
+                  <td style="padding: 4px;">${serial_no}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">Description:</td>
+                  <td style="padding: 4px;">${description}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">Part no:</td>
+                  <td style="padding: 4px;">${part_no}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">Customer Code:</td>
+                  <td style="padding: 4px;">${customer}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">Name (Hospital):</td>
+                  <td style="padding: 4px;">${finalHospitalName}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">City:</td>
+                  <td style="padding: 4px;">${finalCity}</td>
+                </tr>
+                 <tr>
+                  <td style="padding: 4px;">Spare Requested:</td>
+                  <td style="padding: 4px;">${spareRequested}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">Remarks:</td>
+                  <td style="padding: 4px;">${remarks}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">Service Engineer:</td>
+                  <td style="padding: 4px;">${serviceEngineer}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">Service Engineer Mobile:</td>
+                  <td style="padding: 4px;">${serviceEngineerMobile}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">Service Engineer Email:</td>
+                  <td style="padding: 4px;">${serviceEngineerEmail}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px;">Branch Name:</td>
+                  <td style="padding: 4px;">${branchName}</td>
+                </tr>
+              </table>
+              <br />
+              <p>Regards,<br />Skanray Service Support Team</p>
+              <p>Please consider the Environment before printing this e-mail.</p>
+            </div>
+        `;
+
+        // 5. Configure nodemailer transporter
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: 'webadmin@skanray-access.com',
+                pass: 'rdzegwmzirvbjcpm'
+            },
+        });
+
+        // 6. Set up mail options
+        const mailOptions = {
+            from: 'webadmin@skanray-access.com',
+            to: 'mrshivamtiwari2025@gmail.com', // Adjust as needed
+            subject: 'Updated Complaint',
+            html: emailHTML
+        };
+
+        // 7. Send the email
+        await transporter.sendMail(mailOptions);
+
+        // 8. Return success response
+        return res.status(200).json({
+            message: 'Updated complaint email sent successfully.',
+            dataSent: req.body,
+        });
+
+    } catch (error) {
+        console.error('Error sending updated complaint email:', error);
+        return res.status(500).json({
+            message: 'Error sending updated complaint email',
+            error: error.message
+        });
+    }
+});
 // PATCH request to update `requesteupdate` field to true
 router.patch('/pendingcomplaints/:id/requestupdate', getPendingComplaintById, async (req, res) => {
     // Set requesteupdate to true
