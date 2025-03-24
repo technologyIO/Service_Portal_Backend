@@ -4,7 +4,7 @@ const SpareMaster = require("../../Model/MasterSchema/SpareMasterSchema");
 const Product = require("../../Model/MasterSchema/ProductSchema");
 
 // Endpoint 1: Get SpareMaster data based on product part number
-router.get("/search/:partno", async (req, res) => {
+router.get("/search/:partno", async (req, res) => { 
   try {
     const partNo = req.params.partno;
     // Find the product by its part number
@@ -56,7 +56,7 @@ router.get("/addsparemaster", async (req, res) => {
 });
 
 // Get a single SpareMaster by ID
-router.get("/:id", async (req, res) => {
+router.get("/addsparemaster/:id", async (req, res) => {
   try {
     const spareMaster = await SpareMaster.findById(req.params.id);
     if (!spareMaster) return res.status(404).json({ message: "SpareMaster not found" });
@@ -67,7 +67,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // Update a SpareMaster by ID
-router.put("/:id", async (req, res) => {
+router.put("/addsparemaster/:id", async (req, res) => {
   try {
     const updatedSpareMaster = await SpareMaster.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
     if (!updatedSpareMaster) return res.status(404).json({ message: "SpareMaster not found" });

@@ -4,7 +4,7 @@ const PendingComplaints = require('../../Model/UploadSchema/PendingCompliantsSch
 const nodemailer = require('nodemailer');
 const Equipment = require('../../Model/MasterSchema/EquipmentSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
-
+let otpStore = {};
 // Middleware to get a PendingComplaint by ID
 async function getPendingComplaintById(req, res, next) {
     let pendingComplaint;
@@ -73,7 +73,7 @@ router.post('/sendComplaintEmail', async (req, res) => {
             description: equipmentData.materialdescription || '',
             partno: equipmentData.materialcode || '',
             customer: equipmentData.currentcustomer || '',
-            
+
             // User (Service Engineer) Data
             serviceEngineer: {
                 firstName: user.firstName || 'N/A',
@@ -96,8 +96,8 @@ router.post('/sendComplaintEmail', async (req, res) => {
         }
 
         // 5. Construct the email body including hospital name and city after customer
-        const emailBody = 
-`Dear CIC,
+        const emailBody =
+            `Dear CIC,
 
 Please create a new complaint as below
 
@@ -512,4 +512,234 @@ router.get('/pendinginstallationsearch', async (req, res) => {
     }
 })
 
+
+
+router.post("/sendOtpEmail", async (req, res) => {
+    try {
+        const { customerEmail } = req.body;
+
+        if (!customerEmail) {
+            return res
+                .status(400)
+                .json({ message: "customerEmail is required in the request body." });
+        }
+
+        // Generate a 6-digit OTP
+        const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Set an expiration time (e.g. 10 minutes from now)
+        const expiresAt = Date.now() + 10 * 60 * 1000;
+
+        // Store it in memory
+        otpStore[customerEmail] = {
+            otp: generatedOtp,
+            expiresAt,
+        };
+
+        // Send the OTP via email
+        const transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+                user: "webadmin@skanray-access.com",
+                pass: "rdzegwmzirvbjcpm", // example password/app password
+            },
+        });
+
+        const mailOptions = {
+            from: "webadmin@skanray-access.com",
+            to: customerEmail, // send to the customer's email
+            subject: "Your OTP Code",
+            text: `Dear Customer,\n\nYour OTP is: ${generatedOtp}\n\nThis code will expire in 10 minutes.\n\nRegards,\nSkanray Service Support Team`,
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        return res.status(200).json({
+            message: "OTP sent successfully to customer email.",
+            email: customerEmail,
+        });
+    } catch (error) {
+        console.error("Error sending OTP email:", error);
+        return res.status(500).json({
+            message: "Error sending OTP email",
+            error: error.message,
+        });
+    }
+});
+router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
+    try {
+      // The frontend must pass the same customerEmail + the OTP
+      const {
+        customerEmail,
+        otp,
+        // All other fields needed for the final email design:
+        complaintNumber,
+        notificationDate,
+        serialNumber,
+        city,
+        productCode,
+        problemReported,
+        description,
+        actionTaken,
+        productGroup,
+        productType,
+        problemName,
+        reportedProblem,
+        instructionToCustomer,
+        sparesReplaced, // This is now an array of objects
+        serviceEngineerName,
+        voltageLN_RY,
+        voltageLG_YB,
+        voltageNG_BR,
+        injuryDetails,
+        customerDetails,
+        serviceEngineer,
+        // ... add any other fields you need from the screenshot
+      } = req.body;
+  
+      // Check if we have an OTP stored for this email
+      const otpData = otpStore[customerEmail];
+      if (!otpData) {
+        return res
+          .status(400)
+          .json({ message: "No OTP found for this customer email." });
+      }
+  
+      // Check if OTP is expired
+      if (Date.now() > otpData.expiresAt) {
+        // Cleanup expired OTP
+        delete otpStore[customerEmail];
+        return res
+          .status(400)
+          .json({ message: "OTP has expired. Please request a new one." });
+      }
+  
+      // Check if OTP matches
+      if (otpData.otp !== otp) {
+        return res.status(400).json({ message: "Invalid OTP." });
+      }
+  
+      // If OTP is valid and not expired, remove from store
+      delete otpStore[customerEmail];
+  
+      // Now send the final email with the design
+      // We'll build an HTML email. Adjust as needed to match your exact design.
+  
+      let sparesHTML = "";
+      if (Array.isArray(sparesReplaced) && sparesReplaced.length > 0) {
+        // Build a table row for each spare
+        const rowsHTML = sparesReplaced
+          .map((item, index) => {
+            return `
+              <tr>
+                <td style="padding: 4px; border: 1px solid #ccc;">${index + 1}</td>
+                <td style="padding: 4px; border: 1px solid #ccc;">${item.PartNumber || ""}</td>
+                <td style="padding: 4px; border: 1px solid #ccc;">${item.Description || ""}</td>
+                <td style="padding: 4px; border: 1px solid #ccc;">${item.remark || ""}</td>
+              </tr>
+            `;
+          })
+          .join("");
+  
+        sparesHTML = `
+          <p><strong>Spares Replaced:</strong></p>
+          <table style="border: 1px solid #ccc; border-collapse: collapse;">
+            <tr>
+              <th style="padding: 4px; border: 1px solid #ccc;">Sl. No</th>
+              <th style="padding: 4px; border: 1px solid #ccc;">Part Number</th>
+              <th style="padding: 4px; border: 1px solid #ccc;">Description</th>
+              <th style="padding: 4px; border: 1px solid #ccc;">Remark</th>
+            </tr>
+            ${rowsHTML}
+          </table>
+          <br/>
+        `;
+      }
+  
+      const finalEmailHTML = `
+        <div style="font-family: Arial, sans-serif; margin: 10px;">
+          <p><strong>Kindly Close,</strong></p>
+          <p>Dear CIC, Notification as below</p>
+          <table style="border-collapse: collapse;">
+            <tr>
+              <td style="padding: 4px;"><strong>Notification No:</strong></td>
+              <td style="padding: 4px;">${complaintNumber || "N/A"}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px;"><strong>Notification Date:</strong></td>
+              <td style="padding: 4px;">${notificationDate || "N/A"}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px;"><strong>Serial No:</strong></td>
+              <td style="padding: 4px;">${serialNumber || "N/A"}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px;"><strong>City:</strong></td>
+              <td style="padding: 4px;">${customerDetails?.city || "N/A"}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px;"><strong>Problem Reported:</strong></td>
+              <td style="padding: 4px;">${reportedProblem || "N/A"}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px;"><strong>Action Taken:</strong></td>
+              <td style="padding: 4px;">${actionTaken || "N/A"}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px;"><strong>Instruction to Customer:</strong></td>
+              <td style="padding: 4px;">${instructionToCustomer || "N/A"}</td>
+            </tr>
+          </table>
+          <br/>
+  
+          ${sparesHTML}
+  
+          <p><strong>Service Engineer Name:</strong> ${
+            serviceEngineer?.firstName && serviceEngineer?.lastName
+              ? `${serviceEngineer.firstName} ${serviceEngineer.lastName}`
+              : "N/A"
+          }</p>
+          <p><strong>Service Engineer Phone:</strong> ${
+            serviceEngineer?.mobileNumber || "N/A"
+          }</p>
+          <p><strong>Service Engineer Email:</strong> ${
+            serviceEngineer?.email || "N/A"
+          }</p>
+          <p>Please consider the Environment before printing this e-mail.</p>
+        </div>
+      `;
+  
+      // Configure nodemailer
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: "webadmin@skanray-access.com",
+          pass: "rdzegwmzirvbjcpm", // example password/app password
+        },
+      });
+  
+      // Set up mail options (send to whomever you need)
+      const mailOptions = {
+        from: "webadmin@skanray-access.com",
+        // Send to both addresses (change or remove as per your requirement)
+        to: [customerEmail, "mrshivamtiwari2025@gmail.com"],
+        subject: "Final Complaint Details",
+        html: finalEmailHTML,
+      };
+  
+      await transporter.sendMail(mailOptions);
+  
+      return res.status(200).json({
+        message: "OTP verified and final email sent successfully!",
+        finalData: req.body,
+      });
+    } catch (error) {
+      console.error("Error verifying OTP and sending final email:", error);
+      return res.status(500).json({
+        message: "Error verifying OTP or sending final email",
+        error: error.message,
+      });
+    }
+  });
+  
 module.exports = router;
