@@ -876,12 +876,19 @@ function generateIncidentReportHTML(injuryDetails = {}) {
         },
       };
   
-      pdf.create(incidentReportHTML, pdfOptions).toBuffer(async (err, pdfBuffer) => {
+      pdf.create(incidentReportHTML, {
+        format: "A4",
+        childProcessOptions: {
+            env: {
+                OPENSSL_CONF: '/dev/null',  // Bypassing OpenSSL configuration issues
+            },
+        },
+    }).toBuffer(async (err, pdfBuffer) => {
         if (err) {
-          console.error("Error generating PDF:", err);
-          return res
-            .status(500)
-            .json({ message: "Failed to generate PDF", error: err.message });
+            console.error("Error generating PDF:", err);
+            return res
+                .status(500)
+                .json({ message: "Failed to generate PDF", error: err.message });
         }
   
         try {

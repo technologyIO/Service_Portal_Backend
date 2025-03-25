@@ -295,7 +295,14 @@ router.post("/equipment", async (req, res) => {
 
         // 3) Generate PDF
         const htmlContent = getCertificateHTML(dataForPDF);
-        pdf.create(htmlContent, { format: "A4" }).toBuffer(async (err, buffer) => {
+        pdf.create(htmlContent, { 
+            format: "A4",
+            childProcessOptions: {
+                env: {
+                    OPENSSL_CONF: '/dev/null',  // This bypasses OpenSSL configuration issues
+                },
+            },
+        }).toBuffer(async (err, buffer) => {
             if (err) {
                 console.error("PDF creation error:", err);
                 return res.status(500).json({ message: "Failed to create PDF" });

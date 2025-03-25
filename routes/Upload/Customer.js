@@ -5,7 +5,7 @@ const nodemailer = require('nodemailer');
 
 
 const transporter = nodemailer.createTransport({
-    service: 'Gmail', // ya koi bhi service use kar rahe ho, jaise Outlook, Yahoo, etc.
+    service: 'Gmail',  
     auth: {
         user: 'webadmin@skanray-access.com',
         pass: 'rdzegwmzirvbjcpm'

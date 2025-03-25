@@ -5,275 +5,275 @@ const Product = require('../../Model/MasterSchema/ProductSchema');
 const CheckList = require('../../Model/CollectionSchema/ChecklistSchema');
 const nodemailer = require('nodemailer');
 const Customer = require('../../Model/UploadSchema/CustomerSchema');
-const puppeteer = require('puppeteer'); // For PDF generation
+const pdf = require('html-pdf');
 
 // In-memory store for OTPs keyed by customerCode
 
 
 const otpStore = {};
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: 'webadmin@skanray-access.com',
-        pass: 'rdzegwmzirvbjcpm'
-    }
+  service: 'gmail',
+  auth: {
+    user: 'webadmin@skanray-access.com',
+    pass: 'rdzegwmzirvbjcpm'
+  }
 });
 
 // Middleware to get a PM by ID
 async function getPMById(req, res, next) {
-    let pm;
-    try {
-        pm = await PM.findById(req.params.id);
-        if (!pm) {
-            return res.status(404).json({ message: 'PM record not found' });
-        }
-    } catch (err) {
-        return res.status(500).json({ message: err.message });
+  let pm;
+  try {
+    pm = await PM.findById(req.params.id);
+    if (!pm) {
+      return res.status(404).json({ message: 'PM record not found' });
     }
-    res.pm = pm;
-    next();
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+  res.pm = pm;
+  next();
 }
 
 // Middleware to check for duplicate pmNumber
 async function checkDuplicatePMNumber(req, res, next) {
-    let pm;
-    try {
-        pm = await PM.findOne({ pmNumber: req.body.pmNumber });
-        if (pm && pm._id.toString() !== req.params.id) {
-            return res.status(400).json({ message: 'Duplicate PM number found' });
-        }
-    } catch (err) {
-        return res.status(500).json({ message: err.message });
+  let pm;
+  try {
+    pm = await PM.findOne({ pmNumber: req.body.pmNumber });
+    if (pm && pm._id.toString() !== req.params.id) {
+      return res.status(400).json({ message: 'Duplicate PM number found' });
     }
-    next();
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+  next();
 }
 
 // GET all PM records with pagination
 router.get('/pms', async (req, res) => {
-    try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
-        const pms = await PM.find().skip(skip).limit(limit);
-        const totalPms = await PM.countDocuments();
-        const totalPages = Math.ceil(totalPms / limit);
+    const pms = await PM.find().skip(skip).limit(limit);
+    const totalPms = await PM.countDocuments();
+    const totalPages = Math.ceil(totalPms / limit);
 
-        res.json({
-            pms,
-            totalPages,
-            totalPms
-        });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
+    res.json({
+      pms,
+      totalPages,
+      totalPms
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 // GET PM record by ID
 router.get('/pms/:id', getPMById, (req, res) => {
-    res.json(res.pm);
+  res.json(res.pm);
 });
 
 // CREATE a new PM record
 router.post('/pms', checkDuplicatePMNumber, async (req, res) => {
-    const pm = new PM({
-        pmType: req.body.pmType,
-        pmNumber: req.body.pmNumber,
-        materialDescription: req.body.materialDescription,
-        serialNumber: req.body.serialNumber,
-        customerCode: req.body.customerCode,
-        regionBranch: req.body.regionBranch,
-        pmDueMonth: req.body.pmDueMonth,
-        pmDoneDate: req.body.pmDoneDate,
-        pmVendorCode: req.body.pmVendorCode,
-        pmEngineerCode: req.body.pmEngineerCode,
-        pmStatus: req.body.pmStatus
-    });
-    try {
-        const newPM = await pm.save();
-        res.status(201).json(newPM);
-    } catch (err) {
-        res.status(400).json({ message: err.message });
-    }
+  const pm = new PM({
+    pmType: req.body.pmType,
+    pmNumber: req.body.pmNumber,
+    materialDescription: req.body.materialDescription,
+    serialNumber: req.body.serialNumber,
+    customerCode: req.body.customerCode,
+    regionBranch: req.body.regionBranch,
+    pmDueMonth: req.body.pmDueMonth,
+    pmDoneDate: req.body.pmDoneDate,
+    pmVendorCode: req.body.pmVendorCode,
+    pmEngineerCode: req.body.pmEngineerCode,
+    pmStatus: req.body.pmStatus
+  });
+  try {
+    const newPM = await pm.save();
+    res.status(201).json(newPM);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
 });
 
 // UPDATE a PM record
 router.put('/pms/:id', getPMById, checkDuplicatePMNumber, async (req, res) => {
-    const updates = [
-        'pmType',
-        'pmNumber',
-        'materialDescription',
-        'serialNumber',
-        'customerCode',
-        'regionBranch',
-        'pmDueMonth',
-        'pmDoneDate',
-        'pmVendorCode',
-        'pmEngineerCode',
-        'pmStatus',
-        'partNumber' // Added partNumber to the update list
-    ];
+  const updates = [
+    'pmType',
+    'pmNumber',
+    'materialDescription',
+    'serialNumber',
+    'customerCode',
+    'regionBranch',
+    'pmDueMonth',
+    'pmDoneDate',
+    'pmVendorCode',
+    'pmEngineerCode',
+    'pmStatus',
+    'partNumber' // Added partNumber to the update list
+  ];
 
-    updates.forEach(field => {
-        if (req.body[field] != null) {
-            res.pm[field] = req.body[field];
-        }
-    });
-
-    try {
-        const updatedPM = await res.pm.save();
-        res.json(updatedPM);
-    } catch (err) {
-        res.status(400).json({ message: err.message });
+  updates.forEach(field => {
+    if (req.body[field] != null) {
+      res.pm[field] = req.body[field];
     }
+  });
+
+  try {
+    const updatedPM = await res.pm.save();
+    res.json(updatedPM);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
 });
 
 
 // DELETE a PM record
 router.delete('/pms/:id', getPMById, async (req, res) => {
-    try {
-        const deletedPM = await PM.deleteOne({ _id: req.params.id });
-        if (deletedPM.deletedCount === 0) {
-            return res.status(404).json({ message: 'PM record not found' });
-        }
-        res.json({ message: 'Deleted PM record' });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+  try {
+    const deletedPM = await PM.deleteOne({ _id: req.params.id });
+    if (deletedPM.deletedCount === 0) {
+      return res.status(404).json({ message: 'PM record not found' });
     }
+    res.json({ message: 'Deleted PM record' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 // SEARCH PM records
 router.get('/pmsearch', async (req, res) => {
-    try {
-        const { q } = req.query;
-        if (!q) {
-            return res.status(400).json({ message: 'Query parameter is required' });
-        }
-
-        const query = {
-            $or: [
-                { pmType: { $regex: q, $options: 'i' } },
-                { pmNumber: { $regex: q, $options: 'i' } },
-                { materialDescription: { $regex: q, $options: 'i' } },
-                { serialNumber: { $regex: q, $options: 'i' } },
-                { customerCode: { $regex: q, $options: 'i' } },
-                { regionBranch: { $regex: q, $options: 'i' } },
-                { pmVendorCode: { $regex: q, $options: 'i' } },
-                { pmEngineerCode: { $regex: q, $options: 'i' } },
-                { pmStatus: { $regex: q, $options: 'i' } }
-            ]
-        };
-
-        const pms = await PM.find(query);
-        res.json(pms);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+  try {
+    const { q } = req.query;
+    if (!q) {
+      return res.status(400).json({ message: 'Query parameter is required' });
     }
+
+    const query = {
+      $or: [
+        { pmType: { $regex: q, $options: 'i' } },
+        { pmNumber: { $regex: q, $options: 'i' } },
+        { materialDescription: { $regex: q, $options: 'i' } },
+        { serialNumber: { $regex: q, $options: 'i' } },
+        { customerCode: { $regex: q, $options: 'i' } },
+        { regionBranch: { $regex: q, $options: 'i' } },
+        { pmVendorCode: { $regex: q, $options: 'i' } },
+        { pmEngineerCode: { $regex: q, $options: 'i' } },
+        { pmStatus: { $regex: q, $options: 'i' } }
+      ]
+    };
+
+    const pms = await PM.find(query);
+    res.json(pms);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 
 
 router.get('/checklist/by-part/:partnoid', async (req, res) => {
-    try {
-        const partnoid = req.params.partnoid;
+  try {
+    const partnoid = req.params.partnoid;
 
-        // Find the product using the provided partnoid
-        const product = await Product.findOne({ partnoid });
-        if (!product) {
-            return res.status(404).json({ message: 'Product not found for the provided part number' });
-        }
-
-        // Get the product group from the found product
-        const productGroup = product.productgroup;
-
-        // Find checklists where prodGroup matches the product group
-        const checklists = await CheckList.find({ prodGroup: productGroup })
-            .select('checklisttype checkpointtype checkpoint prodGroup result status createdAt modifiedAt resulttype');
-
-        res.json({
-            productGroup,
-            checklists
-        });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+    // Find the product using the provided partnoid
+    const product = await Product.findOne({ partnoid });
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found for the provided part number' });
     }
+
+    // Get the product group from the found product
+    const productGroup = product.productgroup;
+
+    // Find checklists where prodGroup matches the product group
+    const checklists = await CheckList.find({ prodGroup: productGroup })
+      .select('checklisttype checkpointtype checkpoint prodGroup result status createdAt modifiedAt resulttype');
+
+    res.json({
+      productGroup,
+      checklists
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 router.post('/otp/send', async (req, res) => {
-    try {
-        const { customerCode } = req.body;
-        if (!customerCode) {
-            return res.status(400).json({ message: 'Customer code is required' });
-        }
-
-        // 1) Find the customer in the DB by customercodeid
-        const customer = await Customer.findOne({ customercodeid: customerCode });
-        if (!customer) {
-            return res.status(404).json({ message: 'Customer not found for the given customer code' });
-        }
-
-        // 2) Get the email from the customer document
-        const email = customer.email;
-        if (!email) {
-            return res.status(404).json({ message: 'No email found for this customer' });
-        }
-
-        // 3) Generate a 6-digit OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-        // 4) Store the OTP with timestamp in memory (you can also store it in your DB if you want persistence)
-        otpStore[customerCode] = {
-            otp,
-            timestamp: Date.now()
-        };
-
-        // 5) Prepare email options
-        let mailOptions = {
-            from: 'webadmin@skanray-access.com',
-            to: email,
-            subject: 'Your OTP Code',
-            text: `Your OTP code is ${otp}`
-        };
-
-        // 6) Send the email using nodemailer
-        await transporter.sendMail(mailOptions);
-
-        return res.json({ message: 'OTP sent successfully to ' + email });
-    } catch (err) {
-        return res.status(500).json({ message: err.message });
+  try {
+    const { customerCode } = req.body;
+    if (!customerCode) {
+      return res.status(400).json({ message: 'Customer code is required' });
     }
+
+    // 1) Find the customer in the DB by customercodeid
+    const customer = await Customer.findOne({ customercodeid: customerCode });
+    if (!customer) {
+      return res.status(404).json({ message: 'Customer not found for the given customer code' });
+    }
+
+    // 2) Get the email from the customer document
+    const email = customer.email;
+    if (!email) {
+      return res.status(404).json({ message: 'No email found for this customer' });
+    }
+
+    // 3) Generate a 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // 4) Store the OTP with timestamp in memory (you can also store it in your DB if you want persistence)
+    otpStore[customerCode] = {
+      otp,
+      timestamp: Date.now()
+    };
+
+    // 5) Prepare email options
+    let mailOptions = {
+      from: 'webadmin@skanray-access.com',
+      to: email,
+      subject: 'Your OTP Code',
+      text: `Your OTP code is ${otp}`
+    };
+
+    // 6) Send the email using nodemailer
+    await transporter.sendMail(mailOptions);
+
+    return res.json({ message: 'OTP sent successfully to ' + email });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
 });
 
 router.post('/otp/verify', async (req, res) => {
-    try {
-        // Expect pmData (PM details) and checklistData in the payload
-        const { customerCode, otp, pmData, checklistData } = req.body;
-        if (!customerCode || !otp) {
-            return res.status(400).json({ message: 'Customer code and OTP are required' });
-        }
+  try {
+    // Expect pmData (PM details) and checklistData in the payload
+    const { customerCode, otp, pmData, checklistData } = req.body;
+    if (!customerCode || !otp) {
+      return res.status(400).json({ message: 'Customer code and OTP are required' });
+    }
 
-        // Check if we have an OTP in memory for this customer code
-        const record = otpStore[customerCode];
-        if (!record) {
-            return res.status(400).json({ message: 'OTP not requested for this customer' });
-        }
+    // Check if we have an OTP in memory for this customer code
+    const record = otpStore[customerCode];
+    if (!record) {
+      return res.status(400).json({ message: 'OTP not requested for this customer' });
+    }
 
-        // Compare the OTP
-        if (record.otp !== otp) {
-            return res.status(400).json({ message: 'Invalid OTP' });
-        }
+    // Compare the OTP
+    if (record.otp !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
 
-        // OTP verified; remove it from the store.
-        delete otpStore[customerCode];
+    // OTP verified; remove it from the store.
+    delete otpStore[customerCode];
 
-        // Fetch full customer details using customerCode from the Customer schema
-        const customer = await Customer.findOne({ customercodeid: customerCode });
-        if (!customer || !customer.email) {
-            return res.status(404).json({ message: 'Customer or customer email not found' });
-        }
+    // Fetch full customer details using customerCode from the Customer schema
+    const customer = await Customer.findOne({ customercodeid: customerCode });
+    if (!customer || !customer.email) {
+      return res.status(404).json({ message: 'Customer or customer email not found' });
+    }
 
-        // Build Service Report HTML Template
-        const serviceReportHtml = `
+    // Build Service Report HTML Template
+    const serviceReportHtml = `
           <!DOCTYPE html>
           <html>
              <head>
@@ -587,10 +587,10 @@ router.post('/otp/verify', async (req, res) => {
           </html>
        `;
 
-        // Build Installation Checklist HTML Template
-        // First, build dynamic checklist rows
-        const checklistRows = (checklistData && checklistData.length) ?
-            checklistData.map((item, index) => `
+    // Build Installation Checklist HTML Template
+    // First, build dynamic checklist rows
+    const checklistRows = (checklistData && checklistData.length) ?
+      checklistData.map((item, index) => `
              <tr>
                 <td style="width: 10%; border: 1px solid black">${index + 1}</td>
                 <td style="width: 40%; border: 1px solid black">${item.description || ''}</td>
@@ -598,11 +598,11 @@ router.post('/otp/verify', async (req, res) => {
                 <td style="width: 25%; border: 1px solid black">${item.remarks || ''}</td>
              </tr>
           `).join('') :
-            `<tr>
+      `<tr>
              <td colspan="4" style="text-align: center; border: 1px solid black;">No checklist data available</td>
           </tr>`;
 
-        const checklistHtml = `
+    const checklistHtml = `
           <!DOCTYPE html>
           <html>
             <head>
@@ -849,67 +849,106 @@ router.post('/otp/verify', async (req, res) => {
           </html>
        `;
 
-        // Use Puppeteer to generate PDFs for both templates
-        const browser = await puppeteer.launch();
 
-        // Generate Service Report PDF
-        const reportPage = await browser.newPage();
-        await reportPage.setContent(serviceReportHtml, { waitUntil: 'networkidle0' });
-        const serviceReportPdfBuffer = await reportPage.pdf({ format: 'A4' });
+    const pdfOptions = {
+      format: 'A4',
+      // Include childProcessOptions within pdfOptions
+      childProcessOptions: {
+        env: {
+          OPENSSL_CONF: '/dev/null', // Bypassing OpenSSL configuration issues
+        },
+      },
+    };
+    pdf.create(serviceReportHtml, pdfOptions).toBuffer((err, serviceReportPdfBuffer) => {
+      if (err) {
+        console.error('Error generating Service Report PDF:', err);
+        return res.status(500).json({
+          message: 'Failed to create Service Report PDF',
+          error: err.message
+        });
+      }
 
-        // Generate Installation Checklist PDF
-        const checklistPage = await browser.newPage();
-        await checklistPage.setContent(checklistHtml, { waitUntil: 'networkidle0' });
-        const checklistPdfBuffer = await checklistPage.pdf({ format: 'A4' });
+      // Create "Installation Checklist" PDF buffer
+      pdf.create(checklistHtml, pdfOptions).toBuffer((err2, checklistPdfBuffer) => {
+        if (err2) {
+          console.error('Error generating Checklist PDF:', err2);
+          return res.status(500).json({
+            message: 'Failed to create Checklist PDF',
+            error: err2.message,
+          });
+        }
+        // =======================
+        // (3) SEND EMAILS WITH ATTACHMENTS
+        // =======================
+        const cicEmail = 'mrshivamtiwari2025@gmail.com'; // Example
+        const customerEmail = customer.email;
 
-        await browser.close();
-
-        // Define email recipients
-        const cicEmail = 'mrshivamtiwari2025@gmail.com'; // CIC receives both PDFs
-        const customerEmail = customer.email;              // Customer receives only the Service Report
-
-        // Email to CIC with both attachments
-        let mailOptionsCIC = {
-            from: 'webadmin@skanray-access.com',
-            to: cicEmail,
-            subject: 'Installation Checklist and Service Report',
-            text: 'Please find attached the installation checklist and service report.',
-            attachments: [
-                {
-                    filename: 'ServiceReport.pdf',
-                    content: serviceReportPdfBuffer,
-                    contentType: 'application/pdf'
-                },
-                {
-                    filename: 'InstallationChecklist.pdf',
-                    content: checklistPdfBuffer,
-                    contentType: 'application/pdf'
-                }
-            ]
+        // 3a) Email to CIC with BOTH PDFs attached
+        const mailOptionsCIC = {
+          from: 'webadmin@skanray-access.com',
+          to: cicEmail,
+          subject: 'Installation Checklist and Service Report',
+          text: 'Please find attached the installation checklist and service report.',
+          attachments: [
+            {
+              filename: 'ServiceReport.pdf',
+              content: serviceReportPdfBuffer,
+              contentType: 'application/pdf'
+            },
+            {
+              filename: 'InstallationChecklist.pdf',
+              content: checklistPdfBuffer,
+              contentType: 'application/pdf'
+            }
+          ]
         };
 
-        // Email to Customer with only the Service Report attachment
-        let mailOptionsCustomer = {
-            from: 'webadmin@skanray-access.com',
-            to: customerEmail,
-            subject: 'Service Report',
-            text: 'Please find attached the service report.',
-            attachments: [
-                {
-                    filename: 'ServiceReport.pdf',
-                    content: serviceReportPdfBuffer,
-                    contentType: 'application/pdf'
-                }
-            ]
+        // 3b) Email to Customer with ONLY the Service Report
+        const mailOptionsCustomer = {
+          from: 'webadmin@skanray-access.com',
+          to: customerEmail,
+          subject: 'Service Report',
+          text: 'Please find attached the service report.',
+          attachments: [
+            {
+              filename: 'ServiceReport.pdf',
+              content: serviceReportPdfBuffer,
+              contentType: 'application/pdf'
+            }
+          ]
         };
 
-        await transporter.sendMail(mailOptionsCIC);
-        await transporter.sendMail(mailOptionsCustomer);
+        // Send email to CIC
+        transporter.sendMail(mailOptionsCIC, (emailErrCIC, infoCIC) => {
+          if (emailErrCIC) {
+            console.error('Error sending email to CIC:', emailErrCIC);
+            return res.status(500).json({
+              message: 'Failed to send email to CIC',
+              error: emailErrCIC.message
+            });
+          }
 
-        return res.json({ message: 'Report and checklist generated and emailed successfully' });
-    } catch (err) {
-        return res.status(500).json({ message: err.message });
-    }
+          // Then send email to Customer
+          transporter.sendMail(mailOptionsCustomer, (emailErrCustomer, infoCustomer) => {
+            if (emailErrCustomer) {
+              console.error('Error sending email to Customer:', emailErrCustomer);
+              return res.status(500).json({
+                message: 'Failed to send email to Customer',
+                error: emailErrCustomer.message
+              });
+            }
+
+            // Finally, respond with success if both emails are sent
+            return res.json({
+              message: 'Report and checklist generated and emailed successfully'
+            });
+          });
+        });
+      });
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
 });
 
 
