@@ -4,7 +4,9 @@ const PendingComplaints = require('../../Model/UploadSchema/PendingCompliantsSch
 const nodemailer = require('nodemailer');
 const Equipment = require('../../Model/MasterSchema/EquipmentSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
+const pdf = require("html-pdf");
 let otpStore = {};
+
 // Middleware to get a PendingComplaint by ID
 async function getPendingComplaintById(req, res, next) {
     let pendingComplaint;
@@ -566,68 +568,217 @@ router.post("/sendOtpEmail", async (req, res) => {
         });
     }
 });
-router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
+// (A) Function that generates only the "Incident Reporting Form" HTML
+function generateIncidentReportHTML(injuryDetails = {}) {
+    const {
+      deviceUsers = {},
+      deviceUserRemarks = "",
+      incidentDuringProcedure = "", // "yes" or "no"
+      exposureProtocol = {},
+      outcomeAttributed = "",
+      description = "",
+    } = injuryDetails;
+  
+    // (1) Device User / Affected Person
+    // Show only the ones that are true
+    const deviceUserList = [];
+    if (deviceUsers.healthcareProfessional) deviceUserList.push("Healthcare Professional");
+    if (deviceUsers.patient) deviceUserList.push("Patient");
+    if (deviceUsers.unauthorizedUser) deviceUserList.push("Unauthorized User");
+    if (deviceUsers.operator) deviceUserList.push("Operator");
+    if (deviceUsers.serviceEngineer) deviceUserList.push("Service Engineer");
+    if (deviceUsers.none) deviceUserList.push("None");
+  
+    const deviceUsersHTML = deviceUserList
+      .map((user) => `<li>${user}</li>`)
+      .join("");
+  
+    // (3) Exposure Protocol
+    const exposureItems = [];
+    if (exposureProtocol.kv) exposureItems.push("kV");
+    if (exposureProtocol.maMas) exposureItems.push("mA/mAs");
+    if (exposureProtocol.distance) exposureItems.push("Distance from X-Ray Source");
+    if (exposureProtocol.time) exposureItems.push("Time");
+  
+    const exposureHTML = exposureItems
+      .map((item) => `<li>${item}</li>`)
+      .join("");
+  
+    // (2) Did incident occur during procedure?
+    // Instead of radio buttons, just show bullet "Yes" or "No".
+    const incidentDuringProcedureHTML = `
+      <ul style="list-style-type: disc; padding-left: 20px;">
+        <li>${incidentDuringProcedure === "yes" ? "Yes" : "No"}</li>
+      </ul>
+    `;
+  
+    // Build the "Incident Reporting Form" HTML (for PDF)
+    return `
+      <div
+        id="pdf-content"
+        class="report-container"
+        style="padding: 20px; margin: 20px; border: 1px solid red"
+      >
+        <!-- Header Section -->
+        <table>
+          <tr>
+            <td style="width: 15%; text-align: center">
+              <div>
+                <img
+                  src="https://skanray.com/wp-content/uploads/2024/07/Skanray-logo.png"
+                  alt="Company Logo"
+                  style="height: 100px; margin: 5px"
+                />
+              </div>
+            </td>
+            <td style="width: 85%; text-align: left; padding: 10px">
+              <strong style="font-size: 2em">Incident Reporting Form</strong>
+            </td>
+          </tr>
+        </table>
+  
+        <table style="margin-bottom: 20px">
+          <tr>
+            <td style="width: 50%">Format#F3211</td>
+            <td style="text-align: start">Rev#1.0</td>
+          </tr>
+        </table>
+  
+        <!-- Main Form Section -->
+        <table style="width: 100%; border: 1px solid #000; border-collapse: collapse;">
+          <!-- (1) Device User / Affected person -->
+          <tr>
+            <td colspan="2" style="padding: 8px; border: 1px solid #000;">
+              <strong>1) Device User / Affected person</strong>
+              <p style="margin: 5px 0">
+                Indicate the User of the device at the time of the event, 'None'
+                means that the problem is not related to type (Multiple selection)
+                <br />
+                Remarks for 'limited char': ${deviceUserRemarks || "N/A"}
+              </p>
+              <ul
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(3, 1fr);
+                  gap: 10px;
+                  padding: 10px;
+                  list-style-type: disc;
+                "
+              >
+                ${
+                  deviceUsersHTML ||
+                  "<li style='color: #999;'>No device user was marked as true</li>"
+                }
+              </ul>
+            </td>
+          </tr>
+  
+          <!-- (2) Did incident occur during procedure? -->
+          <tr>
+            <td style="width: 50%; vertical-align: top; padding: 8px; border: 1px solid #000;">
+              <strong>2) Did incident occur during procedure?</strong>
+              ${incidentDuringProcedureHTML}
+            </td>
+  
+            <!-- (3) Exposure Protocol -->
+            <td style="width: 50%; vertical-align: top; padding: 8px; border: 1px solid #000;">
+              <strong>3) Provide user/equipment exposure protocol</strong>
+              <span style="display: block; font-size: 90%;">
+                (Need to be added for CG products)
+              </span>
+              <ul
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(2, 1fr);
+                  gap: 10px;
+                  padding: 10px;
+                  list-style-type: disc;
+                "
+              >
+                ${
+                  exposureHTML ||
+                  "<li style='color: #999;'>No exposure protocol selected</li>"
+                }
+              </ul>
+            </td>
+          </tr>
+  
+          <!-- (4) Outcome Attributed to Event -->
+          <tr>
+            <td colspan="2" style="padding: 8px; border: 1px solid #000;">
+              <strong>4) Outcome Attributed to Event</strong>
+              <p style="margin: 5px 0; font-size: 90%;">
+                (Red coloured communication sent to Factory team after SFR closer
+                and also for engraving with the OTP - this information remains relevant)
+              </p>
+  
+              <!-- Just show whatever was chosen -->
+              <ul style="padding: 10px; list-style-type: none;">
+                <li>➡ ${outcomeAttributed || "N/A"}</li>
+              </ul>
+  
+              <!-- Description (Required) -->
+              <div style="margin-top: 10px">
+                <label style="display: block; margin-bottom: 5px">
+                  <strong>Description (Required):</strong>
+                </label>
+                <div
+                  name="description"
+                  style="
+                    width: 100%;
+                    min-height: 100px;
+                    background: rgb(227, 226, 226);
+                    border-radius: 3px;
+                    padding: 5px;
+                  "
+                >${description || ""}</div>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+  }
+  
+  // (B) Your POST route:
+  router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
     try {
-      // The frontend must pass the same customerEmail + the OTP
       const {
         customerEmail,
         otp,
-        // All other fields needed for the final email design:
         complaintNumber,
         notificationDate,
         serialNumber,
-        city,
-        productCode,
-        problemReported,
-        description,
-        actionTaken,
-        productGroup,
-        productType,
-        problemName,
         reportedProblem,
+        actionTaken,
         instructionToCustomer,
-        sparesReplaced, // This is now an array of objects
-        serviceEngineerName,
-        voltageLN_RY,
-        voltageLG_YB,
-        voltageNG_BR,
-        injuryDetails,
-        customerDetails,
+        sparesReplaced,
         serviceEngineer,
-        // ... add any other fields you need from the screenshot
+        // The injuryDetails object for the PDF
+        injuryDetails,
       } = req.body;
   
-      // Check if we have an OTP stored for this email
+      // === 1) Verify OTP logic (same as your code) ===
       const otpData = otpStore[customerEmail];
       if (!otpData) {
         return res
           .status(400)
           .json({ message: "No OTP found for this customer email." });
       }
-  
-      // Check if OTP is expired
       if (Date.now() > otpData.expiresAt) {
-        // Cleanup expired OTP
         delete otpStore[customerEmail];
         return res
           .status(400)
           .json({ message: "OTP has expired. Please request a new one." });
       }
-  
-      // Check if OTP matches
       if (otpData.otp !== otp) {
         return res.status(400).json({ message: "Invalid OTP." });
       }
-  
-      // If OTP is valid and not expired, remove from store
       delete otpStore[customerEmail];
   
-      // Now send the final email with the design
-      // We'll build an HTML email. Adjust as needed to match your exact design.
-  
+      // === 2) Build the spares replaced table for the email body ===
       let sparesHTML = "";
       if (Array.isArray(sparesReplaced) && sparesReplaced.length > 0) {
-        // Build a table row for each spare
         const rowsHTML = sparesReplaced
           .map((item, index) => {
             return `
@@ -656,10 +807,14 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         `;
       }
   
-      const finalEmailHTML = `
+      // === 3) Build the "Incident Reporting Form" HTML for PDF only ===
+      const incidentReportHTML = generateIncidentReportHTML(injuryDetails);
+  
+      // === 4) Build the *email body* (do NOT include the incident form) ===
+      const emailBodyHTML = `
         <div style="font-family: Arial, sans-serif; margin: 10px;">
           <p><strong>Kindly Close,</strong></p>
-          <p>Dear CIC, Notification as below</p>
+          <p>Dear CIC, Notification as below:</p>
           <table style="border-collapse: collapse;">
             <tr>
               <td style="padding: 4px;"><strong>Notification No:</strong></td>
@@ -672,10 +827,6 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
             <tr>
               <td style="padding: 4px;"><strong>Serial No:</strong></td>
               <td style="padding: 4px;">${serialNumber || "N/A"}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px;"><strong>City:</strong></td>
-              <td style="padding: 4px;">${customerDetails?.city || "N/A"}</td>
             </tr>
             <tr>
               <td style="padding: 4px;"><strong>Problem Reported:</strong></td>
@@ -691,47 +842,84 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
             </tr>
           </table>
           <br/>
-  
+          
           ${sparesHTML}
   
-          <p><strong>Service Engineer Name:</strong> ${
-            serviceEngineer?.firstName && serviceEngineer?.lastName
-              ? `${serviceEngineer.firstName} ${serviceEngineer.lastName}`
-              : "N/A"
-          }</p>
+          <p><strong>Service Engineer Name:</strong>
+            ${
+              serviceEngineer?.firstName && serviceEngineer?.lastName
+                ? `${serviceEngineer.firstName} ${serviceEngineer.lastName}`
+                : "N/A"
+            }
+          </p>
           <p><strong>Service Engineer Phone:</strong> ${
             serviceEngineer?.mobileNumber || "N/A"
           }</p>
           <p><strong>Service Engineer Email:</strong> ${
             serviceEngineer?.email || "N/A"
           }</p>
+  
+          <p>The <strong>Incident Reporting Form</strong> is attached below as a PDF report.</p>
+  
           <p>Please consider the Environment before printing this e-mail.</p>
         </div>
       `;
   
-      // Configure nodemailer
-      const transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-          user: "webadmin@skanray-access.com",
-          pass: "rdzegwmzirvbjcpm", // example password/app password
+      // === 5) Generate a PDF from incidentReportHTML ===
+      const pdfOptions = {
+        format: "A4",
+        border: {
+          top: "10px",
+          right: "10px",
+          bottom: "10px",
+          left: "10px",
         },
-      });
-  
-      // Set up mail options (send to whomever you need)
-      const mailOptions = {
-        from: "webadmin@skanray-access.com",
-        // Send to both addresses (change or remove as per your requirement)
-        to: [customerEmail, "mrshivamtiwari2025@gmail.com"],
-        subject: "Final Complaint Details",
-        html: finalEmailHTML,
       };
   
-      await transporter.sendMail(mailOptions);
+      pdf.create(incidentReportHTML, pdfOptions).toBuffer(async (err, pdfBuffer) => {
+        if (err) {
+          console.error("Error generating PDF:", err);
+          return res
+            .status(500)
+            .json({ message: "Failed to generate PDF", error: err.message });
+        }
   
-      return res.status(200).json({
-        message: "OTP verified and final email sent successfully!",
-        finalData: req.body,
+        try {
+          // === 6) Send via Nodemailer with the PDF as an attachment ===
+          const transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+              user: "webadmin@skanray-access.com",
+              pass: "rdzegwmzirvbjcpm",
+            },
+          });
+  
+          const mailOptions = {
+            from: "webadmin@skanray-access.com",
+            to: [customerEmail, "mrshivamtiwari2025@gmail.com"], // or whichever recipients
+            subject: "Final Complaint Details with Incident Report",
+            html: emailBodyHTML, // Email body (no incident form)
+            attachments: [
+              {
+                filename: "IncidentReportingForm.pdf",
+                content: pdfBuffer,
+              },
+            ],
+          };
+  
+          await transporter.sendMail(mailOptions);
+  
+          return res.status(200).json({
+            message: "OTP verified, email sent successfully with PDF attached!",
+            finalData: req.body,
+          });
+        } catch (emailErr) {
+          console.error("Error sending email:", emailErr);
+          return res.status(500).json({
+            message: "Error sending final email",
+            error: emailErr.message,
+          });
+        }
       });
     } catch (error) {
       console.error("Error verifying OTP and sending final email:", error);
@@ -742,4 +930,5 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
     }
   });
   
+
 module.exports = router;
