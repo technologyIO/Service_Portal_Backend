@@ -52,6 +52,16 @@ router.get('/dealer', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+router.get('/alldealer', async (req, res) => {
+    try {
+        const dealers = await Dealer.find();
+        res.json({
+            dealers
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 // GET a dealer by ID
 router.get('/dealer/:id', getDealerById, (req, res) => {

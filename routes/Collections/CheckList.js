@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const CheckList = require('../../Model/CollectionSchema/ChecklistSchema');
+const Product = require('../../Model/MasterSchema/ProductSchema');
 
 // Middleware to get checklist by ID
 async function getChecklistById(req, res, next) {
@@ -31,7 +32,46 @@ async function checkDuplicate(req, res, next) {
     next();
 }
 
+
+router.get('/checklistbymaterial/:materialCode', async (req, res) => {
+    try {
+        const materialCode = req.params.materialCode;
+
+        // Find product where partnoid matches the provided material code
+        const product = await Product.findOne({ partnoid: materialCode });
+        if (!product) {
+            return res.status(404).json({ message: 'Product not found' });
+        }
+
+        // Extract the product group from the found product
+        const productGroup = product.productgroup;
+
+        // Find all checklists where prodGroup matches the product group
+        const checklists = await CheckList.find({ prodGroup: productGroup });
+
+        // Return the product group and the matching checklists
+        res.status(200).json({ productGroup, checklists });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+
 // GET all checklists
+router.get('/checklistall', async (req, res) => {
+    try {
+
+
+        const checklists = await CheckList.find(); // Fetch checklists for the current page
+
+
+        res.json({
+            checklists
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message }); // Handle error and return JSON response with status 500 (Internal Server Error)
+    }
+});
 router.get('/checklist', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1; // Current page number, defaulting to 1
@@ -132,7 +172,7 @@ router.get('/searchchecklist', async (req, res) => {
         }
 
         const query = {
-            $or: [ 
+            $or: [
                 { checklisttype: { $regex: q, $options: 'i' } },
                 { status: { $regex: q, $options: 'i' } },
                 { checkpointtype: { $regex: q, $options: 'i' } },

@@ -60,22 +60,11 @@ router.get('/pendinginstallations/serial/:serialnumber', async (req, res) => {
 
         // WarrantyCode ke liye mtl_grp4 field ka use karke match karein
         const warrantyCode = await WarrantyCode.findOne({ warrantycodeid: pendingInstallation.mtl_grp4 });
-        let warrantyMonths = 0;
-        if (warrantyCode && warrantyCode.months) {
-            warrantyMonths = warrantyCode.months;
-        }
+        const warrantyMonths = warrantyCode?.months || 0;
 
-        // Warranty start date ko pending installation ke createdAt se lein (agar available ho)
-        const warrantyStartDate = pendingInstallation.createdAt || new Date();
-
-        // Warranty end date calculate karne ke liye, start date mein warrantyMonths add kar dein
-        const warrantyEndDate = new Date(warrantyStartDate);
-        warrantyEndDate.setMonth(warrantyEndDate.getMonth() + warrantyMonths);
-
-        // Extra fields add karte hue pending installation object ko convert karein
+        // Pending installation object ko convert karein aur warrantyMonths add karein
         const pendingInstallationObj = pendingInstallation.toObject();
-        pendingInstallationObj.warrantyStartDate = warrantyStartDate;
-        pendingInstallationObj.warrantyEndDate = warrantyEndDate;
+        pendingInstallationObj.warrantyMonths = warrantyMonths;
 
         // Aerb collection se check karein: agar pending installation ka material Aerb ke materialcode se match karta hai,
         // to palnumber field ko show karenge; agar match nahi hota, to ise remove kar denge.

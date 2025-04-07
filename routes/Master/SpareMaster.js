@@ -33,6 +33,27 @@ router.get("/search/:partno", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+// Get paginated SpareMaster data
+router.get("/addsparemaster/paginated", async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1; // Default page = 1
+    const limit = parseInt(req.query.limit) || 10; // Default limit = 10
+    const skip = (page - 1) * limit;
+
+    const spareMasters = await SpareMaster.find().skip(skip).limit(limit);
+    const totalSpareMasters = await SpareMaster.countDocuments();
+    const totalPages = Math.ceil(totalSpareMasters / limit);
+
+    res.status(200).json({
+      spareMasters,
+      totalPages,
+      totalSpareMasters
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 // Create a new SpareMaster
 router.post("/addsparemaster", async (req, res) => {
@@ -78,7 +99,7 @@ router.put("/addsparemaster/:id", async (req, res) => {
 });
 
 // Delete a SpareMaster by ID
-router.delete("/:id", async (req, res) => {
+router.delete("/spare/:id", async (req, res) => {
   try {
     const deletedSpareMaster = await SpareMaster.findByIdAndDelete(req.params.id);
     if (!deletedSpareMaster) return res.status(404).json({ message: "SpareMaster not found" });

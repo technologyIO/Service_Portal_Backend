@@ -116,15 +116,18 @@ router.put('/product/:id', getProductById, checkDuplicatePartNoId, async (req, r
 // DELETE product
 router.delete('/product/:id', async (req, res) => {
     try {
-        const deleteProduct = await Product.deleteOne({ _id: req.params.id })
-        if (deleteProduct.deletedCount === 0) {
-            res.status(404).json({ message: "Product Not Found" })
-        }
-        res.json({ message: 'Deleted Product' });
+      const deleteProduct = await Product.deleteOne({ _id: req.params.id });
+  
+      if (deleteProduct.deletedCount === 0) {
+        return res.status(404).json({ message: "Product Not Found" });
+      }
+  
+      return res.json({ message: 'Deleted Product' });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+      return res.status(500).json({ message: err.message });
     }
-});
+  });
+  
 
 
 router.get('/searchProduct', async (req, res) => {

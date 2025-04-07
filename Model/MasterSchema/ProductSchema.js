@@ -7,7 +7,8 @@ const ProductSchema = new mongoose.Schema({
     },
     partnoid: {
         type: String,
-        required: true
+        required: true,
+        unique: true // Ensure end of support date uniqueness
     },
     product: {
         type: String,
@@ -40,7 +41,7 @@ const ProductSchema = new mongoose.Schema({
     endofsupportdate: {
         type: Date,
         required: true,
-        unique: true // Ensure end of support date uniqueness
+        
     },
     exsupportavlb: {
         type: Boolean,

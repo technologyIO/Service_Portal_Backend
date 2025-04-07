@@ -16,7 +16,10 @@ const CheckPointType = require('./routes/Collections/CheckPointType');
 const User = require('./routes/Master/User');
 const Dealer = require('./routes/Master/Dealer');
 const Equipment = require('./routes/Master/Equipment');
+const formatMasterRoutes = require('./routes/Master/formatMaster');
+const installationChecklistRoutes = require('./routes/Master/InstallationChecklist');
 const SpareMaster = require('./routes/Master/SpareMaster');
+const equipmentChecklistRoutes = require('./routes/Collections/EquipmentChecklist');
 const Product = require('./routes/Master/Product');
 const ReportedProblemSchema = require('./routes/Master/ReportedProblem');
 const WarrantyCode = require('./routes/Master/WarrantyCode');
@@ -29,13 +32,25 @@ const overlayRoutes = require('./routes/Upload/overlays');
 const Hubstocks = require('./routes/Upload/HubStock');
 const Pendinginstallations = require('./routes/Upload/PendingInstallation');
 const Pendingcomplaints = require('./routes/Upload/PendingCompliants');
-const authRoutes = require('./routes/User/authRoutes')
+
 const installationRoutes = require('./routes/PhoneRouts/EquipmentInstallation')
 const cors = require('cors');
 const ComplaintType = require('./routes/Complaints/ComplaintType');
 const ProblemType = require('./routes/Complaints/ProblemType');
 const ProblemName = require('./routes/Complaints/ProblemName');
 const PreventiveMaintenance = require('./routes/Upload/PreventiveMaintenance');
+const EquipmentBulk = require('./BulkUpload/Master/EquipmentBulk');
+const ProductBulk = require('./BulkUpload/Master/ProductBulk');
+const ChecklistBulk = require('./BulkUpload/Master/CheckListBulk');
+const AmcContractBulk = require('./BulkUpload/Upload/AmcContractBulk');
+const DealerStockBulk = require('./BulkUpload/Upload/DealerStockBulk');
+const HubStockBulk = require('./BulkUpload/Upload/HubStockBulk');
+const PendingComplaintsBulk = require('./BulkUpload/Upload/PendingComplaintsBulk');
+const SpareMasterBulk = require('./BulkUpload/Master/SpareMasterBulk');
+
+
+
+
 require('dotenv').config();
 
 const app = express();
@@ -60,7 +75,6 @@ mongoose.connect(process.env.MONGODB_URI, {
 
 // Import routes
 app.use('/api/overlays', overlayRoutes);
-app.use('/api/auth', authRoutes);
 app.use('/collections', Country);
 app.use('/collections', State);
 app.use('/collections', City);
@@ -91,8 +105,26 @@ app.use('/collections', CheckPointType);
 app.use('/installations', installationRoutes)
 app.use('/complaints', ComplaintType)
 app.use('/complaints', ProblemType)
+app.use('/master', formatMasterRoutes)
+
+app.use("/complaints/installationschecklist", installationChecklistRoutes);
 app.use('/complaints', ProblemName)
 app.use('/upload', PreventiveMaintenance)
+app.use('/collections/checklistsave', equipmentChecklistRoutes);
+
+
+// Bulk Upload 
+
+app.use('/bulk/equipment', EquipmentBulk);
+app.use('/bulk/product', ProductBulk);
+app.use('/bulk/checklist', ChecklistBulk);
+app.use('/bulk/amccontract', AmcContractBulk);
+app.use('/bulk/dealerstock', DealerStockBulk);
+app.use('/bulk/hubstock', HubStockBulk);
+app.use('/bulk/pendingcomplaints', PendingComplaintsBulk);
+app.use('/bulk/sparemaster', SpareMasterBulk);
+
+
 // Routes
 app.get('/', (req, res) => {
   res.send('Hello World!');

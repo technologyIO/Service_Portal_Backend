@@ -9,197 +9,299 @@ let otpStore = {};
 
 // Middleware to get a PendingComplaint by ID
 async function getPendingComplaintById(req, res, next) {
-    let pendingComplaint;
-    try {
-        pendingComplaint = await PendingComplaints.findById(req.params.id);
-        if (!pendingComplaint) {
-            return res.status(404).json({ message: 'Pending Complaint not found' });
-        }
-    } catch (err) {
-        return res.status(500).json({ message: err.message });
+  let pendingComplaint;
+  try {
+    pendingComplaint = await PendingComplaints.findById(req.params.id);
+    if (!pendingComplaint) {
+      return res.status(404).json({ message: 'Pending Complaint not found' });
     }
-    res.pendingComplaint = pendingComplaint;
-    next();
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+  res.pendingComplaint = pendingComplaint;
+  next();
 }
 
 // Middleware to check for duplicate notification_complaintid
 async function checkDuplicateComplaintId(req, res, next) {
-    let pendingComplaint;
-    try {
-        pendingComplaint = await PendingComplaints.findOne({
-            notification_complaintid: req.body.notification_complaintid
-        });
-        if (pendingComplaint && pendingComplaint._id.toString() !== req.params.id) {
-            return res.status(400).json({ message: 'Duplicate complaint ID found' });
-        }
-    } catch (err) {
-        return res.status(500).json({ message: err.message });
+  let pendingComplaint;
+  try {
+    pendingComplaint = await PendingComplaints.findOne({
+      notification_complaintid: req.body.notification_complaintid
+    });
+    if (pendingComplaint && pendingComplaint._id.toString() !== req.params.id) {
+      return res.status(400).json({ message: 'Duplicate complaint ID found' });
     }
-    next();
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+  next();
 }
 router.post('/sendComplaintEmail', async (req, res) => {
-    try {
-        // 1. Destructure data coming from the frontend
-        const {
-            serialnumber,
-            notificationtype,
-            productgroup,
-            problemtype,
-            problemname,
-            sparesrequested,
-            breakdown,
-            remark,
-            user // User info included from frontend
-        } = req.body;
+  try {
+    // 1. Destructure data coming from the frontend
+    const {
+      serialnumber,
+      notificationtype,
+      productgroup,
+      problemtype,
+      problemname,
+      sparesrequested,
+      breakdown,
+      remark,
+      user // User info included from frontend
+    } = req.body;
 
-        // 2. Find the equipment data by serial number
-        const equipmentData = await Equipment.findOne({ serialnumber });
-        if (!equipmentData) {
-            return res
-                .status(404)
-                .json({ message: 'No equipment found for the provided serial number.' });
-        }
-
-        // 3. Combine the equipment data with the data from the frontend
-        const combinedData = {
-            complaintType: notificationtype,
-            serialNo: serialnumber,
-            productGroup: productgroup,
-            problemType: problemtype,
-            problemName: problemname,
-            sparesrequested: sparesrequested,
-            breakdown: breakdown,
-            remark: remark,
-
-            // Equipment Data
-            description: equipmentData.materialdescription || '',
-            partno: equipmentData.materialcode || '',
-            customer: equipmentData.currentcustomer || '',
-
-            // User (Service Engineer) Data
-            serviceEngineer: {
-                firstName: user.firstName || 'N/A',
-                lastName: user.lastName || 'N/A',
-                email: user.email || 'N/A',
-                mobilenumber: user.mobilenumber || 'N/A',
-                branch: user.branch || 'N/A'
-            }
-        };
-
-        // 4. Find customer details (hospital name & city) using the customer code from equipmentData
-        const foundCustomer = await Customer.findOne({ customercodeid: combinedData.customer });
-        // Default values if customer is not found
-        let finalHospitalName = 'N/A';
-        let finalCity = 'N/A';
-
-        if (foundCustomer) {
-            finalHospitalName = foundCustomer.hospitalname || 'N/A';
-            finalCity = foundCustomer.city || 'N/A';
-        }
-
-        // 5. Construct the email body including hospital name and city after customer
-        const emailBody =
-            `Dear CIC,
-
-Please create a new complaint as below
-
-Complaint Type : ${combinedData.complaintType}
-Serial No : ${combinedData.serialNo}
-Description : ${combinedData.description}
-ProductGroup : ${combinedData.productGroup}
-ProblemType : ${combinedData.problemType}
-Part No : ${combinedData.partno}
-Customer : ${combinedData.customer}
-Hospital Name : ${finalHospitalName}
-City : ${finalCity}
-ProblemName : ${combinedData.problemName}
-SparesRequested : ${combinedData.sparesrequested}
-Breakdown : ${combinedData.breakdown ? 'Yes' : 'No'}
-Remarks : ${combinedData.remark}
-
-----------------------------------------------------
-Service Engineer Details:
-Name : ${combinedData.serviceEngineer.firstName} ${combinedData.serviceEngineer.lastName}
-Email : ${combinedData.serviceEngineer.email}
-Mobile Number : ${combinedData.serviceEngineer.mobilenumber}
-Branch : ${combinedData.serviceEngineer.branch}
-----------------------------------------------------
-
-Regards,
-Skanray Service Support Team
-
-Please consider the Environment before printing this e-mail.`;
-
-        // 6. Configure nodemailer transporter
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: 'webadmin@skanray-access.com',
-                pass: 'rdzegwmzirvbjcpm'
-            },
-        });
-
-        // 7. Set up mail options
-        const mailOptions = {
-            from: 'webadmin@skanray-access.com',
-            to: 'mrshivamtiwari2025@gmail.com', // Recipient email
-            subject: 'New Complaint',
-            text: emailBody,
-        };
-
-        // 8. Send the email
-        await transporter.sendMail(mailOptions);
-
-        // 9. Send a success response to the frontend
-        return res.status(200).json({
-            message: 'Email sent successfully.',
-            combinedData, // Returning the full data for verification
-        });
-
-    } catch (error) {
-        console.error('Error sending complaint email:', error);
-        return res.status(500).json({
-            message: 'Error sending email',
-            error: error.message
-        });
+    // 2. Find the equipment data by serial number
+    const equipmentData = await Equipment.findOne({ serialnumber });
+    if (!equipmentData) {
+      return res
+        .status(404)
+        .json({ message: 'No equipment found for the provided serial number.' });
     }
+
+    // 3. Combine the equipment data with the data from the frontend
+    const combinedData = {
+      complaintType: notificationtype,
+      serialNo: serialnumber,
+      productGroup: productgroup,
+      problemType: problemtype,
+      problemName: problemname,
+      sparesrequested: sparesrequested,
+      breakdown: breakdown,
+      remark: remark,
+
+      // Equipment Data
+      description: equipmentData.materialdescription || '',
+      partno: equipmentData.materialcode || '',
+      customer: equipmentData.currentcustomer || '',
+
+      // User (Service Engineer) Data
+      serviceEngineer: {
+        firstName: user.firstName || 'N/A',
+        lastName: user.lastName || 'N/A',
+        email: user.email || 'N/A',
+        mobilenumber: user.mobilenumber || 'N/A',
+        branch: user.branch || 'N/A'
+      }
+    };
+
+    // 4. Find customer details (hospital name & city) using the customer code from equipmentData
+    const foundCustomer = await Customer.findOne({ customercodeid: combinedData.customer });
+    // Default values if customer is not found
+    let finalHospitalName = 'N/A';
+    let finalCity = 'N/A';
+    let finalPhone = 'N/A';
+    let finalEmail = 'N/A';
+    let finalpincode = 'N/A';
+
+    if (foundCustomer) {
+      finalHospitalName = foundCustomer.hospitalname || 'N/A';
+      finalCity = foundCustomer.city || 'N/A';
+      finalPhone = foundCustomer.telephone || 'N/A';
+      finalEmail = foundCustomer.email || 'N/A';
+      finalpincode = foundCustomer.postalcode || 'N/A';
+    }
+
+    // 5. Construct the HTML email body with improved design
+    const emailBodyHtml = `
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 0; }
+          .container { width: 80%; margin: 20px auto; border: 1px solid #ccc; padding: 20px; }
+          .header { background-color: #f7f7f7; padding: 10px; text-align: center; }
+          .section { margin-top: 20px; }
+          .section h3 { border-bottom: 2px solid #333; padding-bottom: 5px; }
+          table { width: 100%; border-collapse: collapse; }
+          table th, table td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
+          .footer { margin-top: 20px; font-size: 0.9em; color: #555; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>New Complaint Notification</h2>
+          </div>
+
+          <div class="section">
+            <h3>Complaint Details</h3>
+            <table>
+              <tr>
+                <th>Complaint Type</th>
+                <td>${combinedData.complaintType}</td>
+              </tr>
+              <tr>
+                <th>Serial No</th>
+                <td>${combinedData.serialNo}</td>
+              </tr>
+              <tr>
+                <th>Description</th>
+                <td>${combinedData.description}</td>
+              </tr>
+              <tr>
+                <th>Product Group</th>
+                <td>${combinedData.productGroup}</td>
+              </tr>
+              <tr>
+                <th>Problem Type</th>
+                <td>${combinedData.problemType}</td>
+              </tr>
+              <tr>
+                <th>Part No</th>
+                <td>${combinedData.partno}</td>
+              </tr>
+              <tr>
+                <th>Problem Name</th>
+                <td>${combinedData.problemName}</td>
+              </tr>
+              <tr>
+                <th>Spares Requested</th>
+                <td>${combinedData.sparesrequested}</td>
+              </tr>
+              <tr>
+                <th>Breakdown</th>
+                <td>${combinedData.breakdown ? 'Yes' : 'No'}</td>
+              </tr>
+              <tr>
+                <th>Remarks</th>
+                <td>${combinedData.remark}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="section">
+            <h3>Customer Details</h3>
+            <table>
+              <tr>
+                <th>Customer</th>
+                <td>${combinedData.customer}</td>
+              </tr>
+              <tr>
+                <th>Hospital Name</th>
+                <td>${finalHospitalName}</td>
+              </tr>
+              <tr>
+                <th>City</th>
+                <td>${finalCity}</td>
+              </tr>
+              <tr>
+                <th>Phone</th>
+                <td>${finalPhone}</td>
+              </tr>
+              <tr>
+                <th>Email</th>
+                <td>${finalEmail}</td>
+              </tr>
+              <tr>
+                <th>PinCode</th>
+                <td>${finalpincode}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="section">
+            <h3>Service Engineer Details</h3>
+            <table>
+              <tr>
+                <th>Name</th>
+                <td>${combinedData.serviceEngineer.firstName} ${combinedData.serviceEngineer.lastName}</td>
+              </tr>
+              <tr>
+                <th>Email</th>
+                <td>${combinedData.serviceEngineer.email}</td>
+              </tr>
+              <tr>
+                <th>Mobile Number</th>
+                <td>${combinedData.serviceEngineer.mobilenumber}</td>
+              </tr>
+              <tr>
+                <th>Branch</th>
+                <td>${combinedData.serviceEngineer.branch}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="footer">
+            <p>Regards,<br>Skanray Service Support Team</p>
+            <p>Please consider the Environment before printing this e-mail.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // 6. Configure nodemailer transporter
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: 'webadmin@skanray-access.com',
+        pass: 'rdzegwmzirvbjcpm'
+      },
+    });
+
+    // 7. Set up mail options with the HTML body
+    const mailOptions = {
+      from: 'webadmin@skanray-access.com',
+      to: 'mrshivamtiwari2025@gmail.com', // Recipient email
+      subject: 'New Complaint',
+      html: emailBodyHtml,
+    };
+
+    // 8. Send the email
+    await transporter.sendMail(mailOptions);
+
+    // 9. Send a success response to the frontend
+    return res.status(200).json({
+      message: 'Email sent successfully.',
+      combinedData, // Returning the full data for verification
+    });
+
+  } catch (error) {
+    console.error('Error sending complaint email:', error);
+    return res.status(500).json({
+      message: 'Error sending email',
+      error: error.message
+    });
+  }
 });
 
+
 router.post('/sendUpdatedComplaintEmail', async (req, res) => {
-    try {
-        // 1. Destructure fields from the request body
-        const {
-            notification_no,
-            serial_no,
-            description,
-            part_no,
-            // 'customer' here is the customer code we receive from frontend
-            // which we'll use to look up the actual hospital name & city
-            customer,
-            name,
-            city,
-            serviceEngineer,
-            spareRequested,
-            remarks,
-            serviceEngineerMobile,
-            serviceEngineerEmail,
-            branchName
-        } = req.body;
+  try {
+    // 1. Destructure fields from the request body
+    const {
+      notification_no,
+      serial_no,
+      description,
+      part_no,
+      // 'customer' here is the customer code we receive from frontend
+      // which we'll use to look up the actual hospital name & city
+      customer,
+      name,
+      city,
+      serviceEngineer,
+      spareRequested,
+      remarks,
+      serviceEngineerMobile,
+      serviceEngineerEmail,
+      branchName
+    } = req.body;
 
-        // 2. Look up the customer in the DB by its code
-        const foundCustomer = await Customer.findOne({ customercodeid: customer });
+    // 2. Look up the customer in the DB by its code
+    const foundCustomer = await Customer.findOne({ customercodeid: customer });
 
-        // 3. If found, override 'name' and 'city' with DB values
-        let finalHospitalName = name;
-        let finalCity = city;
+    // 3. If found, override 'name' and 'city' with DB values
+    let finalHospitalName = name;
+    let finalCity = city;
 
-        if (foundCustomer) {
-            finalHospitalName = foundCustomer.hospitalname || name;
-            finalCity = foundCustomer.city || city;
-        }
+    if (foundCustomer) {
+      finalHospitalName = foundCustomer.hospitalname || name;
+      finalCity = foundCustomer.city || city;
+    }
 
-        // 4. Build the HTML email
-        const emailHTML = `
+    // 4. Build the HTML email
+    const emailHTML = `
             <div style="font-family: Arial, sans-serif; margin: 20px;">
               <p>Dear CIC,</p>
               <p>Please Update the notification int as below</p>
@@ -263,357 +365,357 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
             </div>
         `;
 
-        // 5. Configure nodemailer transporter
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: 'webadmin@skanray-access.com',
-                pass: 'rdzegwmzirvbjcpm'
-            },
-        });
+    // 5. Configure nodemailer transporter
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: 'webadmin@skanray-access.com',
+        pass: 'rdzegwmzirvbjcpm'
+      },
+    });
 
-        // 6. Set up mail options
-        const mailOptions = {
-            from: 'webadmin@skanray-access.com',
-            to: 'mrshivamtiwari2025@gmail.com', // Adjust as needed
-            subject: 'Updated Complaint',
-            html: emailHTML
-        };
+    // 6. Set up mail options
+    const mailOptions = {
+      from: 'webadmin@skanray-access.com',
+      to: 'mrshivamtiwari2025@gmail.com', // Adjust as needed
+      subject: 'Updated Complaint',
+      html: emailHTML
+    };
 
-        // 7. Send the email
-        await transporter.sendMail(mailOptions);
+    // 7. Send the email
+    await transporter.sendMail(mailOptions);
 
-        // 8. Return success response
-        return res.status(200).json({
-            message: 'Updated complaint email sent successfully.',
-            dataSent: req.body,
-        });
+    // 8. Return success response
+    return res.status(200).json({
+      message: 'Updated complaint email sent successfully.',
+      dataSent: req.body,
+    });
 
-    } catch (error) {
-        console.error('Error sending updated complaint email:', error);
-        return res.status(500).json({
-            message: 'Error sending updated complaint email',
-            error: error.message
-        });
-    }
+  } catch (error) {
+    console.error('Error sending updated complaint email:', error);
+    return res.status(500).json({
+      message: 'Error sending updated complaint email',
+      error: error.message
+    });
+  }
 });
 // PATCH request to update `requesteupdate` field to true
 router.patch('/pendingcomplaints/:id/requestupdate', getPendingComplaintById, async (req, res) => {
-    // Set requesteupdate to true
-    res.pendingComplaint.requesteupdate = true;
+  // Set requesteupdate to true
+  res.pendingComplaint.requesteupdate = true;
 
-    // Update status if provided in the request body
-    if (req.body.status != null) {
-        res.pendingComplaint.status = req.body.status;
-    }
+  // Update status if provided in the request body
+  if (req.body.status != null) {
+    res.pendingComplaint.status = req.body.status;
+  }
 
-    // Update remark if provided in the request body
-    if (req.body.remark != null) {
-        res.pendingComplaint.remark = req.body.remark;
-    }
+  // Update remark if provided in the request body
+  if (req.body.remark != null) {
+    res.pendingComplaint.remark = req.body.remark;
+  }
 
-    // Update sparerequest if provided in the request body
-    if (req.body.sparerequest != null) {
-        res.pendingComplaint.sparerequest = req.body.sparerequest;
-    }
+  // Update sparerequest if provided in the request body
+  if (req.body.sparerequest != null) {
+    res.pendingComplaint.sparerequest = req.body.sparerequest;
+  }
 
-    // Update modifiedAt timestamp
-    res.pendingComplaint.modifiedAt = Date.now();
+  // Update modifiedAt timestamp
+  res.pendingComplaint.modifiedAt = Date.now();
 
-    try {
-        const updatedPendingComplaint = await res.pendingComplaint.save();
-        res.json(updatedPendingComplaint);
-    } catch (err) {
-        res.status(400).json({ message: err.message });
-    }
+  try {
+    const updatedPendingComplaint = await res.pendingComplaint.save();
+    res.json(updatedPendingComplaint);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
 });
 
 // GET all PendingComplaints
 router.get('/pendingcomplaints', async (req, res) => {
-    try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
 
-        const skip = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
-        const pendingComplaints = await PendingComplaints.find().skip(skip).limit(limit);
-        const totalPendingComplaints = await PendingComplaints.countDocuments();
-        const totalPages = Math.ceil(totalPendingComplaints / limit);
+    const pendingComplaints = await PendingComplaints.find().skip(skip).limit(limit);
+    const totalPendingComplaints = await PendingComplaints.countDocuments();
+    const totalPages = Math.ceil(totalPendingComplaints / limit);
 
-        res.json({
-            pendingComplaints,
-            totalPages,
-            totalPendingComplaints
-        });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
+    res.json({
+      pendingComplaints,
+      totalPages,
+      totalPendingComplaints
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 
 // GET PendingComplaint by ID
 router.get('/pendingcomplaints/:id', getPendingComplaintById, (req, res) => {
-    res.json(res.pendingComplaint);
+  res.json(res.pendingComplaint);
 });
 
 // CREATE a new PendingComplaint
 router.post('/pendingcomplaints', async (req, res) => {
-    const pendingComplaint = new PendingComplaints({
-        notificationtype: req.body.notificationtype,
-        notification_complaintid: req.body.notification_complaintid,
-        notificationdate: req.body.notificationdate,
-        userstatus: req.body.userstatus,
-        materialdescription: req.body.materialdescription,
-        serialnumber: req.body.serialnumber,
-        devicedata: req.body.devicedata,
-        salesoffice: req.body.salesoffice,
-        materialcode: req.body.materialcode,
-        reportedproblem: req.body.reportedproblem,
-        dealercode: req.body.dealercode,
-        customercode: req.body.customercode,
-        partnerresp: req.body.partnerresp,
-        breakdown: req.body.breakdown,
-        status: req.body.status,
-        productgroup: req.body.productgroup,
-        problemtype: req.body.problemtype,
-        problemname: req.body.problemname,
-        sparerequest: req.body.sparerequest,
-        remark: req.body.remark
-    });
-    try {
-        const newPendingComplaint = await pendingComplaint.save();
-        res.status(201).json(newPendingComplaint);
-    } catch (err) {
-        res.status(400).json({ message: err.message });
-    }
+  const pendingComplaint = new PendingComplaints({
+    notificationtype: req.body.notificationtype,
+    notification_complaintid: req.body.notification_complaintid,
+    notificationdate: req.body.notificationdate,
+    userstatus: req.body.userstatus,
+    materialdescription: req.body.materialdescription,
+    serialnumber: req.body.serialnumber,
+    devicedata: req.body.devicedata,
+    salesoffice: req.body.salesoffice,
+    materialcode: req.body.materialcode,
+    reportedproblem: req.body.reportedproblem,
+    dealercode: req.body.dealercode,
+    customercode: req.body.customercode,
+    partnerresp: req.body.partnerresp,
+    breakdown: req.body.breakdown,
+    status: req.body.status,
+    productgroup: req.body.productgroup,
+    problemtype: req.body.problemtype,
+    problemname: req.body.problemname,
+    sparerequest: req.body.sparerequest,
+    remark: req.body.remark
+  });
+  try {
+    const newPendingComplaint = await pendingComplaint.save();
+    res.status(201).json(newPendingComplaint);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
 });
 
 // UPDATE a PendingComplaint
 router.put(
-    "/pendingcomplaints/:id",
-    getPendingComplaintById,
-    async (req, res) => {
-        // Update existing fields if they exist in req.body:
-        if (req.body.notificationtype != null) {
-            res.pendingComplaint.notificationtype = req.body.notificationtype;
-        }
-        if (req.body.notification_complaintid != null) {
-            res.pendingComplaint.notification_complaintid = req.body.notification_complaintid;
-        }
-        if (req.body.notificationdate != null) {
-            res.pendingComplaint.notificationdate = req.body.notificationdate;
-        }
-        if (req.body.userstatus != null) {
-            res.pendingComplaint.userstatus = req.body.userstatus;
-        }
-        if (req.body.materialdescription != null) {
-            res.pendingComplaint.materialdescription = req.body.materialdescription;
-        }
-        if (req.body.serialnumber != null) {
-            res.pendingComplaint.serialnumber = req.body.serialnumber;
-        }
-        if (req.body.devicedata != null) {
-            res.pendingComplaint.devicedata = req.body.devicedata;
-        }
-        if (req.body.salesoffice != null) {
-            res.pendingComplaint.salesoffice = req.body.salesoffice;
-        }
-        if (req.body.materialcode != null) {
-            res.pendingComplaint.materialcode = req.body.materialcode;
-        }
-        if (req.body.reportedproblem != null) {
-            res.pendingComplaint.reportedproblem = req.body.reportedproblem;
-        }
-        if (req.body.dealercode != null) {
-            res.pendingComplaint.dealercode = req.body.dealercode;
-        }
-        if (req.body.customercode != null) {
-            res.pendingComplaint.customercode = req.body.customercode;
-        }
-        if (req.body.partnerresp != null) {
-            res.pendingComplaint.partnerresp = req.body.partnerresp;
-        }
-        if (req.body.breakdown != null) {
-            res.pendingComplaint.breakdown = req.body.breakdown;
-        }
-        if (req.body.status != null) {
-            res.pendingComplaint.status = req.body.status;
-        }
-
-        // NEW FIELDS: Spares required, problem type, problem name, remarks, etc.
-        if (req.body.sparerequest != null) {
-            res.pendingComplaint.sparerequest = req.body.sparerequest;
-        }
-        if (req.body.problemtype != null) {
-            res.pendingComplaint.problemtype = req.body.problemtype;
-        }
-        if (req.body.problemname != null) {
-            res.pendingComplaint.problemname = req.body.problemname;
-        }
-        if (req.body.remark != null) {
-            res.pendingComplaint.remark = req.body.remark;
-        }
-        if (req.body.requesteupdate != null) {
-            res.pendingComplaint.requesteupdate = req.body.requesteupdate;
-        }
-
-        // Always update the modification timestamp
-        res.pendingComplaint.modifiedAt = Date.now();
-
-        try {
-            const updatedPendingComplaint = await res.pendingComplaint.save();
-            res.json(updatedPendingComplaint);
-        } catch (err) {
-            res.status(400).json({ message: err.message });
-        }
+  "/pendingcomplaints/:id",
+  getPendingComplaintById,
+  async (req, res) => {
+    // Update existing fields if they exist in req.body:
+    if (req.body.notificationtype != null) {
+      res.pendingComplaint.notificationtype = req.body.notificationtype;
     }
+    if (req.body.notification_complaintid != null) {
+      res.pendingComplaint.notification_complaintid = req.body.notification_complaintid;
+    }
+    if (req.body.notificationdate != null) {
+      res.pendingComplaint.notificationdate = req.body.notificationdate;
+    }
+    if (req.body.userstatus != null) {
+      res.pendingComplaint.userstatus = req.body.userstatus;
+    }
+    if (req.body.materialdescription != null) {
+      res.pendingComplaint.materialdescription = req.body.materialdescription;
+    }
+    if (req.body.serialnumber != null) {
+      res.pendingComplaint.serialnumber = req.body.serialnumber;
+    }
+    if (req.body.devicedata != null) {
+      res.pendingComplaint.devicedata = req.body.devicedata;
+    }
+    if (req.body.salesoffice != null) {
+      res.pendingComplaint.salesoffice = req.body.salesoffice;
+    }
+    if (req.body.materialcode != null) {
+      res.pendingComplaint.materialcode = req.body.materialcode;
+    }
+    if (req.body.reportedproblem != null) {
+      res.pendingComplaint.reportedproblem = req.body.reportedproblem;
+    }
+    if (req.body.dealercode != null) {
+      res.pendingComplaint.dealercode = req.body.dealercode;
+    }
+    if (req.body.customercode != null) {
+      res.pendingComplaint.customercode = req.body.customercode;
+    }
+    if (req.body.partnerresp != null) {
+      res.pendingComplaint.partnerresp = req.body.partnerresp;
+    }
+    if (req.body.breakdown != null) {
+      res.pendingComplaint.breakdown = req.body.breakdown;
+    }
+    if (req.body.status != null) {
+      res.pendingComplaint.status = req.body.status;
+    }
+
+    // NEW FIELDS: Spares required, problem type, problem name, remarks, etc.
+    if (req.body.sparerequest != null) {
+      res.pendingComplaint.sparerequest = req.body.sparerequest;
+    }
+    if (req.body.problemtype != null) {
+      res.pendingComplaint.problemtype = req.body.problemtype;
+    }
+    if (req.body.problemname != null) {
+      res.pendingComplaint.problemname = req.body.problemname;
+    }
+    if (req.body.remark != null) {
+      res.pendingComplaint.remark = req.body.remark;
+    }
+    if (req.body.requesteupdate != null) {
+      res.pendingComplaint.requesteupdate = req.body.requesteupdate;
+    }
+
+    // Always update the modification timestamp
+    res.pendingComplaint.modifiedAt = Date.now();
+
+    try {
+      const updatedPendingComplaint = await res.pendingComplaint.save();
+      res.json(updatedPendingComplaint);
+    } catch (err) {
+      res.status(400).json({ message: err.message });
+    }
+  }
 );
 
 
 // DELETE a PendingComplaint
 router.delete('/pendingcomplaints/:id', getPendingComplaintById, async (req, res) => {
-    try {
-        const deletedPendingComplaint = await PendingComplaints.deleteOne({ _id: req.params.id });
-        if (deletedPendingComplaint.deletedCount === 0) {
-            return res.status(404).json({ message: 'Pending Complaint Not Found' });
-        }
-        res.json({ message: 'Deleted Pending Complaint' });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+  try {
+    const deletedPendingComplaint = await PendingComplaints.deleteOne({ _id: req.params.id });
+    if (deletedPendingComplaint.deletedCount === 0) {
+      return res.status(404).json({ message: 'Pending Complaint Not Found' });
     }
+    res.json({ message: 'Deleted Pending Complaint' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 router.get('/pendinginstallationsearch', async (req, res) => {
-    try {
-        const { q } = req.query;
+  try {
+    const { q } = req.query;
 
-        if (!q) {
-            return res.status(400).json({ message: 'query parameter is required' })
-        }
-
-        const query = {
-            $or: [
-                { notificationtype: { $regex: q, $options: 'i' } },
-                { notification_complaintid: { $regex: q, $options: 'i' } },
-                { materialdescription: { $regex: q, $options: 'i' } },
-                { serialnumber: { $regex: q, $options: 'i' } },
-                { devicedata: { $regex: q, $options: 'i' } },
-                { salesoffice: { $regex: q, $options: 'i' } },
-                { materialcode: { $regex: q, $options: 'i' } },
-                { reportedproblem: { $regex: q, $options: 'i' } },
-                { dealercode: { $regex: q, $options: 'i' } },
-                { customercode: { $regex: q, $options: 'i' } },
-                { partnerresp: { $regex: q, $options: 'i' } },
-            ]
-        }
-        const pendingComplaint = await PendingComplaints.find(query)
-        res.json(pendingComplaint)
-
-    } catch (err) {
-        res.status(500).json({ message: err.message })
+    if (!q) {
+      return res.status(400).json({ message: 'query parameter is required' })
     }
+
+    const query = {
+      $or: [
+        { notificationtype: { $regex: q, $options: 'i' } },
+        { notification_complaintid: { $regex: q, $options: 'i' } },
+        { materialdescription: { $regex: q, $options: 'i' } },
+        { serialnumber: { $regex: q, $options: 'i' } },
+        { devicedata: { $regex: q, $options: 'i' } },
+        { salesoffice: { $regex: q, $options: 'i' } },
+        { materialcode: { $regex: q, $options: 'i' } },
+        { reportedproblem: { $regex: q, $options: 'i' } },
+        { dealercode: { $regex: q, $options: 'i' } },
+        { customercode: { $regex: q, $options: 'i' } },
+        { partnerresp: { $regex: q, $options: 'i' } },
+      ]
+    }
+    const pendingComplaint = await PendingComplaints.find(query)
+    res.json(pendingComplaint)
+
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
 })
 
 
 
 router.post("/sendOtpEmail", async (req, res) => {
-    try {
-        const { customerEmail } = req.body;
+  try {
+    const { customerEmail } = req.body;
 
-        if (!customerEmail) {
-            return res
-                .status(400)
-                .json({ message: "customerEmail is required in the request body." });
-        }
-
-        // Generate a 6-digit OTP
-        const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-
-        // Set an expiration time (e.g. 10 minutes from now)
-        const expiresAt = Date.now() + 10 * 60 * 1000;
-
-        // Store it in memory
-        otpStore[customerEmail] = {
-            otp: generatedOtp,
-            expiresAt,
-        };
-
-        // Send the OTP via email
-        const transporter = nodemailer.createTransport({
-            service: "gmail",
-            auth: {
-                user: "webadmin@skanray-access.com",
-                pass: "rdzegwmzirvbjcpm", // example password/app password
-            },
-        });
-
-        const mailOptions = {
-            from: "webadmin@skanray-access.com",
-            to: customerEmail, // send to the customer's email
-            subject: "Your OTP Code",
-            text: `Dear Customer,\n\nYour OTP is: ${generatedOtp}\n\nThis code will expire in 10 minutes.\n\nRegards,\nSkanray Service Support Team`,
-        };
-
-        await transporter.sendMail(mailOptions);
-
-        return res.status(200).json({
-            message: "OTP sent successfully to customer email.",
-            email: customerEmail,
-        });
-    } catch (error) {
-        console.error("Error sending OTP email:", error);
-        return res.status(500).json({
-            message: "Error sending OTP email",
-            error: error.message,
-        });
+    if (!customerEmail) {
+      return res
+        .status(400)
+        .json({ message: "customerEmail is required in the request body." });
     }
+
+    // Generate a 6-digit OTP
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Set an expiration time (e.g. 10 minutes from now)
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+
+    // Store it in memory
+    otpStore[customerEmail] = {
+      otp: generatedOtp,
+      expiresAt,
+    };
+
+    // Send the OTP via email
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: "webadmin@skanray-access.com",
+        pass: "rdzegwmzirvbjcpm", // example password/app password
+      },
+    });
+
+    const mailOptions = {
+      from: "webadmin@skanray-access.com",
+      to: customerEmail, // send to the customer's email
+      subject: "Your OTP Code",
+      text: `Dear Customer,\n\nYour OTP is: ${generatedOtp}\n\nThis code will expire in 10 minutes.\n\nRegards,\nSkanray Service Support Team`,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    return res.status(200).json({
+      message: "OTP sent successfully to customer email.",
+      email: customerEmail,
+    });
+  } catch (error) {
+    console.error("Error sending OTP email:", error);
+    return res.status(500).json({
+      message: "Error sending OTP email",
+      error: error.message,
+    });
+  }
 });
 // (A) Function that generates only the "Incident Reporting Form" HTML
 function generateIncidentReportHTML(injuryDetails = {}) {
-    const {
-      deviceUsers = {},
-      deviceUserRemarks = "",
-      incidentDuringProcedure = "", // "yes" or "no"
-      exposureProtocol = {},
-      outcomeAttributed = "",
-      description = "",
-    } = injuryDetails;
-  
-    // (1) Device User / Affected Person
-    // Show only the ones that are true
-    const deviceUserList = [];
-    if (deviceUsers.healthcareProfessional) deviceUserList.push("Healthcare Professional");
-    if (deviceUsers.patient) deviceUserList.push("Patient");
-    if (deviceUsers.unauthorizedUser) deviceUserList.push("Unauthorized User");
-    if (deviceUsers.operator) deviceUserList.push("Operator");
-    if (deviceUsers.serviceEngineer) deviceUserList.push("Service Engineer");
-    if (deviceUsers.none) deviceUserList.push("None");
-  
-    const deviceUsersHTML = deviceUserList
-      .map((user) => `<li>${user}</li>`)
-      .join("");
-  
-    // (3) Exposure Protocol
-    const exposureItems = [];
-    if (exposureProtocol.kv) exposureItems.push("kV");
-    if (exposureProtocol.maMas) exposureItems.push("mA/mAs");
-    if (exposureProtocol.distance) exposureItems.push("Distance from X-Ray Source");
-    if (exposureProtocol.time) exposureItems.push("Time");
-  
-    const exposureHTML = exposureItems
-      .map((item) => `<li>${item}</li>`)
-      .join("");
-  
-    // (2) Did incident occur during procedure?
-    // Instead of radio buttons, just show bullet "Yes" or "No".
-    const incidentDuringProcedureHTML = `
+  const {
+    deviceUsers = {},
+    deviceUserRemarks = "",
+    incidentDuringProcedure = "", // "yes" or "no"
+    exposureProtocol = {},
+    outcomeAttributed = "",
+    description = "",
+  } = injuryDetails;
+
+  // (1) Device User / Affected Person
+  // Show only the ones that are true
+  const deviceUserList = [];
+  if (deviceUsers.healthcareProfessional) deviceUserList.push("Healthcare Professional");
+  if (deviceUsers.patient) deviceUserList.push("Patient");
+  if (deviceUsers.unauthorizedUser) deviceUserList.push("Unauthorized User");
+  if (deviceUsers.operator) deviceUserList.push("Operator");
+  if (deviceUsers.serviceEngineer) deviceUserList.push("Service Engineer");
+  if (deviceUsers.none) deviceUserList.push("None");
+
+  const deviceUsersHTML = deviceUserList
+    .map((user) => `<li>${user}</li>`)
+    .join("");
+
+  // (3) Exposure Protocol
+  const exposureItems = [];
+  if (exposureProtocol.kv) exposureItems.push("kV");
+  if (exposureProtocol.maMas) exposureItems.push("mA/mAs");
+  if (exposureProtocol.distance) exposureItems.push("Distance from X-Ray Source");
+  if (exposureProtocol.time) exposureItems.push("Time");
+
+  const exposureHTML = exposureItems
+    .map((item) => `<li>${item}</li>`)
+    .join("");
+
+  // (2) Did incident occur during procedure?
+  // Instead of radio buttons, just show bullet "Yes" or "No".
+  const incidentDuringProcedureHTML = `
       <ul style="list-style-type: disc; padding-left: 20px;">
         <li>${incidentDuringProcedure === "yes" ? "Yes" : "No"}</li>
       </ul>
     `;
-  
-    // Build the "Incident Reporting Form" HTML (for PDF)
-    return `
+
+  // Build the "Incident Reporting Form" HTML (for PDF)
+  return `
       <div
         id="pdf-content"
         class="report-container"
@@ -665,10 +767,9 @@ function generateIncidentReportHTML(injuryDetails = {}) {
                   list-style-type: disc;
                 "
               >
-                ${
-                  deviceUsersHTML ||
-                  "<li style='color: #999;'>No device user was marked as true</li>"
-                }
+                ${deviceUsersHTML ||
+    "<li style='color: #999;'>No device user was marked as true</li>"
+    }
               </ul>
             </td>
           </tr>
@@ -695,10 +796,9 @@ function generateIncidentReportHTML(injuryDetails = {}) {
                   list-style-type: disc;
                 "
               >
-                ${
-                  exposureHTML ||
-                  "<li style='color: #999;'>No exposure protocol selected</li>"
-                }
+                ${exposureHTML ||
+    "<li style='color: #999;'>No exposure protocol selected</li>"
+    }
               </ul>
             </td>
           </tr>
@@ -738,204 +838,512 @@ function generateIncidentReportHTML(injuryDetails = {}) {
         </table>
       </div>
     `;
-  }
-  
-  // (B) Your POST route:
-  router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
-    try {
-      const {
-        customerEmail,
-        otp,
-        complaintNumber,
-        notificationDate,
-        serialNumber,
-        reportedProblem,
-        actionTaken,
-        instructionToCustomer,
-        sparesReplaced,
-        serviceEngineer,
-        // The injuryDetails object for the PDF
-        injuryDetails,
-      } = req.body;
-  
-      // === 1) Verify OTP logic (same as your code) ===
-      const otpData = otpStore[customerEmail];
-      if (!otpData) {
-        return res
-          .status(400)
-          .json({ message: "No OTP found for this customer email." });
-      }
-      if (Date.now() > otpData.expiresAt) {
-        delete otpStore[customerEmail];
-        return res
-          .status(400)
-          .json({ message: "OTP has expired. Please request a new one." });
-      }
-      if (otpData.otp !== otp) {
-        return res.status(400).json({ message: "Invalid OTP." });
-      }
-      delete otpStore[customerEmail];
-  
-      // === 2) Build the spares replaced table for the email body ===
-      let sparesHTML = "";
-      if (Array.isArray(sparesReplaced) && sparesReplaced.length > 0) {
-        const rowsHTML = sparesReplaced
-          .map((item, index) => {
-            return `
-              <tr>
-                <td style="padding: 4px; border: 1px solid #ccc;">${index + 1}</td>
-                <td style="padding: 4px; border: 1px solid #ccc;">${item.PartNumber || ""}</td>
-                <td style="padding: 4px; border: 1px solid #ccc;">${item.Description || ""}</td>
-                <td style="padding: 4px; border: 1px solid #ccc;">${item.remark || ""}</td>
-              </tr>
-            `;
-          })
-          .join("");
-  
-        sparesHTML = `
-          <p><strong>Spares Replaced:</strong></p>
-          <table style="border: 1px solid #ccc; border-collapse: collapse;">
-            <tr>
-              <th style="padding: 4px; border: 1px solid #ccc;">Sl. No</th>
-              <th style="padding: 4px; border: 1px solid #ccc;">Part Number</th>
-              <th style="padding: 4px; border: 1px solid #ccc;">Description</th>
-              <th style="padding: 4px; border: 1px solid #ccc;">Remark</th>
-            </tr>
-            ${rowsHTML}
-          </table>
-          <br/>
-        `;
-      }
-  
-      // === 3) Build the "Incident Reporting Form" HTML for PDF only ===
-      const incidentReportHTML = generateIncidentReportHTML(injuryDetails);
-  
-      // === 4) Build the *email body* (do NOT include the incident form) ===
-      const emailBodyHTML = `
-        <div style="font-family: Arial, sans-serif; margin: 10px;">
-          <p><strong>Kindly Close,</strong></p>
-          <p>Dear CIC, Notification as below:</p>
-          <table style="border-collapse: collapse;">
-            <tr>
-              <td style="padding: 4px;"><strong>Notification No:</strong></td>
-              <td style="padding: 4px;">${complaintNumber || "N/A"}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px;"><strong>Notification Date:</strong></td>
-              <td style="padding: 4px;">${notificationDate || "N/A"}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px;"><strong>Serial No:</strong></td>
-              <td style="padding: 4px;">${serialNumber || "N/A"}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px;"><strong>Problem Reported:</strong></td>
-              <td style="padding: 4px;">${reportedProblem || "N/A"}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px;"><strong>Action Taken:</strong></td>
-              <td style="padding: 4px;">${actionTaken || "N/A"}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px;"><strong>Instruction to Customer:</strong></td>
-              <td style="padding: 4px;">${instructionToCustomer || "N/A"}</td>
-            </tr>
-          </table>
-          <br/>
-          
-          ${sparesHTML}
-  
-          <p><strong>Service Engineer Name:</strong>
-            ${
-              serviceEngineer?.firstName && serviceEngineer?.lastName
-                ? `${serviceEngineer.firstName} ${serviceEngineer.lastName}`
-                : "N/A"
-            }
-          </p>
-          <p><strong>Service Engineer Phone:</strong> ${
-            serviceEngineer?.mobileNumber || "N/A"
-          }</p>
-          <p><strong>Service Engineer Email:</strong> ${
-            serviceEngineer?.email || "N/A"
-          }</p>
-  
-          <p>The <strong>Incident Reporting Form</strong> is attached below as a PDF report.</p>
-  
-          <p>Please consider the Environment before printing this e-mail.</p>
-        </div>
-      `;
-  
-      // === 5) Generate a PDF from incidentReportHTML ===
-      const pdfOptions = {
-        format: "A4",
-        border: {
-          top: "10px",
-          right: "10px",
-          bottom: "10px",
-          left: "10px",
-        },
-      };
-  
-      pdf.create(incidentReportHTML, {
-        format: "A4",
-        childProcessOptions: {
-            env: {
-                OPENSSL_CONF: '/dev/null',  // Bypassing OpenSSL configuration issues
-            },
-        },
-    }).toBuffer(async (err, pdfBuffer) => {
-        if (err) {
-            console.error("Error generating PDF:", err);
-            return res
-                .status(500)
-                .json({ message: "Failed to generate PDF", error: err.message });
-        }
-  
-        try {
-          // === 6) Send via Nodemailer with the PDF as an attachment ===
-          const transporter = nodemailer.createTransport({
-            service: "gmail",
-            auth: {
-              user: "webadmin@skanray-access.com",
-              pass: "rdzegwmzirvbjcpm",
-            },
-          });
-  
-          const mailOptions = {
-            from: "webadmin@skanray-access.com",
-            to: [customerEmail, "mrshivamtiwari2025@gmail.com"], // or whichever recipients
-            subject: "Final Complaint Details with Incident Report",
-            html: emailBodyHTML, // Email body (no incident form)
-            attachments: [
-              {
-                filename: "IncidentReportingForm.pdf",
-                content: pdfBuffer,
-              },
-            ],
-          };
-  
-          await transporter.sendMail(mailOptions);
-  
-          return res.status(200).json({
-            message: "OTP verified, email sent successfully with PDF attached!",
-            finalData: req.body,
-          });
-        } catch (emailErr) {
-          console.error("Error sending email:", emailErr);
-          return res.status(500).json({
-            message: "Error sending final email",
-            error: emailErr.message,
-          });
-        }
-      });
-    } catch (error) {
-      console.error("Error verifying OTP and sending final email:", error);
-      return res.status(500).json({
-        message: "Error verifying OTP or sending final email",
-        error: error.message,
-      });
+}
+
+// (B) Your POST route:
+router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
+  try {
+    const {
+      customerEmail,
+      otp,
+      complaintNumber,
+      notificationDate,
+      serialNumber,
+      reportedProblem,
+      actionTaken,
+      instructionToCustomer,
+      notificationType,
+      voltageLN_RY,
+      voltageLG_YB,
+      voltageNG_BR,
+      sparesReplaced = [],          // Array of replaced parts
+      serviceEngineer,
+      injuryDetails,
+      customerDetails,
+      description,          // e.g. { customerCode, hospitalName, street, city, phone, email }
+      partNumber,                   // complaint's part number
+      partDescription,              // description of the part
+      customerRemarks,              // specific actions required from customer
+      customerAdditionalRemarks,    // additional customer remarks if any
+    } = req.body;
+
+    // 1) Verify OTP
+    const otpData = otpStore[customerEmail];
+    if (!otpData) {
+      return res.status(400).json({ message: "No OTP found for this customer email." });
     }
-  });
-  
+    if (Date.now() > otpData.expiresAt) {
+      delete otpStore[customerEmail];
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
+    if (otpData.otp !== otp) {
+      return res.status(400).json({ message: "Invalid OTP." });
+    }
+    delete otpStore[customerEmail];
+
+    // 2) Prepare date fields
+    const dateAttended = new Date().toLocaleDateString("en-GB"); // e.g. "02/04/2025"
+    const currentDate = new Date().toLocaleDateString("en-GB");
+
+    // 3) Build the 5 rows for “Parts/Modules replaced”
+    // Always show exactly 5 rows. If more than 5, we only show first 5.
+    const maxRows = 5;
+    let partsRowsHTML = "";
+    for (let i = 0; i < maxRows; i++) {
+      const item = sparesReplaced[i];
+      if (item) {
+        // Show actual data
+        partsRowsHTML += `
+        <tr>
+          <td style="vertical-align: top;">${i + 1}</td>
+          <td style="vertical-align: top;">${item.Description || ""}</td>
+          <td style="vertical-align: top;">${item.defectivePartNumber || ""}</td>
+          <td style="vertical-align: top;">${item.replacedPartNumber || ""}</td>
+        </tr>
+      `;
+      } else {
+        // Show empty row
+        partsRowsHTML += `
+        <tr>
+          <td style="vertical-align: top;">${i + 1}</td>
+          <td style="vertical-align: top;"></td>
+          <td style="vertical-align: top;"></td>
+          <td style="vertical-align: top;"></td>
+        </tr>
+      `;
+      }
+    }
+
+    // 4) Build the Service Report HTML with bigger font & 5 fixed rows
+    const serviceReportHTML = `
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Skanray Service Report</title>
+    <style>
+      /* Force A4 page size and 15mm margins */
+      @page {
+        size: A4;
+        margin: 15mm;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        background-color: #fff;
+        font-size: 16px;       /* Larger base font */
+        line-height: 1.4;
+      }
+      /* Outer container can fill the page width */
+      .outer-container {
+        border: 1px solid #000;
+        margin: 0 auto;
+        width: 100%;
+      }
+      /* Default table styling: all cells get a border */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      table, td, th {
+        border: 1px solid #000;
+      }
+      td, th {
+        padding: 10px;   /* Increased padding for more space */
+      }
+      /* Larger text for the main headings */
+      .main-title {
+        font-size: 20px;
+        font-weight: bold;
+      }
+      .sub-title {
+        font-size: 20px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Outer container -->
+    <div class="outer-container">
+      <!-- 1) Top Row: Logo + Title + Format/Number/Revision -->
+      <table>
+        <tr>
+          <!-- Left cell: Logo + tagline -->
+          <td style="width: 14.5%; text-align: center; vertical-align: top;">
+            <img
+              src="https://skanray.com/wp-content/uploads/2024/07/Skanray-logo.png"
+              alt="Skanray Logo"
+              style="width: 80px; margin-top: 4px;"
+            /><br />
+          </td>
+          <!-- Middle cell: Main title -->
+          <td style="width: 50%; text-align: center; vertical-align: middle;">
+            <div class="main-title">Skanray Technologies Limited.</div>
+            <div class="sub-title">Service Report</div>
+          </td>
+          <!-- Right cell: format/Number/Revision sub-table -->
+          <td style="width: 25%; vertical-align: top; padding: 0;">
+            <table>
+              <tr>
+                <td>format</td>
+                <td>Number</td>
+                <td>3F5014</td>
+              </tr>
+              <tr>
+                <td>&nbsp;</td>
+                <td>Revision</td>
+                <td>03</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <!-- 2) Row for Notification No / Date / Service Type -->
+      <table>
+        <tr>
+          <td style="width: 16%;">Notification No:</td>
+          <td style="width: 17%;">${complaintNumber || "N/A"}</td>
+          <td style="width: 16%;">Date:</td>
+          <td style="width: 17%;">${notificationDate || dateAttended}</td>
+          <td style="width: 17%;">Service Type:</td>
+          <td style="width: 17%;">${notificationType || "N/A"}</td>
+        </tr>
+      </table>
+
+      <!-- 3) Customer Details (left) + Part Details (right) -->
+      <table>
+        <tr>
+          <!-- Customer Detail Section -->
+          <td style="width: 50%; vertical-align: top;">
+            <strong>Customer Code:</strong> ${customerDetails?.customerCode || "N/A"}<br />
+            <strong>Name:</strong> ${customerDetails?.hospitalName || "N/A"}<br />
+            <strong>Address:</strong> ${customerDetails?.street || "N/A"}<br />
+            <strong>City:</strong> ${customerDetails?.city || "N/A"}<br />
+            <strong>Telephone:</strong> ${customerDetails?.phone || "N/A"}<br />
+            <strong>Email:</strong> ${customerDetails?.email || "N/A"}
+          </td>
+          <!-- Part Detail Section -->
+          <td style="width: 50%; vertical-align: top;">
+            <table>
+              <tr>
+                <td><strong>Part Number:</strong></td>
+                <td>${partNumber || "N/A"}</td>
+              </tr>
+              <tr>
+                <td style="height: 60px;"><strong>Description:</strong></td>
+                <td>${description || "N/A"}</td>
+              </tr>
+              <tr>
+                <td><strong>Serial Number:</strong></td>
+                <td>${serialNumber || "N/A"}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Notification Details -->
+      <table>
+        <tr>
+          <td style="width: 25%; vertical-align: top;">
+            <strong>Date Attended:</strong> ${dateAttended}
+          </td>
+          <td style="width: 75%; vertical-align: top;">
+            <strong>Problem Reported:</strong> ${reportedProblem || "N/A"}
+          </td>
+        </tr>
+        <tr>
+          <td style="vertical-align: top;">
+            <strong>Problem Observed & Action Taken:</strong>
+          </td>
+          <td style="vertical-align: top;">
+            ${actionTaken || "N/A"}
+          </td>
+        </tr>
+        <tr>
+          <td style="vertical-align: top;">
+            <strong>Any abnormal site conditions:</strong>
+          </td>
+          <td style="vertical-align: top;">
+            <!-- Add details if needed -->
+          </td>
+        </tr>
+      </table>
+
+      <!-- Supply Voltage Table -->
+      <table>
+        <tr>
+          <td style="vertical-align: top;"><strong>Supply Voltage(V)</strong></td>
+          <td style="vertical-align: top;">L-N/R-Y</td>
+          <td style="vertical-align: top;">${voltageLN_RY || "N/A"}</td>
+          <td style="vertical-align: top;">L-GY-B</td>
+          <td style="vertical-align: top;">${voltageLG_YB || "N/A"}</td>
+          <td style="vertical-align: top;">N-G/B-R</td>
+          <td style="vertical-align: top;">${voltageNG_BR || "N/A"}</td>
+        </tr>
+      </table>
+
+      <!-- Injury Details -->
+      <table>
+        <tr>
+          <td><strong>Injury Details:</strong></td>
+        </tr>
+      </table>
+      <table>
+        <tr>
+          <td style="width: 50%; vertical-align: top;">
+            <strong>Device User / Affected Person:</strong>
+            ${(() => {
+        const users = [];
+        if (injuryDetails?.deviceUsers?.healthcareProfessional) users.push("Healthcare Professional");
+        if (injuryDetails?.deviceUsers?.patient) users.push("Patient");
+        if (injuryDetails?.deviceUsers?.unauthorizedUser) users.push("Unauthorized User");
+        if (injuryDetails?.deviceUsers?.operator) users.push("Operator");
+        if (injuryDetails?.deviceUsers?.serviceEngineer) users.push("Service Engineer");
+        if (injuryDetails?.deviceUsers?.none) users.push("None");
+        return users.join(", ") || "N/A";
+      })()
+      }
+        
+          </td>
+          <td style="width: 50%; vertical-align: top;">
+            <strong>Did Incident occur during procedure:</strong>
+            ${injuryDetails?.incidentDuringProcedure === "yes" ? "Yes" : "No"}
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="vertical-align: top;">
+            <strong>Provide usage protocol:</strong>
+            KV ${injuryDetails?.exposureProtocol?.kv || "____"}
+            &nbsp;mA/mAs ${injuryDetails?.exposureProtocol?.maMas || "____"}
+            &nbsp;Distance from X-Ray Source ${injuryDetails?.exposureProtocol?.distance || "____"}
+            &nbsp;Time ${injuryDetails?.exposureProtocol?.time || "____"}
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="vertical-align: top;">
+            <strong>Outcome Attributed to Event:</strong>
+            ${injuryDetails?.outcomeAttributed || "N/A"}
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="vertical-align: top;">
+            <strong>Describe injury/Treatment or other safety issues:</strong>
+            ${injuryDetails?.description || "N/A"}
+          </td>
+        </tr>
+      </table>
+
+      <!-- Parts/Modules replaced -->
+      <table>
+        <tr>
+          <td colspan="4">
+            <strong>Details of Parts/Modules/Sub-assemblies replaced (Write NA if serial number is not available)</strong>
+          </td>
+        </tr>
+        <tr>
+          <th style="width: 10%; vertical-align: top;">SL.No</th>
+          <th style="width: 35%; vertical-align: top;">Part Description</th>
+          <th style="width: 25%; vertical-align: top;">Defective part serial number</th>
+          <th style="width: 30%; vertical-align: top;">Replaced part Serial number</th>
+        </tr>
+        ${partsRowsHTML}
+      </table>
+
+      <!-- Service Engineer and Customer Remarks -->
+      <table>
+        <tr>
+          <td style="width: 50%; vertical-align: top;">
+            <strong>Service Engineer's Name:</strong><br />
+            ${serviceEngineer?.firstName || "N/A"} ${serviceEngineer?.lastName || ""}
+            <br />
+            ${serviceEngineer?.location || ""}
+          </td>
+          <td style="width: 50%; vertical-align: top;">
+            <strong>Specific actions required from customer:</strong><br />
+            ${instructionToCustomer || "N/A"}
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="vertical-align: top;">
+            <strong>Customer Remark's:</strong><br />
+           <strong>
+           The above equipment has been handed over to us in satisfactorily working condition</strong>
+          </td>
+        </tr>
+        <tr>
+          <td style="width: 50%; vertical-align: top;">
+          <strong>
+          Digitally Authorised by ${customerDetails?.hospitalName || "N/A"}
+          by providing OTP ${otp} sent on ${notificationDate || dateAttended}
+          to ${customerEmail} and ${customerDetails?.phone || "N/A"} by Skanray
+          </strong>
+          </td>
+          <td style="width: 30%; padding: 10px 0px 0px 98px;">
+            <p style="font-weight: bold; margin: 0;">Signature valid</p>
+            <div style="font-size: 16px;">
+              Digitally signed by <br />
+              SKANRAY TECHNOLOGIES LIMITED <br />
+              P1 ${currentDate}
+            </div>
+            <img
+              src="https://www.iconpacks.net/icons/2/free-check-icon-3278-thumb.png"
+              alt="Signature Check"
+              style="width: 60px; margin-top: -80px; margin-left: 120px;"
+            />
+          </td>
+        </tr>
+      </table>
+
+      <!-- Payment and Terms (still 16px for consistency) -->
+      <table>
+        <tr>
+          <td>
+            <div style="border-bottom: 1px solid black; padding-left: 5px;">
+              <strong>
+                Payments to be made through Cheque / DD in favour of Skanray Technologies Limited. only<br /><br />
+              </strong>
+            </div>
+            <div style="border-bottom: 1px solid black; padding-left: 5px;">
+              <strong>
+                TERMS FOR ON-CALL SERVICE<br />
+                Payment: Full Payment as per the rate schedule available with the engineer should be made in advance.<br />
+                Agreements: The forgoing terms & conditions shall prevail not withstanding any variations contained in any document received from any customer unless such variations have been specifically agreed upon in writing by Skanray Technologies Limited<br /><br />
+              </strong>
+            </div>
+            <div style="padding-left: 5px;">
+              <strong>
+                Customer Interaction Center (CIC) Toll Free No : 1800-425-7022 &nbsp; Email : cic@skanray.com
+              </strong>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </body>
+</html>
+`;
+
+    // 5) Set PDF file name based on complaint number and reported problem
+    const pdfFileName = `${complaintNumber || "report"}_${(description || "description").replace(/\s+/g, "_")}.pdf`;
+
+    // 6) Generate a PDF from serviceReportHTML
+    pdf.create(serviceReportHTML, {
+      format: "A4",
+      orientation: "portrait",
+      border: {
+        top: "5mm",
+        right: "5mm",
+        bottom: "5mm",
+        left: "5mm",
+      },
+      // If it still appears small, try increasing zoomFactor further
+      zoomFactor: 1.3,
+      childProcessOptions: {
+        env: {
+          OPENSSL_CONF: "/dev/null", // Bypass OpenSSL config issues
+        },
+      },
+    }).toBuffer(async (err, pdfBuffer) => {
+      if (err) {
+        console.error("Error generating PDF:", err);
+        return res.status(500).json({
+          message: "Failed to generate PDF",
+          error: err.message,
+        });
+      }
+
+      try {
+        // 7) Send email with the PDF as an attachment
+        const transporter = nodemailer.createTransport({
+          service: "gmail",
+          auth: {
+            user: "webadmin@skanray-access.com",
+            pass: "rdzegwmzirvbjcpm",
+          },
+        });
+
+        const mailOptions = {
+          from: "webadmin@skanray-access.com",
+          to: [customerEmail, "mrshivamtiwari2025@gmail.com"],
+          subject: "Final Complaint Details with Service Report",
+          html: `
+          <div style="font-family: Arial, sans-serif; margin: 10px; font-size:16px;">
+            <p><strong>Kindly Close,</strong></p>
+            <p>Dear CIC, Notification as below:</p>
+            <table style="border-collapse: collapse; font-size:16px;">
+              <tr>
+                <td style="padding: 4px;"><strong>Notification No:</strong></td>
+                <td style="padding: 4px;">${complaintNumber || "N/A"}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px;"><strong>Notification Date:</strong></td>
+                <td style="padding: 4px;">${notificationDate || "N/A"}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px;"><strong>Serial No:</strong></td>
+                <td style="padding: 4px;">${serialNumber || "N/A"}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px;"><strong>Problem Reported:</strong></td>
+                <td style="padding: 4px;">${reportedProblem || "N/A"}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px;"><strong>Action Taken:</strong></td>
+                <td style="padding: 4px;">${actionTaken || "N/A"}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px;"><strong>Instruction to Customer:</strong></td>
+                <td style="padding: 4px;">${instructionToCustomer || "N/A"}</td>
+              </tr>
+            </table>
+            <br/>
+            <p><strong>Service Engineer Name:</strong> ${serviceEngineer?.firstName && serviceEngineer?.lastName
+              ? `${serviceEngineer.firstName} ${serviceEngineer.lastName}`
+              : "N/A"
+            }</p>
+            <p><strong>Service Engineer Phone:</strong> ${serviceEngineer?.mobileNumber || "N/A"
+            }</p>
+            <p><strong>Service Engineer Email:</strong> ${serviceEngineer?.email || "N/A"
+            }</p>
+            <p>The <strong>Service Report</strong> is attached below as a PDF report.</p>
+            <p>Please consider the Environment before printing this e-mail.</p>
+          </div>
+        `,
+          attachments: [
+            {
+              filename: pdfFileName,
+              content: pdfBuffer,
+            },
+          ],
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        return res.status(200).json({
+          message: "OTP verified, email sent successfully with PDF attached!",
+          finalData: req.body,
+        });
+      } catch (emailErr) {
+        console.error("Error sending email:", emailErr);
+        return res.status(500).json({
+          message: "Error sending final email",
+          error: emailErr.message,
+        });
+      }
+    });
+  } catch (error) {
+    console.error("Error verifying OTP and sending final email:", error);
+    return res.status(500).json({
+      message: "Error verifying OTP or sending final email",
+      error: error.message,
+    });
+  }
+});
+
+
+
 
 module.exports = router;

@@ -1,31 +1,36 @@
+// Routes: userRoutes.js
 const express = require('express');
 const router = express.Router();
 const User = require('../../Model/MasterSchema/UserSchema');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken'); 
+const jwt = require('jsonwebtoken');
+
 // Middleware to get user by ID
 async function getUserById(req, res, next) {
     let user;
     try {
         user = await User.findById(req.params.id);
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
+        if (!user) return res.status(404).json({ message: 'User not found' });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
     res.user = user;
     next();
 }
-// Middleware to get user by employeeid
-async function getUserByEmployeeId(req, res, next) {
+// Middleware to get user by email
+async function getUserForLogin(req, res, next) {
     let user;
+
+
     try {
-        // Find the user by employeeid
-        user = await User.findOne({ employeeid: req.body.employeeid });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+
+        if (req.body.employeeid) {
+            user = await User.findOne({ employeeid: req.body.employeeid });
+        } else if (req.body.email) {
+            user = await User.findOne({ email: req.body.email });
         }
+
+        if (!user) return res.status(404).json({ message: 'User Not found' });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
@@ -33,6 +38,20 @@ async function getUserByEmployeeId(req, res, next) {
     next();
 }
 
+
+
+// Middleware to get user by employeeid
+async function getUserByEmployeeId(req, res, next) {
+    let user;
+    try {
+        user = await User.findOne({ employeeid: req.body.employeeid });
+        if (!user) return res.status(404).json({ message: 'User not found' });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+    res.user = user;
+    next();
+}
 
 // Middleware to check for duplicate email
 async function checkDuplicateEmail(req, res, next) {
@@ -48,23 +67,16 @@ async function checkDuplicateEmail(req, res, next) {
     next();
 }
 
-// GET all users
+// GET all users with pagination
 router.get('/user', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
-
         const skip = (page - 1) * limit;
-
         const users = await User.find().skip(skip).limit(limit);
         const totalUsers = await User.countDocuments();
         const totalPages = Math.ceil(totalUsers / limit);
-
-        res.json({
-            users,
-            totalPages,
-            totalUsers
-        });
+        res.json({ users, totalPages, totalUsers });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -75,41 +87,61 @@ router.get('/user/:id', getUserById, (req, res) => {
     res.json(res.user);
 });
 
+// GET all users without pagination
 router.get('/alluser', async (req, res) => {
     try {
         const user = await User.find();
-        console.log("Fetched user:", user); // Debug log
+        console.log("Fetched user:", user);
         res.json(user);
     } catch (error) {
-        console.error("Error fetching user :", error); // Debug log
+        console.error("Error fetching user:", error);
         res.status(500).json({ message: 'Server Error' });
     }
 });
 
 // CREATE a new user
 router.post('/user', checkDuplicateEmail, async (req, res) => {
-    const salt = await bcrypt.genSalt(10); // Create salt
-    const hashedPassword = await bcrypt.hash(req.body.password, salt); // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(req.body.password, salt);
 
-    const user = new User({
+    // Prepare user data including new fields.
+    const userData = {
         firstname: req.body.firstname,
         lastname: req.body.lastname,
         email: req.body.email,
         mobilenumber: req.body.mobilenumber,
         status: req.body.status,
-        branch: req.body.branch,
+        branch: req.body.branch, // expect an array of branch names
         loginexpirydate: req.body.loginexpirydate,
         employeeid: req.body.employeeid,
         country: req.body.country,
         state: req.body.state,
         city: req.body.city,
         department: req.body.department,
-        password: hashedPassword, // Store the hashed password
+        password: hashedPassword,
         manageremail: req.body.manageremail,
         skills: req.body.skills,
         profileimage: req.body.profileimage,
-        deviceid: req.body.deviceid
-    });
+        deviceid: req.body.deviceid,
+        usertype: req.body.usertype, // 'dealer' or 'skanray'
+        location: req.body.location // expect an array of locations
+    };
+
+    // Conditionally add role or dealerInfo based on usertype.
+    if (req.body.usertype === 'skanray') {
+        userData.role = {
+            roleName: req.body.roleName,
+            roleId: req.body.roleId
+        };
+    } else if (req.body.usertype === 'dealer') {
+        userData.dealerInfo = {
+            dealerName: req.body.dealerName,
+            dealerId: req.body.dealerId
+        };
+    }
+
+    const user = new User(userData);
+
     try {
         const newUser = await user.save();
         res.status(201).json(newUser);
@@ -118,22 +150,20 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
     }
 });
 
-router.post('/login', getUserByEmployeeId, async (req, res) => {
-    try {
-        // Compare the entered password with the hashed password in the database
-        const isMatch = await bcrypt.compare(req.body.password, res.user.password);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid password' });
-        }
+// LOGIN route
+router.post('/login', getUserForLogin, async (req, res) => {
 
-        // Generate a JWT token with user data
+
+    try {
+        const isMatch = await bcrypt.compare(req.body.password, res.user.password);
+        console.log("ismatch", isMatch)
+        if (!isMatch) return res.status(400).json({ message: 'Invalid password' });
+
         const token = jwt.sign(
             { id: res.user._id, email: res.user.email },
-            "myservice-secret", // Hardcoded secret key
-            // No expiresIn, so token will never expire
+            "myservice-secret"
         );
 
-        // Send the token and user data
         res.json({
             token,
             user: {
@@ -152,7 +182,11 @@ router.post('/login', getUserByEmployeeId, async (req, res) => {
                 department: res.user.department,
                 skills: res.user.skills,
                 profileimage: res.user.profileimage,
-                deviceid: res.user.deviceid
+                deviceid: res.user.deviceid,
+                usertype: res.user.usertype,
+                role: res.user.role,
+                dealerInfo: res.user.dealerInfo,
+                location: res.user.location
             }
         });
     } catch (err) {
@@ -161,59 +195,39 @@ router.post('/login', getUserByEmployeeId, async (req, res) => {
 });
 
 
+
 // UPDATE a user
 router.put('/user/:id', getUserById, checkDuplicateEmail, async (req, res) => {
-    if (req.body.firstname != null) {
-        res.user.firstname = req.body.firstname;
+    if (req.body.firstname != null) res.user.firstname = req.body.firstname;
+    if (req.body.lastname != null) res.user.lastname = req.body.lastname;
+    if (req.body.email != null) res.user.email = req.body.email;
+    if (req.body.mobilenumber != null) res.user.mobilenumber = req.body.mobilenumber;
+    if (req.body.status != null) res.user.status = req.body.status;
+    if (req.body.branch != null) res.user.branch = req.body.branch; // expect an array
+    if (req.body.loginexpirydate != null) res.user.loginexpirydate = req.body.loginexpirydate;
+    if (req.body.employeeid != null) res.user.employeeid = req.body.employeeid;
+    if (req.body.country != null) res.user.country = req.body.country;
+    if (req.body.state != null) res.user.state = req.body.state;
+    if (req.body.city != null) res.user.city = req.body.city;
+    if (req.body.department != null) res.user.department = req.body.department;
+    if (req.body.manageremail != null) res.user.manageremail = req.body.manageremail;
+    if (req.body.skills != null) res.user.skills = req.body.skills;
+    if (req.body.profileimage != null) res.user.profileimage = req.body.profileimage;
+    if (req.body.deviceid != null) res.user.deviceid = req.body.deviceid;
+    if (req.body.usertype != null) res.user.usertype = req.body.usertype;
+    if (req.body.roleName != null) {
+        res.user.role = {
+            roleName: req.body.roleName,
+            roleId: req.body.roleId
+        };
     }
-    if (req.body.lastname != null) {
-        res.user.lastname = req.body.lastname;
+    if (req.body.dealerName != null) {
+        res.user.dealerInfo = {
+            dealerName: req.body.dealerName,
+            dealerId: req.body.dealerId
+        };
     }
-    if (req.body.email != null) {
-        res.user.email = req.body.email;
-    }
-    if (req.body.mobilenumber != null) {
-        res.user.mobilenumber = req.body.mobilenumber;
-    }
-    if (req.body.status != null) {
-        res.user.status = req.body.status;
-    }
-    if (req.body.branch != null) {
-        res.user.branch = req.body.branch;
-    }
-    if (req.body.loginexpirydate != null) {
-        res.user.loginexpirydate = req.body.loginexpirydate;
-    }
-    if (req.body.employeeid != null) {
-        res.user.employeeid = req.body.employeeid;
-    }
-    if (req.body.country != null) {
-        res.user.country = req.body.country;
-    }
-    if (req.body.state != null) {
-        res.user.state = req.body.state;
-    }
-    if (req.body.city != null) {
-        res.user.city = req.body.city;
-    }
-    if (req.body.department != null) {
-        res.user.department = req.body.department;
-    }
-    if (req.body.password != null) {
-        res.user.password = req.body.password;
-    }
-    if (req.body.manageremail != null) {
-        res.user.manageremail = req.body.manageremail;
-    }
-    if (req.body.skills != null) {
-        res.user.skills = req.body.skills;
-    }
-    if (req.body.profileimage != null) {
-        res.user.profileimage = req.body.profileimage;
-    }
-    if (req.body.deviceid != null) {
-        res.user.deviceid = req.body.deviceid;
-    }
+    if (req.body.location != null) res.user.location = req.body.location; // expect an array
 
     try {
         const updatedUser = await res.user.save();
@@ -226,22 +240,21 @@ router.put('/user/:id', getUserById, checkDuplicateEmail, async (req, res) => {
 // DELETE a user
 router.delete('/user/:id', async (req, res) => {
     try {
-        const userDeleted = await User.deleteOne({ _id: req.params.id })
+        const userDeleted = await User.deleteOne({ _id: req.params.id });
         if (userDeleted.deletedCount === 0) {
-            res.status(404).json({ message: "User Not Found" })
+            return res.status(404).json({ message: "User Not Found" });
         }
         res.json({ message: 'Deleted User' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
+// SEARCH route
 router.get('/search', async (req, res) => {
     try {
         const { q } = req.query;
-        
-        if (!q) {
-            return res.status(400).json({ message: 'Query parameter is required' });
-        }
+        if (!q) return res.status(400).json({ message: 'Query parameter is required' });
 
         const query = {
             $or: [
@@ -256,12 +269,12 @@ router.get('/search', async (req, res) => {
                 { city: { $regex: q, $options: 'i' } },
                 { department: { $regex: q, $options: 'i' } },
                 { manageremail: { $regex: q, $options: 'i' } },
-                { skills: { $regex: q, $options: 'i' } }
+                { skills: { $regex: q, $options: 'i' } },
+                { usertype: { $regex: q, $options: 'i' } }
             ]
         };
 
         const users = await User.find(query);
-
         res.json(users);
     } catch (err) {
         res.status(500).json({ message: err.message });

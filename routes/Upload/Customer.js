@@ -131,11 +131,11 @@ router.post('/customer/send-email', async (req, res) => {
           <td style="padding: 4px; vertical-align: top;">${telephone || ''}</td>
         </tr>
         <tr>
-          <td style="padding: 4px; vertical-align: top;"><strong>Taxnumber 1 :</strong></td>
+          <td style="padding: 4px; vertical-align: top;"><strong>PAN Number :</strong></td>
           <td style="padding: 4px; vertical-align: top;">${taxnumber1 || ''}</td>
         </tr>
         <tr>
-          <td style="padding: 4px; vertical-align: top;"><strong>Taxnumber 2 :</strong></td>
+          <td style="padding: 4px; vertical-align: top;"><strong>GST Number :</strong></td>
           <td style="padding: 4px; vertical-align: top;">${taxnumber2 || ''}</td>
         </tr>
         <tr>

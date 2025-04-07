@@ -8,7 +8,8 @@ const SpareMasterSchema = new mongoose.Schema(
     Type: { type: String, required: true, trim: true },
     Rate: { type: Number, required: true }, // MRP
     DP: { type: Number, required: true }, // Dealer Price
-    Charges: { type: Number, required: true } // Exchange Price
+    Charges: { type: Number, required: true }, // Exchange Price
+    spareiamegUrl: { type: String } // New field for image URL
   },
   { timestamps: true }
 );
