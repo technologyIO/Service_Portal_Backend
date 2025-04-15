@@ -43,7 +43,7 @@ router.post('/productgroup', checkDuplicateProductGroup, async (req, res) => {
 router.get('/allproductgroup', async (req, res) => {
     try {
         const productgroup = await ProductGroup.find();
-        console.log("Fetched productgroup:", productgroup); // Debug log
+        // console.log("Fetched productgroup:", productgroup); // Debug log
         res.json(productgroup);
     } catch (error) {
         console.error("Error fetching productgroup :", error); // Debug log
@@ -120,7 +120,9 @@ router.delete('/productgroup/:id', async (req, res) => {
     }
 })
 router.get('/searchproductgroupy', async (req, res) => {
+
     try {
+
         const { q } = req.query;
 
         if (!q) {
@@ -128,7 +130,7 @@ router.get('/searchproductgroupy', async (req, res) => {
         }
 
         const query = {
-            $or: [ 
+            $or: [
                 { name: { $regex: q, $options: 'i' } },
                 { status: { $regex: q, $options: 'i' } },
                 { shortcode: { $regex: q, $options: 'i' } },

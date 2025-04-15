@@ -59,7 +59,7 @@ router.get('/CheckPointType/:id', getCountry, (req, res) => {
 router.get('/allcheckpointtype', async (req, res) => {
     try {
         const checkPointType = await CheckPointType.find();
-        console.log("Fetched checklist types:", checkPointType); // Debug log
+        // console.log("Fetched checklist types:", checkPointType); // Debug log
         res.json(checkPointType);
     } catch (error) {
         console.error("Error fetching CheckPointType :", error); // Debug log

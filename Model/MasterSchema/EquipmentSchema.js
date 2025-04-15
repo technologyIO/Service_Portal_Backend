@@ -35,11 +35,10 @@ const EquipmentSchema = new mongoose.Schema({
   endcustomer: {
     type: String
   },
+  // Now the equipmentid MUST be provided from the frontend
   equipmentid: {
     type: String,
-    default: function () {
-      return new mongoose.Types.ObjectId().toString();
-    },
+    required: true,
     unique: true
   },
   custWarrantystartdate: {
@@ -62,7 +61,6 @@ const EquipmentSchema = new mongoose.Schema({
   palnumber: {
     type: String
   },
-
   // NEW FIELD: Installation Report No. (unique)
   installationreportno: {
     type: String,
@@ -71,3 +69,5 @@ const EquipmentSchema = new mongoose.Schema({
 });
 
 module.exports = mongoose.model('Equipment', EquipmentSchema);
+
+

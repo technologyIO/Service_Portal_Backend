@@ -8,10 +8,13 @@ const PMSchema = new mongoose.Schema(
     },
     pmNumber: {
       type: String,
-      required: true,
       unique: true,
+      sparse: true, // Add this option so that missing or null values are not indexed.
     },
     materialDescription: {
+      type: String,
+    },
+    documentnumber: {
       type: String,
     },
     serialNumber: {
@@ -21,7 +24,11 @@ const PMSchema = new mongoose.Schema(
     customerCode: {
       type: String,
     },
-    regionBranch: {
+    region: {
+      type: String,
+    },
+
+    city: {
       type: String,
     },
     pmDueMonth: {

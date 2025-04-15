@@ -58,7 +58,7 @@ router.get('/CheckListType/:id', getCountry, (req, res) => {
 router.get('/allchecklisttype', async (req, res) => {
     try {
         const checklistTypes = await CheckListType.find();
-        console.log("Fetched checklist types:", checklistTypes); // Debug log
+        // console.log("Fetched checklist types:", checklistTypes); // Debug log
         res.json(checklistTypes);
     } catch (error) {
         console.error("Error fetching checklist types:", error); // Debug log
