@@ -47,6 +47,13 @@ const DealerStockBulk = require('./BulkUpload/Upload/DealerStockBulk');
 const HubStockBulk = require('./BulkUpload/Upload/HubStockBulk');
 const PendingComplaintsBulk = require('./BulkUpload/Upload/PendingComplaintsBulk');
 const SpareMasterBulk = require('./BulkUpload/Master/SpareMasterBulk');
+const ContractProposal = require('./routes/Upload/ContractProposal');
+const CmcNcmcYears = require('./routes/Admin/CmcNcmcYears');
+const CmcNcmcPrice = require('./routes/Admin/cmcNcmcPriceRoutes');
+const CmcNcmcTds = require('./routes/Admin/CmcNcmcTds');
+const gstRoutes = require('./routes/Admin/GstRoutes');
+const discountRoutes = require('./routes/Admin/DiscountRoutes');
+const proposalRoutes = require('./routes/PhoneRouts/proposals');
 
 
 
@@ -111,6 +118,13 @@ app.use("/complaints/installationschecklist", installationChecklistRoutes);
 app.use('/complaints', ProblemName)
 app.use('/upload', PreventiveMaintenance)
 app.use('/collections/checklistsave', equipmentChecklistRoutes);
+app.use('/upload/contract', ContractProposal);
+app.use('/admin/cmcncmcyear', CmcNcmcYears);
+app.use('/admin/cmcncmcprice', CmcNcmcPrice);
+app.use('/admin/cmc-ncmc-tds', CmcNcmcTds);
+app.use('/admin/gst', gstRoutes);
+app.use('/admin/discount', discountRoutes);
+app.use('/phone/proposal', proposalRoutes);
 
 
 // Bulk Upload 

@@ -8,57 +8,38 @@ const Equipment = require('../../Model/MasterSchema/EquipmentSchema');
 const PM = require('../../Model/UploadSchema/PMSchema');
 const Product = require('../../Model/MasterSchema/ProductSchema');
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
-// Import the Customer model from your Customer schema.
 const Customer = require('../../Model/UploadSchema/CustomerSchema');
 
-// Use Multer memory storage so that the file can be processed directly from memory.
+// Multer memory storage
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+const upload = multer({ storage });
 
-/**
- * Convert an Excel serial date (number) to a JavaScript Date.
- * Excel stores dates as the number of days since January 1, 1900 (with an offset).
- *
- * @param {Number} serial - The Excel serial date.
- * @returns {Date} - The corresponding JavaScript Date.
- */
+/** Convert Excel serial date to JS Date */
 function excelDateToJSDate(serial) {
   const utcDays = Math.floor(serial - 25569);
-  const utcValue = utcDays * 86400; // seconds in a day
+  const utcValue = utcDays * 86400;
   const dateInfo = new Date(utcValue * 1000);
-  // Handle fractional part (time portion)
   const fractionalDay = serial - Math.floor(serial);
   const totalSeconds = Math.floor(86400 * fractionalDay);
   dateInfo.setSeconds(dateInfo.getSeconds() + totalSeconds);
   return dateInfo;
 }
 
-/**
- * Helper function to parse a date value coming from Excel.
- * Accepts either a number (or numeric string) or a standard date string.
- *
- * @param {Number|String} value - The raw date value.
- * @returns {Date|null} - A valid Date object or null if conversion fails.
- */
+/** Parse either a numeric Excel date or a standard date string */
 function parseExcelDate(value) {
   if (value == null) return null;
-
   if (typeof value === 'number') {
     return excelDateToJSDate(value);
   }
-
   if (typeof value === 'string') {
     const num = Number(value);
     if (!isNaN(num)) {
       return excelDateToJSDate(num);
     }
-    // Try direct conversion.
     let d = new Date(value);
     if (!isNaN(d.getTime())) return d;
-    // Try replacing dashes with slashes.
     d = new Date(value.replace(/-/g, '/'));
     if (!isNaN(d.getTime())) return d;
-    // If the string appears to be in DD/MM/YYYY format, rearrange it.
     if (value.includes('/')) {
       const parts = value.split('/');
       if (parts.length === 3 && parts[0].length === 2) {
@@ -70,13 +51,7 @@ function parseExcelDate(value) {
   return null;
 }
 
-/**
- * Helper function to add a specified number of months to a date.
- *
- * @param {Date} date - The starting date.
- * @param {Number} months - The number of months to add.
- * @returns {Date} - The resulting date.
- */
+/** Add months to a date */
 function addMonths(date, months) {
   const d = new Date(date);
   d.setMonth(d.getMonth() + months);
@@ -84,46 +59,23 @@ function addMonths(date, months) {
 }
 
 /**
- * Compute PM due month.
- * Scheduled maintenance is computed by adding months to the base date,
- * and the due date is one month before the scheduled date.
- * Returns a string in the format MM/YYYY.
- *
- * @param {Date} baseDate - The start date.
- * @param {Number} monthsToAdd - The interval (j * frequency) to add.
- * @returns {String} - The due month (MM/YYYY).
+ * Compute PM due month string (MM/YYYY)
+ * monthsToAdd is the scheduled interval; due is one month before.
  */
 function computeDueMonth(baseDate, monthsToAdd) {
   const dueDate = addMonths(baseDate, monthsToAdd - 2);
-  const month = (dueDate.getMonth() + 1).toString().padStart(2, '0');
+  const month = String(dueDate.getMonth() + 1).padStart(2, '0');
   const year = dueDate.getFullYear();
   return `${month}/${year}`;
 }
-/**
- * Bulk Upload API for Equipment with automatic creation of Preventive Maintenance (PM)
- * records for three situations:
- *
- *   1. Base warranty preventive PM (using custWarrantystartdate, prefix "WPM").
- *   2. Dealer warranty preventive PM (using dealerwarrantystartdate and dealerwarrantyenddate, prefix "EPM").
- *   3. AMC Contract preventive PM (if an AMCContract exists for the equipment’s serial number),
- *      where AMCContract.satypeZDRC_ZDRN determines the prefix:
- *        - "ZDRC" creates CPM records.
- *        - "ZDRN" creates NPM records.
- *
- * For each group the number of expected events is determined by the Product.frequency:
- *   - Frequency "3": 4 events per year (scheduled: 3,6,9,12 → due: 2,5,8,11)
- *   - Frequency "6": 2 events per year (scheduled: 6,12 → due: 5,11)
- *   - Frequency "12": 1 event per year (scheduled: 12 → due: 11)
- *
- * When the same equipment is re-uploaded, only PM records with a status other than "Completed"
- * are deleted and re-generated. Completed PM records are preserved and counted.
- */
+
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-    // Read the Excel file from memory.
+
+    // Read the Excel workbook
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
@@ -136,219 +88,233 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     let totalPMExpected = 0;
     let totalPMCreated = 0;
 
-    for (const record of jsonData) {
+    for (let record of jsonData) {
+      // ─────────────────────────────────────────────────────────────
+      // Normalize date fields to "YYYY-MM-DD" strings
+      const dateFields = [
+        'custWarrantystartdate',
+        'custWarrantyenddate',       // ← added so end date is normalized too
+        'dealerwarrantystartdate',
+        'dealerwarrantyenddate'
+      ];
+      for (const field of dateFields) {
+        if (record[field] != null) {
+          const parsed = parseExcelDate(record[field]);
+          if (parsed) {
+            record[field] = parsed.toISOString().split('T')[0];
+          }
+        }
+      }
+      // ─────────────────────────────────────────────────────────────
+
       let equipmentDoc;
       try {
-        const existingEquipment = await Equipment.findOne({ serialnumber: record.serialnumber });
-        let equipStatus = 'Created';
-        if (existingEquipment) {
-          // Delete the old equipment record.
-          await Equipment.deleteOne({ _id: existingEquipment._id });
-          equipStatus = 'Updated';
+        const existing = await Equipment.findOne({ serialnumber: record.serialnumber });
+        let status = 'Created';
+        if (existing) {
+          await Equipment.deleteOne({ _id: existing._id });
+          status = 'Updated';
         }
         equipmentDoc = await new Equipment(record).save();
-        equipmentResults.push({ serialnumber: record.serialnumber, status: equipStatus });
-      } catch (error) {
-        equipmentResults.push({ serialnumber: record.serialnumber, status: 'Failed', error: error.message });
-        continue; // Skip PM creation for this equipment.
+        equipmentResults.push({
+          serialnumber: record.serialnumber,
+          status
+        });
+      } catch (err) {
+        equipmentResults.push({
+          serialnumber: record.serialnumber,
+          status: 'Failed',
+          error: err.message
+        });
+        continue;
       }
       processedEquipment++;
 
-      // *** Preserve Completed PMs ***
-      // Delete only PM records that are not "Completed".
-      await PM.deleteMany({ serialNumber: equipmentDoc.serialnumber, pmStatus: { $ne: "Completed" } });
-      // Retrieve the completed PM records for this equipment.
-      const completedPMs = await PM.find({ serialNumber: equipmentDoc.serialnumber, pmStatus: "Completed" });
+      // Remove non-completed PMs, keep completed
+      await PM.deleteMany({
+        serialNumber: equipmentDoc.serialnumber,
+        pmStatus: { $ne: 'Completed' }
+      });
+      const completedPMs = await PM.find({
+        serialNumber: equipmentDoc.serialnumber,
+        pmStatus: 'Completed'
+      });
 
-      // Fetch Product by matching material code.
-      let product;
-      try {
-        product = await Product.findOne({ partnoid: equipmentDoc.materialcode });
-      } catch (err) {
-        console.error('Product lookup error for materialcode:', equipmentDoc.materialcode);
-      }
-
-      // ******** New: Lookup the Customer using currentcustomer code ********
-      let customer = null;
-      try {
-        customer = await Customer.findOne({ customercodeid: equipmentDoc.currentcustomer });
-      } catch (err) {
-        console.error('Customer lookup error for customercode:', equipmentDoc.currentcustomer, err);
-      }
+      // Look up product frequency
+      const product = await Product.findOne({ partnoid: equipmentDoc.materialcode }).catch(() => null);
+      // Look up customer for region/city
+      const customer = await Customer.findOne({ customercodeid: equipmentDoc.currentcustomer }).catch(() => null);
 
       if (product && ['3', '6', '12'].includes(product.frequency)) {
-        const frequencyValue = parseInt(product.frequency, 10);
+        const freq = parseInt(product.frequency, 10);
 
-        // ---------- Situation 1: Base Warranty PM (WPM) ----------
-        const numPMBase = Math.floor(12 / frequencyValue);
-        totalPMExpected += numPMBase;
+        // ─── Base Warranty PMs (WPM) ──────────────────────────────
+        const numBase = Math.floor(12 / freq);
+        totalPMExpected += numBase;
         if (equipmentDoc.custWarrantystartdate) {
-          const baseDate = parseExcelDate(equipmentDoc.custWarrantystartdate) || new Date(equipmentDoc.custWarrantystartdate);
-          if (!baseDate || isNaN(baseDate.getTime())) {
-            console.error(`Invalid custWarrantystartdate for serial ${equipmentDoc.serialnumber}: ${equipmentDoc.custWarrantystartdate}`);
-          } else {
-            for (let j = 1; j <= numPMBase; j++) {
-              const currentType = "WPM" + j.toString().padStart(2, '0');
-              // If a PM record for this event is already completed, skip creation.
-              const exists = completedPMs.find(pm => pm.pmType === currentType);
+          const baseDate = parseExcelDate(equipmentDoc.custWarrantystartdate) ||
+                           new Date(equipmentDoc.custWarrantystartdate);
+          if (baseDate && !isNaN(baseDate)) {
+            for (let j = 1; j <= numBase; j++) {
+              const type = `WPM${String(j).padStart(2,'0')}`;
+              const exists = completedPMs.some(pm => pm.pmType === type);
               if (exists) {
                 totalPMCreated++;
-                pmResults.push({ serialnumber: equipmentDoc.serialnumber, pmType: currentType, status: "Completed", message: "Already completed" });
+                pmResults.push({
+                  serialnumber: equipmentDoc.serialnumber,
+                  pmType: type,
+                  status: 'Completed',
+                  message: 'Already completed'
+                });
               } else {
-                const dueMonth = computeDueMonth(baseDate, j * frequencyValue);
+                const dueMonth = computeDueMonth(baseDate, j * freq);
                 const pmData = {
-                  pmType: currentType,
-                  pmNumber: "",
+                  pmType: type,
                   materialDescription: equipmentDoc.materialdescription,
                   serialNumber: equipmentDoc.serialnumber,
                   customerCode: equipmentDoc.currentcustomer,
-                  region: "",
-                  city: "",
+                  region: customer?.region || '',
+                  city: customer?.city || '',
                   pmDueMonth: dueMonth,
-                  pmDoneDate: "",
-                  pmVendorCode: "",
-                  pmEngineerCode: "",
-                  pmStatus: "Due",
+                  pmStatus: 'Due',
                   partNumber: equipmentDoc.materialcode
                 };
-                // If a customer was found, update the empty fields.
-                if (customer) {
-                  pmData.city = customer.city;
-                  pmData.region = customer.region;
-                }
-                if (!pmData.pmNumber) delete pmData.pmNumber;
                 try {
                   await new PM(pmData).save();
                   totalPMCreated++;
-                  pmResults.push({ serialnumber: equipmentDoc.serialnumber, pmType: currentType, status: "Created" });
-                } catch (err) {
-                  pmResults.push({ serialnumber: equipmentDoc.serialnumber, pmType: currentType, status: "Failed", error: err.message });
+                  pmResults.push({
+                    serialnumber: equipmentDoc.serialnumber,
+                    pmType: type,
+                    status: 'Created'
+                  });
+                } catch (e) {
+                  pmResults.push({
+                    serialnumber: equipmentDoc.serialnumber,
+                    pmType: type,
+                    status: 'Failed',
+                    error: e.message
+                  });
                 }
               }
             }
           }
         }
 
-        // ---------- Situation 2: Dealer Warranty PM (EPM) ----------
+        // ─── Dealer Warranty PMs (EPM) ────────────────────────────
         if (equipmentDoc.dealerwarrantystartdate && equipmentDoc.dealerwarrantyenddate) {
-          const dealerStart = parseExcelDate(equipmentDoc.dealerwarrantystartdate) || new Date(equipmentDoc.dealerwarrantystartdate);
-          const dealerEnd = parseExcelDate(equipmentDoc.dealerwarrantyenddate) || new Date(equipmentDoc.dealerwarrantyenddate);
-          if (dealerStart && !isNaN(dealerStart.getTime()) && dealerEnd && !isNaN(dealerEnd.getTime())) {
-            const diffMonths = (dealerEnd.getFullYear() - dealerStart.getFullYear()) * 12 +
-              (dealerEnd.getMonth() - dealerStart.getMonth()) + 1;
-            const numPMDealer = Math.floor(diffMonths / frequencyValue);
-            totalPMExpected += numPMDealer;
-            for (let j = 1; j <= numPMDealer; j++) {
-              const currentType = "EPM" + j.toString().padStart(2, '0');
-              const exists = completedPMs.find(pm => pm.pmType === currentType);
+          const start = parseExcelDate(equipmentDoc.dealerwarrantystartdate);
+          const end   = parseExcelDate(equipmentDoc.dealerwarrantyenddate);
+          if (start && end && !isNaN(start) && !isNaN(end)) {
+            const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 +
+                               (end.getMonth() - start.getMonth()) + 1;
+            const numDealer = Math.floor(diffMonths / freq);
+            totalPMExpected += numDealer;
+            for (let j = 1; j <= numDealer; j++) {
+              const type = `EPM${String(j).padStart(2,'0')}`;
+              const exists = completedPMs.some(pm => pm.pmType === type);
               if (exists) {
                 totalPMCreated++;
-                pmResults.push({ serialnumber: equipmentDoc.serialnumber, pmType: currentType, status: "Completed", message: "Already completed" });
+                pmResults.push({
+                  serialnumber: equipmentDoc.serialnumber,
+                  pmType: type,
+                  status: 'Completed',
+                  message: 'Already completed'
+                });
               } else {
-                const dueMonth = computeDueMonth(dealerStart, j * frequencyValue);
+                const dueMonth = computeDueMonth(start, j * freq);
                 const pmData = {
-                  pmType: currentType,
-                  pmNumber: "",
+                  pmType: type,
                   materialDescription: equipmentDoc.materialdescription,
                   serialNumber: equipmentDoc.serialnumber,
                   customerCode: equipmentDoc.currentcustomer,
-                  region: "",
-                  city: "",
+                  region: customer?.region || '',
+                  city: customer?.city || '',
                   pmDueMonth: dueMonth,
-                  pmDoneDate: "",
-                  pmVendorCode: "",
-                  pmEngineerCode: "",
-                  pmStatus: "Due",
+                  pmStatus: 'Due',
                   partNumber: equipmentDoc.materialcode
                 };
-                // Update with customer details if available.
-                if (customer) {
-                  pmData.city = customer.city;
-                  pmData.region = customer.region;
-                }
-                if (!pmData.pmNumber) delete pmData.pmNumber;
                 try {
                   await new PM(pmData).save();
                   totalPMCreated++;
-                  pmResults.push({ serialnumber: equipmentDoc.serialnumber, pmType: currentType, status: "Created" });
-                } catch (err) {
-                  pmResults.push({ serialnumber: equipmentDoc.serialnumber, pmType: currentType, status: "Failed", error: err.message });
+                  pmResults.push({
+                    serialnumber: equipmentDoc.serialnumber,
+                    pmType: type,
+                    status: 'Created'
+                  });
+                } catch (e) {
+                  pmResults.push({
+                    serialnumber: equipmentDoc.serialnumber,
+                    pmType: type,
+                    status: 'Failed',
+                    error: e.message
+                  });
                 }
               }
             }
-          } else {
-            console.error(`Invalid dealer warranty dates for serial ${equipmentDoc.serialnumber}`);
           }
         }
 
-        // ---------- Situation 3: AMC Contract PM (CPM or NPM) ----------
-        try {
-          const amc = await AMCContract.findOne({ serialnumber: equipmentDoc.serialnumber });
-          if (amc) {
-            // For AMC dates, try our helper; if it fails, fallback to new Date().
-            const amcStart = parseExcelDate(amc.startdate) || new Date(amc.startdate);
-            const amcEnd = parseExcelDate(amc.enddate) || new Date(amc.enddate);
-            if (amcStart && !isNaN(amcStart.getTime()) && amcEnd && !isNaN(amcEnd.getTime())) {
-              const diffMonthsAMC = (amcEnd.getFullYear() - amcStart.getFullYear()) * 12 +
-                (amcEnd.getMonth() - amcStart.getMonth()) + 1;
-              const numPMAMC = Math.floor(diffMonthsAMC / frequencyValue);
-              totalPMExpected += numPMAMC;
-              let prefix = "";
-              const amcType = (amc.satypeZDRC_ZDRN || "").toUpperCase();
-              if (amcType === 'ZDRC') {
-                prefix = "CPM";
-              } else if (amcType === 'ZDRN') {
-                prefix = "NPM";
-              }
-              if (prefix) {
-                for (let j = 1; j <= numPMAMC; j++) {
-                  const currentType = prefix + j.toString().padStart(2, '0');
-                  const exists = completedPMs.find(pm => pm.pmType === currentType);
-                  if (exists) {
+        // ─── AMC Contract PMs (CPM/NPM) ───────────────────────────
+        const amc = await AMCContract.findOne({ serialnumber: equipmentDoc.serialnumber }).catch(() => null);
+        if (amc) {
+          const start = parseExcelDate(amc.startdate) || new Date(amc.startdate);
+          const end   = parseExcelDate(amc.enddate)   || new Date(amc.enddate);
+          if (start && end && !isNaN(start) && !isNaN(end)) {
+            const diffMonthsAMC = (end.getFullYear() - start.getFullYear()) * 12 +
+                                  (end.getMonth() - start.getMonth()) + 1;
+            const numAMC = Math.floor(diffMonthsAMC / freq);
+            totalPMExpected += numAMC;
+            const prefix = (amc.satypeZDRC_ZDRN || '').toUpperCase() === 'ZDRC'
+              ? 'CPM' : (amc.satypeZDRC_ZDRN || '').toUpperCase() === 'ZDRN'
+              ? 'NPM' : '';
+            if (prefix) {
+              for (let j = 1; j <= numAMC; j++) {
+                const type = `${prefix}${String(j).padStart(2,'0')}`;
+                const exists = completedPMs.some(pm => pm.pmType === type);
+                if (exists) {
+                  totalPMCreated++;
+                  pmResults.push({
+                    serialnumber: equipmentDoc.serialnumber,
+                    pmType: type,
+                    status: 'Completed',
+                    message: 'Already completed'
+                  });
+                } else {
+                  const dueMonth = computeDueMonth(start, j * freq);
+                  const pmData = {
+                    pmType: type,
+                    materialDescription: equipmentDoc.materialdescription,
+                    serialNumber: equipmentDoc.serialnumber,
+                    customerCode: equipmentDoc.currentcustomer,
+                    region: customer?.region || '',
+                    city: customer?.city || '',
+                    pmDueMonth: dueMonth,
+                    pmStatus: 'Due',
+                    partNumber: equipmentDoc.materialcode
+                  };
+                  try {
+                    await new PM(pmData).save();
                     totalPMCreated++;
-                    pmResults.push({ serialnumber: equipmentDoc.serialnumber, pmType: currentType, status: "Completed", message: "Already completed" });
-                  } else {
-                    const dueMonth = computeDueMonth(amcStart, j * frequencyValue);
-                    const pmData = {
-                      pmType: currentType,
-                      pmNumber: "",
-                      materialDescription: equipmentDoc.materialdescription,
-                      serialNumber: equipmentDoc.serialnumber,
-                      customerCode: equipmentDoc.currentcustomer,
-                      region: "",
-                      city: "",
-                      pmDueMonth: dueMonth,
-                      pmDoneDate: "",
-                      pmVendorCode: "",
-                      pmEngineerCode: "",
-                      pmStatus: "Due",
-                      partNumber: equipmentDoc.materialcode
-                    };
-                    // Again, update with customer details if available.
-                    if (customer) {
-                      pmData.city = customer.city;
-                      pmData.region = customer.region;
-                    }
-                    if (!pmData.pmNumber) delete pmData.pmNumber;
-                    try {
-                      await new PM(pmData).save();
-                      totalPMCreated++;
-                      pmResults.push({ serialnumber: equipmentDoc.serialnumber, pmType: currentType, status: "Created" });
-                    } catch (err) {
-                      pmResults.push({ serialnumber: equipmentDoc.serialnumber, pmType: currentType, status: "Failed", error: err.message });
-                    }
+                    pmResults.push({
+                      serialnumber: equipmentDoc.serialnumber,
+                      pmType: type,
+                      status: 'Created'
+                    });
+                  } catch (e) {
+                    pmResults.push({
+                      serialnumber: equipmentDoc.serialnumber,
+                      pmType: type,
+                      status: 'Failed',
+                      error: e.message
+                    });
                   }
                 }
               }
-            } else {
-              console.error(`Invalid AMC contract dates for serial ${equipmentDoc.serialnumber}`);
             }
           }
-        } catch (amcErr) {
-          console.error("Error processing AMCContract for serial:", equipmentDoc.serialnumber, amcErr);
         }
       }
-    } // End processing equipment records.
+    }
 
     const pmCompletionPercentage = totalPMExpected > 0
       ? Math.round((totalPMCreated / totalPMExpected) * 100)
@@ -363,8 +329,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       pmCompletionPercentage,
       pmResults
     });
+
   } catch (error) {
-    console.error("Server error:", error);
+    console.error('Server error:', error);
     return res.status(500).json({ error: 'Server Error' });
   }
 });
