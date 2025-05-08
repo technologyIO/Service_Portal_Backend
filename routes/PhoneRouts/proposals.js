@@ -53,7 +53,57 @@ router.put('/:id', async (req, res) => {
         res.status(400).json({ message: error.message });
     }
 });
+// Add or Update CoNumber and set status to completed
+router.put('/:id/update-conumber', async (req, res) => {
+    try {
+        const { CoNumber } = req.body;
+        
+        if (!CoNumber) {
+            return res.status(400).json({ 
+                success: false,
+                message: 'CoNumber is required' 
+            });
+        }
 
+        const proposal = await Proposal.findByIdAndUpdate(
+            req.params.id,
+            {
+                $set: {
+                    CoNumber: CoNumber,
+                    status: 'completed',
+                    updatedAt: Date.now()
+                },
+                $push: { 
+                    statusHistory: {
+                        status: 'completed',
+                        changedAt: Date.now(),
+                        changedBy: req.user ? req.user._id : null // Assuming you have user info in req.user
+                    }
+                }
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!proposal) {
+            return res.status(404).json({ 
+                success: false,
+                message: 'Proposal not found' 
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'CoNumber updated and status set to completed',
+            data: proposal
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false,
+            message: 'Server error during update',
+            error: error.message 
+        });
+    }
+});
 // Create a new revision
 router.post('/:id/revisions', async (req, res) => {
     try {

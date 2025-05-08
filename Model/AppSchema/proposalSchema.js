@@ -63,6 +63,7 @@ const proposalSchema = new mongoose.Schema({
   discountPercentage: Number,
   gstPercentage: Number,
   remark: String,
+  CoNumber: String,
   grandSubTotal: { type: Number, min: [0, 'Subtotal cannot be negative'] },
   discountAmount: { type: Number, min: [0, 'Discount cannot be negative'] },
   afterDiscount: { type: Number, min: [0, 'Value cannot be negative'] },
@@ -74,7 +75,7 @@ const proposalSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
   status: {
     type: String,
-    enum: ['draft', 'submitted', 'approved', 'rejected', 'revised'],
+    enum: ['draft', 'submitted', 'approved','completed', 'rejected', 'revised'],
     default: 'draft'
   },
   proposalNumber: { type: String, unique: true },
