@@ -1,7 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const Proposal = require('../../Model/AppSchema/proposalSchema');
+const nodemailer = require('nodemailer');
 
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'webadmin@skanray-access.com',
+        pass: 'rdzegwmzirvbjcpm'
+    }
+});
 // Create a new proposal
 router.post('/', async (req, res) => {
     try {
@@ -57,11 +66,11 @@ router.put('/:id', async (req, res) => {
 router.put('/:id/update-conumber', async (req, res) => {
     try {
         const { CoNumber } = req.body;
-        
+
         if (!CoNumber) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                message: 'CoNumber is required' 
+                message: 'CoNumber is required'
             });
         }
 
@@ -73,7 +82,7 @@ router.put('/:id/update-conumber', async (req, res) => {
                     status: 'completed',
                     updatedAt: Date.now()
                 },
-                $push: { 
+                $push: {
                     statusHistory: {
                         status: 'completed',
                         changedAt: Date.now(),
@@ -85,9 +94,9 @@ router.put('/:id/update-conumber', async (req, res) => {
         );
 
         if (!proposal) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                message: 'Proposal not found' 
+                message: 'Proposal not found'
             });
         }
 
@@ -97,10 +106,10 @@ router.put('/:id/update-conumber', async (req, res) => {
             data: proposal
         });
     } catch (error) {
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
             message: 'Server error during update',
-            error: error.message 
+            error: error.message
         });
     }
 });
@@ -165,7 +174,7 @@ router.put('/:id/revision', async (req, res) => {
         const newRevisionNumber = proposal.currentRevision + 1;
         const { discountPercentage } = req.body;
 
-        // Calculate new amounts
+        // Calculate amounts
         const grandSubTotal = proposal.grandSubTotal;
         const discountAmount = grandSubTotal * (discountPercentage / 100);
         const afterDiscount = grandSubTotal - discountAmount;
@@ -174,6 +183,7 @@ router.put('/:id/revision', async (req, res) => {
         const gstAmount = afterTds * (proposal.gstPercentage / 100);
         const finalAmount = afterTds + gstAmount;
 
+        const remarkText = req.body.remark || `Revision ${newRevisionNumber}`;
         const revisionData = {
             revisionNumber: newRevisionNumber,
             changes: {
@@ -184,11 +194,26 @@ router.put('/:id/revision', async (req, res) => {
                 afterTds,
                 gstAmount,
                 finalAmount,
-                remark: req.body.remark || `Revision ${newRevisionNumber}`
+                remark: remarkText
             }
         };
 
-        // Update main proposal with new values
+        // Clear approvals inside each item
+        const updatedItems = proposal.items.map(item => ({
+            ...item.toObject(),
+            RSHApproval: {
+                approved: false,
+                approvedBy: null,
+                approvedAt: null
+            },
+            NSHApproval: {
+                approved: false,
+                approvedBy: null,
+                approvedAt: null
+            }
+        }));
+
+        // Update proposal
         const updatedProposal = await Proposal.findByIdAndUpdate(
             req.params.id,
             {
@@ -200,21 +225,59 @@ router.put('/:id/revision', async (req, res) => {
                     afterTds,
                     gstAmount,
                     finalAmount,
-                    remark: req.body.remark,
+                    remark: remarkText,
                     status: 'revised',
                     currentRevision: newRevisionNumber,
-                    updatedAt: Date.now()
+                    updatedAt: Date.now(),
+                    RSHApproval: {
+                        approved: false,
+                        approvedBy: null,
+                        approvedAt: null
+                    },
+                    NSHApproval: {
+                        approved: false,
+                        approvedBy: null,
+                        approvedAt: null
+                    },
+                    items: updatedItems
                 },
                 $push: { revisions: revisionData }
             },
             { new: true }
         );
 
-        res.status(200).json(updatedProposal);
+        // Email setup
+        const proposalLink = `http://localhost:3000/proposal/${req.params.id}`;
+        const mailOptions = {
+            from: 'webadmin@skanray-access.com',
+            to: 'shivamt2023@gmail.com',
+            subject: `Proposal Revision #${newRevisionNumber} - Approval Needed`,
+            html: `
+                <p>Dear CIC,</p>
+                <p>A new revision (<strong>#${newRevisionNumber}</strong>) has been made for the proposal with ID <strong>${proposal._id}</strong>.</p>
+                <p><strong>Final Amount:</strong> ₹${finalAmount.toFixed(2)}</p>
+                <p><strong>Remark:</strong> ${remarkText}</p>
+                <p>Please review and take action (Approve or Reject) at the following link:</p>
+                <p><a href="${proposalLink}">${proposalLink}</a></p>
+                <br/>
+                <p>Regards,<br/>Proposal Management System</p>
+            `
+        };
+
+        // Send email
+        await transporter.sendMail(mailOptions);
+
+        // Final response
+        res.status(200).json({
+            message: `Proposal revised successfully and email sent to CIC.`,
+            updatedProposal
+        });
     } catch (error) {
-        res.status(400).json({ message: error.message });
+        console.error("Error:", error);
+        res.status(500).json({ message: 'An error occurred', error: error.message });
     }
 });
+
 // Get all revisions for a proposal
 router.get('/:id/revisions', async (req, res) => {
     try {
@@ -227,26 +290,23 @@ router.get('/:id/revisions', async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
+// Approve by RSH (updated version)
 router.put('/:id/approve-rsh', async (req, res) => {
     try {
-        console.log('Approval request received:', req.body);
-        
         const { userId, itemId } = req.body;
 
         if (!userId) {
-            console.log('User ID missing in request');
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                message: 'User ID is required' 
+                message: 'User ID is required'
             });
         }
 
         const proposal = await Proposal.findById(req.params.id);
         if (!proposal) {
-            console.log('Proposal not found:', req.params.id);
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                message: 'Proposal not found' 
+                message: 'Proposal not found'
             });
         }
 
@@ -254,13 +314,12 @@ router.put('/:id/approve-rsh', async (req, res) => {
         if (itemId) {
             const item = proposal.items.id(itemId);
             if (!item) {
-                console.log('Item not found:', itemId);
-                return res.status(404).json({ 
+                return res.status(404).json({
                     success: false,
-                    message: 'Item not found' 
+                    message: 'Item not found'
                 });
             }
-            
+
             item.RSHApproval = {
                 approved: true,
                 approvedBy: userId,
@@ -274,48 +333,89 @@ router.put('/:id/approve-rsh', async (req, res) => {
                     approvedBy: userId,
                     approvedAt: new Date()
                 };
+
+                const requiresNSHApproval = proposal.discountPercentage > 10;
+                if ((requiresNSHApproval && item.NSHApproval?.approved) || (!requiresNSHApproval)) {
+                    item.equipment.status = 'Approved';
+                }
             });
+
         }
 
+        // Update revision status
+        const currentRevision = proposal.revisions.find(rev => rev.revisionNumber === proposal.currentRevision);
+        if (currentRevision) {
+            currentRevision.approvalHistory.push({
+                status: 'approved',
+                changedAt: new Date(),
+                changedBy: userId,
+                approvalType: 'RSH'
+            });
+
+            // Check if revision should be marked as approved
+            const requiresNSHApproval = proposal.discountPercentage > 10;
+            if (!requiresNSHApproval) {
+                currentRevision.status = 'approved';
+            } else {
+                // Check if NSH has also approved
+                const nshApproved = proposal.items.every(item => item.NSHApproval.approved);
+                if (nshApproved) {
+                    currentRevision.status = 'approved';
+                }
+            }
+        }
+
+        // Check if proposal approval status should be updated
+        const requiresNSHApproval = proposal.discountPercentage > 10;
+        let allApproved = true;
+
+        for (const item of proposal.items) {
+            if (requiresNSHApproval) {
+                if (!item.RSHApproval.approved || !item.NSHApproval.approved) {
+                    allApproved = false;
+                    break;
+                }
+            } else {
+                if (!item.RSHApproval.approved) {
+                    allApproved = false;
+                    break;
+                }
+            }
+        }
+
+        proposal.approvalProposalStatus = allApproved ? 'Approved' : 'InProgress';
         proposal.updatedAt = new Date();
         await proposal.save();
 
-        console.log('Approval successful for proposal:', proposal._id);
         res.json({
             success: true,
             data: proposal
         });
     } catch (error) {
-        console.error('Approval error:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
             message: 'Server error during approval',
-            error: error.message 
+            error: error.message
         });
     }
 });
 
-// Approve by NSH (updated version)
 router.put('/:id/approve-nsh', async (req, res) => {
     try {
-        console.log('Approval request received:', req.body);
-        
         const { userId, itemId } = req.body;
 
         if (!userId) {
-            console.log('User ID missing in request');
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                message: 'User ID is required' 
+                message: 'User ID is required'
             });
         }
 
         const proposal = await Proposal.findById(req.params.id);
         if (!proposal) {
-            console.log('Proposal not found:', req.params.id);
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                message: 'Proposal not found' 
+                message: 'Proposal not found'
             });
         }
 
@@ -323,18 +423,23 @@ router.put('/:id/approve-nsh', async (req, res) => {
         if (itemId) {
             const item = proposal.items.id(itemId);
             if (!item) {
-                console.log('Item not found:', itemId);
-                return res.status(404).json({ 
+                return res.status(404).json({
                     success: false,
-                    message: 'Item not found' 
+                    message: 'Item not found'
                 });
             }
-            
+
             item.NSHApproval = {
                 approved: true,
                 approvedBy: userId,
                 approvedAt: new Date()
             };
+
+            // Update equipment status if both approvals are done (when required)
+            const requiresNSHApproval = proposal.discountPercentage > 10;
+            if ((requiresNSHApproval && item.RSHApproval?.approved) || !requiresNSHApproval) {
+                item.equipment.status = 'Approved';
+            }
         } else {
             // Update all items
             proposal.items.forEach(item => {
@@ -343,23 +448,170 @@ router.put('/:id/approve-nsh', async (req, res) => {
                     approvedBy: userId,
                     approvedAt: new Date()
                 };
+
+                // Update equipment status if both approvals are done (when required)
+                const requiresNSHApproval = proposal.discountPercentage > 10;
+                if ((requiresNSHApproval && item.RSHApproval?.approved) || !requiresNSHApproval) {
+                    item.equipment.status = 'Approved';
+                }
             });
         }
 
+        // Update revision status
+        const currentRevision = proposal.revisions.find(rev => rev.revisionNumber === proposal.currentRevision);
+        if (currentRevision) {
+            currentRevision.approvalHistory.push({
+                status: 'approved',
+                changedAt: new Date(),
+                changedBy: userId,
+                approvalType: 'NSH'
+            });
+
+            // Check if revision should be marked as approved
+            const requiresNSHApproval = proposal.discountPercentage > 10;
+            if (requiresNSHApproval) {
+                // For discounts >10%, need both RSH and NSH approvals
+                const rshApproved = proposal.items.every(item => item.RSHApproval?.approved);
+                const nshApproved = proposal.items.every(item => item.NSHApproval?.approved);
+                if (rshApproved && nshApproved) {
+                    currentRevision.status = 'approved';
+                }
+            } else {
+                // For discounts ≤10%, only RSH approval is needed
+                const rshApproved = proposal.items.every(item => item.RSHApproval?.approved);
+                if (rshApproved) {
+                    currentRevision.status = 'approved';
+                }
+            }
+        }
+
+        // Check if proposal approval status should be updated
+        const requiresNSHApproval = proposal.discountPercentage > 10;
+        let allApproved = true;
+
+        for (const item of proposal.items) {
+            if (requiresNSHApproval) {
+                if (!item.RSHApproval?.approved || !item.NSHApproval?.approved) {
+                    allApproved = false;
+                    break;
+                }
+            } else {
+                if (!item.RSHApproval?.approved) {
+                    allApproved = false;
+                    break;
+                }
+            }
+        }
+
+        proposal.approvalProposalStatus = allApproved ? 'Approved' : 'InProgress';
         proposal.updatedAt = new Date();
         await proposal.save();
 
-        console.log('Approval successful for proposal:', proposal._id);
         res.json({
             success: true,
             data: proposal
         });
     } catch (error) {
-        console.error('Approval error:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
             message: 'Server error during approval',
-            error: error.message 
+            error: error.message
+        });
+    }
+});
+// Add a new route to reject a revision
+router.put('/:id/reject-revision', async (req, res) => {
+    try {
+        const { userId, reason, approvalType, itemId } = req.body;
+
+        if (!userId || !reason) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID and rejection reason are required'
+            });
+        }
+
+        const proposal = await Proposal.findById(req.params.id);
+        if (!proposal) {
+            return res.status(404).json({
+                success: false,
+                message: 'Proposal not found'
+            });
+        }
+
+        const currentRevision = proposal.revisions.find(rev =>
+            rev.revisionNumber === proposal.currentRevision
+        );
+
+        if (!currentRevision) {
+            return res.status(404).json({
+                success: false,
+                message: 'Current revision not found'
+            });
+        }
+
+        // Update approval history
+        currentRevision.approvalHistory.push({
+            approvalType: approvalType || 'revision',
+            status: 'rejected',
+            changedAt: new Date(),
+            changedBy: userId,
+            remark: reason
+        });
+
+        // Handle item-level rejection if itemId is provided
+        if (itemId) {
+            const item = proposal.items.id(itemId);
+            if (item) {
+                if (approvalType === 'RSH') {
+                    item.RSHApproval = {
+                        approved: false,
+                        rejected: true,
+                        rejectedBy: userId,
+                        rejectedAt: new Date(),
+                        reason: reason
+                    };
+                } else if (approvalType === 'NSH') {
+                    item.NSHApproval = {
+                        approved: false,
+                        rejected: true,
+                        rejectedBy: userId,
+                        rejectedAt: new Date(),
+                        reason: reason
+                    };
+                }
+            }
+
+            // Check if both RSH and NSH have rejected this revision
+            const rshRejected = currentRevision.approvalHistory.some(
+                h => h.approvalType === 'RSH' && h.status === 'rejected'
+            );
+            const nshRejected = currentRevision.approvalHistory.some(
+                h => h.approvalType === 'NSH' && h.status === 'rejected'
+            );
+
+            if (rshRejected && nshRejected) {
+                currentRevision.status = 'rejected';
+                proposal.approvalProposalStatus = 'InProgress';
+            }
+        } else {
+            // Whole revision rejection
+            currentRevision.status = 'rejected';
+            proposal.approvalProposalStatus = 'InProgress';
+        }
+
+        proposal.updatedAt = new Date();
+        await proposal.save();
+
+        res.json({
+            success: true,
+            data: proposal
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Server error during rejection',
+            error: error.message
         });
     }
 });
