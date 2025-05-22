@@ -101,51 +101,77 @@ router.get('/alluser', async (req, res) => {
 
 // CREATE a new user
 router.post('/user', checkDuplicateEmail, async (req, res) => {
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(req.body.password, salt);
-
-    // Prepare user data including new fields.
-    const userData = {
-        firstname: req.body.firstname,
-        lastname: req.body.lastname,
-        email: req.body.email,
-        mobilenumber: req.body.mobilenumber,
-        status: req.body.status,
-        branch: req.body.branch, // expect an array of branch names
-        loginexpirydate: req.body.loginexpirydate,
-        employeeid: req.body.employeeid,
-        country: req.body.country,
-        state: req.body.state,
-        city: req.body.city,
-        department: req.body.department,
-        password: hashedPassword,
-        manageremail: req.body.manageremail,
-        skills: req.body.skills,
-        profileimage: req.body.profileimage,
-        deviceid: req.body.deviceid,
-        usertype: req.body.usertype, // 'dealer' or 'skanray'
-        location: req.body.location // expect an array of locations
-    };
-
-    // Conditionally add role or dealerInfo based on usertype.
-    if (req.body.usertype === 'skanray') {
-        userData.role = {
-            roleName: req.body.roleName,
-            roleId: req.body.roleId
-        };
-    } else if (req.body.usertype === 'dealer') {
-        userData.dealerInfo = {
-            dealerName: req.body.dealerName,
-            dealerId: req.body.dealerId
-        };
-    }
-
-    const user = new User(userData);
-
     try {
-        const newUser = await user.save();
-        res.status(201).json(newUser);
+        const {
+            firstname,
+            lastname,
+            email,
+            mobilenumber,
+            status,
+            branch,
+            loginexpirydate,
+            employeeid,
+            country,
+            state,
+            city,
+            department,
+            password,
+            manageremail,
+            skills,
+            profileimage,
+            deviceid,
+            usertype,
+            location,
+            roleName,
+            roleId,
+            dealerName,
+            dealerId
+        } = req.body;
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        const userData = {
+            firstname,
+            lastname,
+            email,
+            mobilenumber,
+            status,
+            branch,
+            loginexpirydate,
+            employeeid,
+            country,
+            state,
+            city,
+            department,
+            password: hashedPassword,
+            manageremail,
+            skills,
+            profileimage,
+            deviceid,
+            usertype,
+            location,
+            deviceregistereddate: new Date(),
+            modifiedAt: new Date()
+        };
+
+        if (usertype === 'skanray') {
+            userData.role = {
+                roleName,
+                roleId
+            };
+        } else if (usertype === 'dealer') {
+            userData.dealerInfo = {
+                dealerName,
+                dealerId
+            };
+        }
+
+        const newUser = new User(userData);
+        const savedUser = await newUser.save();
+        res.status(201).json(savedUser);
     } catch (err) {
+        console.error("Error creating user:", err);
         res.status(400).json({ message: err.message });
     }
 });

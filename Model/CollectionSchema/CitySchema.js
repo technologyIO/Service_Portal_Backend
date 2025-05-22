@@ -12,7 +12,7 @@ const CitySchema = new mongoose.Schema({
     cityID: {
         type: String,
         required: true,
-        unique: true // Ensure cityID is unique
+        unique: true
     },
     createdAt: {
         type: Date,
@@ -24,7 +24,11 @@ const CitySchema = new mongoose.Schema({
     },
     state: {
         type: String,
-        required: true
+        required: true  
+    },
+    stateId: {
+        type: String,
+        required: true 
     }
 });
 

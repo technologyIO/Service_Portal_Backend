@@ -1,11 +1,21 @@
 const mongoose = require('mongoose');
 
 const StateSchema = new mongoose.Schema({
+    stateId: {
+        type: String,
+        required: true,
+        unique: true  
+    },
     name: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    status: {
         type: String,
         required: true
     },
-    status: {
+    country: {
         type: String,
         required: true
     },
@@ -16,10 +26,6 @@ const StateSchema = new mongoose.Schema({
     modifiedAt: {
         type: Date,
         default: Date.now
-    },
-    country: {
-        type: String,
-        required: true
     }
 });
 

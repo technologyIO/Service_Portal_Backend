@@ -5,7 +5,7 @@ const Country = require('./routes/Collections/Country');
 const State = require('./routes/Collections/State');
 const City = require('./routes/Collections/City');
 const Branch = require('./routes/Collections/Branch');
-const Role = require('./routes/Collections/roles');
+// const Role = require('./routes/Collections/roles');
 const UserType = require('./routes/Collections/UserType');
 const DepartMent = require('./routes/Collections/Department');
 const ProductGroup = require('./routes/Collections/ProductGroup');
@@ -54,6 +54,9 @@ const CmcNcmcTds = require('./routes/Admin/CmcNcmcTds');
 const gstRoutes = require('./routes/Admin/GstRoutes');
 const discountRoutes = require('./routes/Admin/DiscountRoutes');
 const proposalRoutes = require('./routes/PhoneRouts/proposals');
+const CNoteRoutes = require('./routes/PhoneRouts/cnoteController');
+const componentRoutes = require('./routes/Role/componentRoutes');
+const roleRoutes = require('./routes/Role/roleRoutes');
 
 
 
@@ -86,7 +89,7 @@ app.use('/collections', Country);
 app.use('/collections', State);
 app.use('/collections', City);
 app.use('/collections', Branch);
-app.use('/collections', Role);
+// app.use('/collections', Role);
 app.use('/collections', UserType);
 app.use('/collections', DepartMent);
 app.use('/collections', ProductGroup);
@@ -113,7 +116,8 @@ app.use('/installations', installationRoutes)
 app.use('/complaints', ComplaintType)
 app.use('/complaints', ProblemType)
 app.use('/master', formatMasterRoutes)
-
+app.use('/role/components', componentRoutes);
+app.use('/roles', roleRoutes);
 app.use("/complaints/installationschecklist", installationChecklistRoutes);
 app.use('/complaints', ProblemName)
 app.use('/upload', PreventiveMaintenance)
@@ -125,6 +129,7 @@ app.use('/admin/cmc-ncmc-tds', CmcNcmcTds);
 app.use('/admin/gst', gstRoutes);
 app.use('/admin/discount', discountRoutes);
 app.use('/phone/proposal', proposalRoutes);
+app.use('/phone/cnote', CNoteRoutes);
 
 
 // Bulk Upload 

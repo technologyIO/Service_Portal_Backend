@@ -1,4 +1,3 @@
-// Model: UserSchema.js
 const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
@@ -9,7 +8,7 @@ const UserSchema = new mongoose.Schema({
     status: { type: String, required: true },
     createdAt: { type: Date, default: Date.now },
     modifiedAt: { type: Date, default: Date.now },
-    branch: [{ type: String, required: true }], // now an array
+    branch: [{ type: String, required: true }],
     loginexpirydate: { type: Date, required: true },
     employeeid: { type: String, required: true },
     country: { type: String, required: true },
@@ -23,20 +22,18 @@ const UserSchema = new mongoose.Schema({
     deviceid: { type: String, required: true },
     deviceregistereddate: { type: Date, default: Date.now },
     usertype: { type: String, enum: ['dealer', 'skanray'], required: true },
-    // For skanray type users, we save the role details.
+    
     role: {
-         roleName: { 
-             type: String, 
-             enum: ['Super Admin', 'admin', 'cic', 'Support', 'Manager', 'Service Engineer'] 
-         },
-         roleId: { type: String }
+        roleName: { type: String }, // ✅ Removed enum here to allow dynamic role names
+        roleId: { type: String }
     },
-    // For dealer type users, we save the dealer info.
+    
     dealerInfo: {
-         dealerName: { type: String },
-         dealerId: { type: String }
+        dealerName: { type: String },
+        dealerId: { type: String }
     },
-    location: [{ type: String, required: true }] // new field as an array
+
+    location: [{ type: String, required: true }]
 });
 
 module.exports = mongoose.model('User', UserSchema);

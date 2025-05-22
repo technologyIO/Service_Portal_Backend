@@ -9,7 +9,7 @@ const OverlaySchema = new mongoose.Schema({
     content: {
         type: String,
         required: true,
-        maxlength: 10 * 1024 * 1024 // 10MB limit for base64 strings
+        maxlength: 10 * 1024 * 1024  
     },
     position: {
         x: {
