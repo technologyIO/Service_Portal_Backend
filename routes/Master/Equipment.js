@@ -7,6 +7,8 @@ const pdf = require('html-pdf');
 const FormatMaster = require("../../Model/MasterSchema/FormatMasterSchema");
 const { getChecklistHTML } = require("./getChecklistHTML"); // the new function above
 const EquipmentChecklist = require('../../Model/CollectionSchema/EquipmentChecklistSchema');
+// Add this at the top with other models
+const InstallationReportCounter = require('../../Model/MasterSchema/InstallationReportCounterSchema');
 
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
@@ -265,6 +267,8 @@ router.post('/verify-otp', (req, res) => {
     res.status(200).json({ message: 'OTP verified successfully' });
 });
 
+
+// Updated bulk endpoint
 router.post("/equipment/bulk", async (req, res) => {
     try {
         const {
@@ -279,32 +283,15 @@ router.post("/equipment/bulk", async (req, res) => {
             return res.status(400).json({ message: "No equipmentPayloads provided." });
         }
 
-        console.log("PDF data received for PDF creation (bulk):", pdfData);
-        console.log("Checklist payloads:", checklistPayloads);
-        console.log("abnormalCondition:", abnormalCondition);
-        console.log("voltageData:", voltageData);
+        // 1) Get next installation report number
+        const counter = await InstallationReportCounter.findOneAndUpdate(
+            { _id: 'installationReportId' },
+            { $inc: { seq: 1 } },
+            { new: true, upsert: true }
+        );
+        const newInstallationReportNo = `IR4000${counter.seq}`;
 
-        // 1) Determine the next Installation Report Number
-        const lastEquipment = await Equipment.findOne({
-            installationreportno: { $regex: /^IR4000\d+$/ },
-        })
-            .sort({ createdAt: -1 })
-            .lean();
-
-        let nextNumber = 1;
-        if (lastEquipment && lastEquipment.installationreportno) {
-            const prevNumStr = lastEquipment.installationreportno.replace("IR4000", "");
-            const prevNum = parseInt(prevNumStr, 10);
-            if (!isNaN(prevNum)) {
-                nextNumber = prevNum + 1;
-            }
-        }
-        const newInstallationReportNo = `IR4000${nextNumber}`;
-
-        // 2) Generate PDFs (Installation Report + Checklist PDFs)
-        const attachments = [];
-
-        // 2a) Build & generate the Installation Report PDF
+        // 2) Generate Installation Report PDF (once for all equipment)
         const dataForInstallationPDF = {
             ...pdfData,
             installationreportno: newInstallationReportNo,
@@ -322,211 +309,151 @@ router.post("/equipment/bulk", async (req, res) => {
                 zoomFactor: 0.5,
                 childProcessOptions: { env: { OPENSSL_CONF: "/dev/null" } },
             });
-            attachments.push({
-                filename: "InstallationReport.pdf",
-                content: installationBuffer,
-            });
         } catch (err) {
             console.error("Error generating Installation PDF:", err);
             return res.status(500).json({ message: "Failed to create Installation PDF" });
         }
 
-        // 2b) Generate Checklist PDFs for each checklist payload
-        for (const cp of checklistPayloads) {
-            if (!cp.checklistResults || cp.checklistResults.length === 0) {
-                continue;
-            }
+        // 3) Process each equipment individually
+        const results = [];
 
-            // Fetch FormatMaster details using product group from cp
-            let formatDetails = { chlNo: "", revNo: "" };
-            if (cp.prodGroup) {
-                try {
-                    const formatDoc = await FormatMaster.findOne({ productGroup: cp.prodGroup });
-                    if (formatDoc) {
-                        formatDetails.chlNo = formatDoc.chlNo;
-                        formatDetails.revNo = formatDoc.revNo;
+        for (const [index, equipment] of equipmentPayloads.entries()) {
+            const serialNumber = equipment.serialnumber;
+            let status = "success";
+            let message = "Processed successfully";
+
+            try {
+                // Find matching checklist
+                const checklist = checklistPayloads.find(cp =>
+                    cp.serialNumber === serialNumber
+                );
+
+                // Generate checklist PDF if exists
+                let checklistBuffer = null;
+                if (checklist && checklist.checklistResults && checklist.checklistResults.length > 0) {
+                    // Fetch FormatMaster details
+                    let formatDetails = { chlNo: "", revNo: "" };
+                    if (checklist.prodGroup) {
+                        const formatDoc = await FormatMaster.findOne({ productGroup: checklist.prodGroup });
+                        if (formatDoc) {
+                            formatDetails.chlNo = formatDoc.chlNo;
+                            formatDetails.revNo = formatDoc.revNo;
+                        }
                     }
-                } catch (err) {
-                    console.error("Error fetching FormatMaster for product group:", cp.prodGroup, err);
+
+                    // Build checklist data
+                    const checklistHtmlData = {
+                        reportNo: newInstallationReportNo,
+                        date: pdfData.dateOfInstallation || new Date().toLocaleDateString("en-GB"),
+                        customer: {
+                            hospitalname: pdfData.customerName || "",
+                            customercodeid: pdfData.customerId || "",
+                            street: pdfData.street || "",
+                            city: pdfData.city || "",
+                            telephone: pdfData.phoneNumber || "",
+                            email: pdfData.email || "",
+                        },
+                        machine: {
+                            partNumber: equipment.materialcode,
+                            modelDescription: equipment.materialdescription,
+                            serialNumber: serialNumber,
+                            machineId: "",
+                        },
+                        remarkglobal: checklist.globalRemark || "",
+                        checklistItems: checklist.checklistResults,
+                        serviceEngineer: `${pdfData.userInfo?.firstName || ""} ${pdfData.userInfo?.lastName || ""}`,
+                        formatChlNo: formatDetails.chlNo,
+                        formatRevNo: formatDetails.revNo,
+                    };
+
+                    // Generate PDF
+                    const checklistHtml = getChecklistHTML(checklistHtmlData);
+                    checklistBuffer = await createPdfBuffer(checklistHtml, {
+                        format: "A4",
+                        orientation: "portrait",
+                        border: { top: "5mm", right: "5mm", bottom: "5mm", left: "5mm" },
+                        zoomFactor: 0.5,
+                        childProcessOptions: { env: { OPENSSL_CONF: "/dev/null" } },
+                    });
                 }
+
+                // Send email to CIC
+                const cicAttachments = [{
+                    filename: "InstallationReport.pdf",
+                    content: installationBuffer
+                }];
+
+                if (checklistBuffer) {
+                    cicAttachments.push({
+                        filename: `Checklist_${serialNumber}.pdf`,
+                        content: checklistBuffer
+                    });
+                }
+
+                const cicMailOptions = {
+                    from: "webadmin@skanray-access.com",
+                    to: "mrshivamtiwari2025@gmail.com",
+                    subject: `Installation Report - ${serialNumber}`,
+                    text: `Equipment processed: ${serialNumber}`,
+                    attachments: cicAttachments
+                };
+
+                await transporter.sendMail(cicMailOptions);
+                console.log(`CIC email sent for ${serialNumber}`);
+
+                // Send equipment data to CIC (as text in email)
+                const dataMailOptions = {
+                    from: "webadmin@skanray-access.com",
+                    to: "mrshivamtiwari2025@gmail.com",
+                    subject: `Equipment Data - ${serialNumber}`,
+                    text: JSON.stringify(equipment, null, 2)
+                };
+
+                await transporter.sendMail(dataMailOptions);
+                console.log(`Equipment data sent for ${serialNumber}`);
+
+            } catch (error) {
+                status = "error";
+                message = error.message;
+                console.error(`Error processing ${serialNumber}:`, error);
             }
 
-            // Find the matching equipment payload for additional details
-            const eqPayload = equipmentPayloads.find(
-                (ep) => ep.serialnumber === cp.serialNumber
-            );
+            results.push({
+                serialNumber,
+                status,
+                message
+            });
+        }
 
-            // Build data object for checklist HTML generation
-            const checklistHtmlData = {
-                reportNo: newInstallationReportNo,
-                date: pdfData.dateOfInstallation || new Date().toLocaleDateString("en-GB"),
-                customer: {
-                    hospitalname: pdfData.customerName || "",
-                    customercodeid: pdfData.customerId || "",
-                    street: pdfData.street || "",
-                    city: pdfData.city || "",
-                    telephone: pdfData.phoneNumber || "",
-                    email: pdfData.email || "", // same email used for customer
-                },
-                machine: {
-                    partNumber: eqPayload ? eqPayload.materialcode : "",
-                    modelDescription: eqPayload ? eqPayload.materialdescription : "",
-                    serialNumber: cp.serialNumber,
-                    machineId: "", // fill if needed
-                },
-                remarkglobal: cp.globalRemark || "",
-                checklistItems: cp.checklistResults,
-                serviceEngineer: `${pdfData.userInfo?.firstName || ""} ${pdfData.userInfo?.lastName || ""}`,
-                formatChlNo: formatDetails.chlNo,
-                formatRevNo: formatDetails.revNo,
+        // 4) Send customer email (only once with installation report)
+        if (pdfData.email) {
+            const customerMailOptions = {
+                from: "webadmin@skanray-access.com",
+                to: pdfData.email,
+                subject: "Your Installation Report",
+                text: "Thank you for choosing our services",
+                attachments: [{
+                    filename: "InstallationReport.pdf",
+                    content: installationBuffer
+                }]
             };
 
-            try {
-                const checklistHtml = getChecklistHTML(checklistHtmlData);
-                const checklistBuffer = await createPdfBuffer(checklistHtml, {
-                    format: "A4",
-                    orientation: "portrait",
-                    border: { top: "5mm", right: "5mm", bottom: "5mm", left: "5mm" },
-                    zoomFactor: 0.5,
-                    childProcessOptions: { env: { OPENSSL_CONF: "/dev/null" } },
-                });
-
-                attachments.push({
-                    filename: `Checklist_${cp.serialNumber}.pdf`,
-                    content: checklistBuffer,
-                });
-            } catch (err) {
-                console.error(`Error generating checklist PDF for ${cp.serialNumber}:`, err);
-                return res.status(500).json({
-                    message: `Failed to create checklist PDF for ${cp.serialNumber}`,
-                });
-            }
-        }
-
-        // 3) Insert equipment data into DB.
-        const equipmentDocs = equipmentPayloads.map((payload) => ({
-            name: payload.name,
-            materialdescription: payload.materialdescription,
-            serialnumber: payload.serialnumber,
-            materialcode: payload.materialcode,
-            status: payload.status,
-            currentcustomer: payload.currentcustomer,
-            custWarrantystartdate: payload.custWarrantystartdate,
-            custWarrantyenddate: payload.custWarrantyenddate,
-            palnumber: payload.palnumber,
-            installationreportno: newInstallationReportNo,
-        }));
-
-        let insertedEquipments;
-        try {
-            insertedEquipments = await Equipment.insertMany(equipmentDocs);
-            console.log(
-                "Bulk equipment saved with new IRNo=",
-                newInstallationReportNo,
-                "Count=",
-                insertedEquipments.length
-            );
-        } catch (err) {
-            console.error("Error inserting equipment after PDFs generated:", err);
-            return res.status(500).json({ message: "Failed to save equipment after PDFs generated" });
-        }
-
-        // 4) Insert checklist data into DB.
-        let insertedChecklists = [];
-        if (checklistPayloads.length > 0) {
-            const checklistDocs = checklistPayloads.map((cp) => ({
-                serialNumber: cp.serialNumber,
-                checklistResults: cp.checklistResults,
-                globalRemark: cp.globalRemark || "",
-                installationreportno: newInstallationReportNo,
-            }));
-
-            try {
-                insertedChecklists = await EquipmentChecklist.insertMany(checklistDocs);
-                console.log("Checklist data inserted. Count:", insertedChecklists.length);
-            } catch (err) {
-                console.error("Error inserting checklist data:", err);
-                return res.status(500).json({ message: "Failed to save checklist data" });
-            }
-        }
-
-        // 5) Email Sending
-
-        // 5a) Email to Customer - ONLY Installation Report
-        // Using pdfData.email as the customer email.
-        const customerEmail = pdfData.email;
-        if (!customerEmail) {
-            console.error("Customer email is missing in pdfData.email");
-            return res.status(400).json({ message: "Customer email is required." });
-        }
-        const customerMailOptions = {
-            from: "webadmin@skanray-access.com",
-            to: customerEmail,
-            subject: "Your Installation Report",
-            text: `Dear Customer,
-  
-  Please find attached your Installation Report.
-  
-  Regards,
-  Skanray Technologies`,
-            attachments: [
-                {
-                    filename: "InstallationReport.pdf",
-                    content: installationBuffer,
-                },
-            ],
-        };
-
-        // 5b) Email to CIC - Installation Report + Checklist PDFs
-        const checklistAttachments = attachments.filter(
-            (att) => att.filename.startsWith("Checklist_")
-        );
-        const cicMailOptions = {
-            from: "webadmin@skanray-access.com",
-            to: "mrshivamtiwari2025@gmail.com",
-            subject: "Installation & Checklist Reports for CIC",
-            text: `Please find attached the Installation Report and Checklist Report(s).
-  
-  Regards,
-  Skanray Technologies`,
-            attachments: [
-                {
-                    filename: "InstallationReport.pdf",
-                    content: installationBuffer,
-                },
-                ...checklistAttachments,
-            ],
-        };
-
-        // Send customer email first
-        try {
             await transporter.sendMail(customerMailOptions);
-            console.log("Customer email sent to:", customerEmail);
-        } catch (customerErr) {
-            console.error("Error sending customer email:", customerErr);
-            return res.status(500).json({ message: "Failed to send customer email", error: customerErr.message });
+            console.log("Customer email sent to:", pdfData.email);
+        } else {
+            console.warn("No customer email provided - skipping customer notification");
         }
 
-        // Then send CIC email
-        try {
-            await transporter.sendMail(cicMailOptions);
-            console.log("CIC email sent to: mrshivamtiwari2025@gmail.com");
-        } catch (cicErr) {
-            console.error("Error sending CIC email:", cicErr);
-            return res.status(500).json({ message: "Failed to send CIC email", error: cicErr.message });
-        }
-
-        return res.status(201).json({
-            message: "Installations saved; Emails sent successfully.",
-            insertedEquipments,
-            insertedChecklists,
+        // 5) Return results
+        res.status(200).json({
+            message: "Processing completed",
+            installationReportNo: newInstallationReportNo,
+            results
         });
+
     } catch (err) {
-        console.error("Error in bulk creation w/ checklists:", err);
-        if (err.code === 11000) {
-            return res.status(400).json({ message: "Duplicate Serial or Installation Report No." });
-        }
-        return res.status(400).json({ message: err.message });
+        console.error("Error in bulk processing:", err);
+        res.status(500).json({ message: err.message });
     }
 });
 

@@ -3,6 +3,7 @@ const XLSX = require('xlsx');
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const mongoose = require('mongoose');
 
 // Import Mongoose models
 const Equipment = require('../../Model/MasterSchema/EquipmentSchema');
@@ -39,23 +40,21 @@ function parseUniversalDate(dateInput) {
 
   // Handle string dates
   if (typeof dateInput === 'string') {
-    // Clean the string first
-    const cleanedDate = dateInput
-      .replace(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/, '$1/$2/$3') // DD-MM-YYYY -> DD/MM/YYYY
-      .replace(/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/, '$2/$3/$1'); // YYYY-MM-DD -> MM/DD/YYYY
-
+    // Clean the string first - remove any time portion
+    const dateOnly = dateInput.split(' ')[0];
+    
+    // Try common formats
     const formats = [
       'dd/MM/yyyy', 'dd-MM-yyyy', 'dd.MM.yyyy',  // Indian formats
       'MM/dd/yyyy', 'MM-dd-yyyy', 'MM.dd.yyyy',  // US formats
       'yyyy/MM/dd', 'yyyy-MM-dd', 'yyyy.MM.dd',  // ISO formats
       'd/M/yyyy', 'd-M-yyyy', 'd.M.yyyy',        // Single digit day/month
-      'M/d/yyyy', 'M-d-yyyy', 'M.d.yyyy',        // US single digit
-      'yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX'           // ISO with timezone
+      'M/d/yyyy', 'M-d-yyyy', 'M.d.yyyy'         // US single digit
     ];
 
     for (const format of formats) {
       try {
-        const parsedDate = parse(cleanedDate, format, new Date());
+        const parsedDate = parse(dateOnly, format, new Date());
         if (isValid(parsedDate)) {
           return parsedDate;
         }
@@ -79,11 +78,11 @@ function toISODateString(date) {
   if (!date) return null;
   const d = new Date(date);
   if (isNaN(d.getTime())) return null;
-  
+
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
-  
+
   return `${year}-${month}-${day}`;
 }
 
@@ -96,259 +95,282 @@ function addMonths(date, months) {
 
 /** Compute PM due month string (MM/YYYY) */
 function computeDueMonth(baseDate, monthsToAdd) {
-  const dueDate = addMonths(baseDate, monthsToAdd - 2);
+  const dueDate = addMonths(baseDate, monthsToAdd);
   const month = String(dueDate.getMonth() + 1).padStart(2, '0');
   const year = dueDate.getFullYear();
   return `${month}/${year}`;
 }
 
-router.post('/bulk-upload', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+// Create an in-memory store for job tracking
+const jobStore = new Map();
+
+// Cleanup job store every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [jobId, job] of jobStore.entries()) {
+    if (job.status === 'completed' || job.status === 'failed') {
+      // Remove jobs that completed more than 5 minutes ago
+      if (now - job.completedAt > 300000) {
+        jobStore.delete(jobId);
+      }
+    }
+  }
+}, 300000);
+
+// Progress tracking endpoint
+router.get('/progress/:jobId', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const { jobId } = req.params;
+  const sendEvent = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  // Initial check if job exists
+  if (!jobStore.has(jobId)) {
+    sendEvent({ error: 'Job not found' });
+    res.end();
+    return;
+  }
+
+  // Send initial state
+  sendEvent(jobStore.get(jobId));
+
+  // If job is already completed, end immediately
+  const job = jobStore.get(jobId);
+  if (job.status === 'completed' || job.status === 'failed') {
+    res.end();
+    return;
+  }
+
+  // Set up periodic updates
+  const intervalId = setInterval(() => {
+    const currentJob = jobStore.get(jobId);
+    if (!currentJob) {
+      clearInterval(intervalId);
+      sendEvent({ error: 'Job removed' });
+      res.end();
+      return;
     }
 
-    // Read the Excel workbook
+    sendEvent(currentJob);
+
+    // End connection if job completed
+    if (currentJob.status === 'completed' || currentJob.status === 'failed') {
+      clearInterval(intervalId);
+      res.end();
+    }
+  }, 1000);
+
+  // Clean up on client disconnect
+  req.on('close', () => {
+    clearInterval(intervalId);
+  });
+});
+
+// Bulk upload route
+router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+  let jobId;
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    // Generate unique job ID
+    jobId = new mongoose.Types.ObjectId().toString();
+    const startTime = Date.now();
+
+    // Initialize job tracking
+    const job = {
+      jobId,
+      status: 'processing',
+      startTime,
+      totalEquipment: 0,
+      processedEquipment: 0,
+      equipmentResults: [],
+      pmResults: [],
+      summary: {
+        totalPMExpected: 0,
+        totalPMCreated: 0,
+        pmCompletionPercentage: 0
+      }
+    };
+    jobStore.set(jobId, job);
+
+    // Read and parse Excel file
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+    const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
-    let equipmentResults = [];
-    let pmResults = [];
-    let totalEquipment = jsonData.length;
-    let processedEquipment = 0;
-    let totalPMExpected = 0;
-    let totalPMCreated = 0;
+    // Update job with total equipment count
+    job.totalEquipment = jsonData.length;
+    jobStore.set(jobId, job);
 
-    for (let record of jsonData) {
-      // Normalize date fields to ISO format strings
-      const dateFields = [
-        'custWarrantystartdate',
-        'custWarrantyenddate',
-        'dealerwarrantystartdate',
-        'dealerwarrantyenddate'
-      ];
+    // Pre-fetch data for optimization
+    const materialcodes = [...new Set(jsonData.map(r => r.materialcode))];
+    const products = await Product.find({ partnoid: { $in: materialcodes } });
+    const productMap = new Map(products.map(p => [p.partnoid, p]));
 
-      for (const field of dateFields) {
-        if (record[field] != null) {
-          const parsedDate = parseUniversalDate(record[field]);
-          record[field] = toISODateString(parsedDate);
-        }
-      }
+    const customercodes = [...new Set(jsonData.map(r => r.currentcustomer))];
+    const customers = await Customer.find({ customercodeid: { $in: customercodes } });
+    const customerMap = new Map(customers.map(c => [c.customercodeid, c]));
 
-      // Process equipment record
-      let equipmentDoc;
+    const serialnumbers = jsonData.map(r => r.serialnumber);
+    const amcContracts = await AMCContract.find({ serialnumber: { $in: serialnumbers } });
+    const amcMap = new Map(amcContracts.map(a => [a.serialnumber, a]));
+
+    // Process equipment sequentially with progress updates
+    for (let i = 0; i < jsonData.length; i++) {
+      const record = jsonData[i];
       try {
-        const existing = await Equipment.findOne({ serialnumber: record.serialnumber });
-        let status = 'Created';
-        
-        if (existing) {
-          await Equipment.deleteOne({ _id: existing._id });
-          status = 'Updated';
-        }
-        
-        equipmentDoc = await new Equipment(record).save();
-        equipmentResults.push({
-          serialnumber: record.serialnumber,
-          status
-        });
-      } catch (err) {
-        equipmentResults.push({
-          serialnumber: record.serialnumber,
-          status: 'Failed',
-          error: err.message
-        });
-        continue;
-      }
-      processedEquipment++;
+        // Process dates
+        const dateFields = [
+          'custWarrantystartdate',
+          'custWarrantyenddate',
+          'dealerwarrantystartdate',
+          'dealerwarrantyenddate'
+        ];
 
-      // Clean up existing PMs (keep only completed ones)
-      await PM.deleteMany({
-        serialNumber: equipmentDoc.serialnumber,
-        pmStatus: { $ne: 'Completed' }
-      });
-      const completedPMs = await PM.find({
-        serialNumber: equipmentDoc.serialnumber,
-        pmStatus: 'Completed'
-      });
-
-      // Get product and customer info
-      const product = await Product.findOne({ partnoid: equipmentDoc.materialcode }).catch(() => null);
-      const customer = await Customer.findOne({ customercodeid: equipmentDoc.currentcustomer }).catch(() => null);
-
-      if (product && ['3', '6', '12'].includes(product.frequency)) {
-        const freq = parseInt(product.frequency, 10);
-
-        // ─── Base Warranty PMs (WPM) ──────────────────────────────
-        if (equipmentDoc.custWarrantystartdate) {
-          const baseDate = parseUniversalDate(equipmentDoc.custWarrantystartdate);
-          if (baseDate && !isNaN(baseDate)) {
-            const numBase = Math.floor(12 / freq);
-            totalPMExpected += numBase;
-            
-            for (let j = 1; j <= numBase; j++) {
-              const type = `WPM${String(j).padStart(2, '0')}`;
-              const exists = completedPMs.some(pm => pm.pmType === type);
-              
-              if (exists) {
-                totalPMCreated++;
-                pmResults.push({
-                  serialnumber: equipmentDoc.serialnumber,
-                  pmType: type,
-                  status: 'Completed',
-                  message: 'Already completed'
-                });
-              } else {
-                const dueMonth = computeDueMonth(baseDate, j * freq);
-                const pmData = {
-                  pmType: type,
-                  materialDescription: equipmentDoc.materialdescription,
-                  serialNumber: equipmentDoc.serialnumber,
-                  customerCode: equipmentDoc.currentcustomer,
-                  region: customer?.region || '',
-                  city: customer?.city || '',
-                  pmDueMonth: dueMonth,
-                  pmStatus: 'Due',
-                  partNumber: equipmentDoc.materialcode
-                };
-                
-                try {
-                  await new PM(pmData).save();
-                  totalPMCreated++;
-                  pmResults.push({
-                    serialnumber: equipmentDoc.serialnumber,
-                    pmType: type,
-                    status: 'Created'
-                  });
-                } catch (e) {
-                  pmResults.push({
-                    serialnumber: equipmentDoc.serialnumber,
-                    pmType: type,
-                    status: 'Failed',
-                    error: e.message
-                  });
-                }
-              }
-            }
+        const processedRecord = { ...record };
+        dateFields.forEach(field => {
+          if (processedRecord[field]) {
+            processedRecord[field] = toISODateString(parseUniversalDate(processedRecord[field]));
           }
-        }
+        });
 
-        // ─── Dealer Warranty PMs (EPM) ────────────────────────────
-        if (equipmentDoc.dealerwarrantystartdate && equipmentDoc.dealerwarrantyenddate) {
-          const start = parseUniversalDate(equipmentDoc.dealerwarrantystartdate);
-          const end = parseUniversalDate(equipmentDoc.dealerwarrantyenddate);
-          
-          if (start && end && !isNaN(start) && !isNaN(end)) {
-            const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 +
-                              (end.getMonth() - start.getMonth()) + 1;
-            const numDealer = Math.floor(diffMonths / freq);
-            totalPMExpected += numDealer;
-            
-            for (let j = 1; j <= numDealer; j++) {
-              const type = `EPM${String(j).padStart(2, '0')}`;
-              const exists = completedPMs.some(pm => pm.pmType === type);
-              
-              if (exists) {
-                totalPMCreated++;
-                pmResults.push({
-                  serialnumber: equipmentDoc.serialnumber,
-                  pmType: type,
-                  status: 'Completed',
-                  message: 'Already completed'
-                });
-              } else {
-                const dueMonth = computeDueMonth(start, j * freq);
-                const pmData = {
-                  pmType: type,
-                  materialDescription: equipmentDoc.materialdescription,
-                  serialNumber: equipmentDoc.serialnumber,
-                  customerCode: equipmentDoc.currentcustomer,
-                  region: customer?.region || '',
-                  city: customer?.city || '',
-                  pmDueMonth: dueMonth,
-                  pmStatus: 'Due',
-                  partNumber: equipmentDoc.materialcode
-                };
-                
-                try {
-                  await new PM(pmData).save();
-                  totalPMCreated++;
-                  pmResults.push({
-                    serialnumber: equipmentDoc.serialnumber,
-                    pmType: type,
-                    status: 'Created'
-                  });
-                } catch (e) {
-                  pmResults.push({
-                    serialnumber: equipmentDoc.serialnumber,
-                    pmType: type,
-                    status: 'Failed',
-                    error: e.message
-                  });
-                }
-              }
-            }
-          }
-        }
+        // Upsert equipment
+        const equipment = await Equipment.findOneAndUpdate(
+          { serialnumber: processedRecord.serialnumber },
+          processedRecord,
+          { upsert: true, new: true, runValidators: true }
+        );
 
-        // ─── AMC Contract PMs (CPM/NPM) ───────────────────────────
-        const amc = await AMCContract.findOne({ serialnumber: equipmentDoc.serialnumber }).catch(() => null);
-        if (amc) {
-          const start = parseUniversalDate(amc.startdate);
-          const end = parseUniversalDate(amc.enddate);
-          
-          if (start && end && !isNaN(start) && !isNaN(end)) {
-            const diffMonthsAMC = (end.getFullYear() - start.getFullYear()) * 12 +
-                                 (end.getMonth() - start.getMonth()) + 1;
-            const numAMC = Math.floor(diffMonthsAMC / freq);
-            totalPMExpected += numAMC;
-            
-            const prefix = (amc.satypeZDRC_ZDRN || '').toUpperCase() === 'ZDRC'
-              ? 'CPM' : (amc.satypeZDRC_ZDRN || '').toUpperCase() === 'ZDRN'
-              ? 'NPM' : '';
-              
-            if (prefix) {
-              for (let j = 1; j <= numAMC; j++) {
-                const type = `${prefix}${String(j).padStart(2, '0')}`;
-                const exists = completedPMs.some(pm => pm.pmType === type);
-                
-                if (exists) {
-                  totalPMCreated++;
-                  pmResults.push({
-                    serialnumber: equipmentDoc.serialnumber,
+        const status = equipment.wasCreated ? 'Created' : 'Updated';
+        job.equipmentResults.push({
+          serialnumber: processedRecord.serialnumber,
+          status,
+          error: null
+        });
+
+        // Clean up non-completed PMs
+        await PM.deleteMany({
+          serialNumber: equipment.serialnumber,
+          pmStatus: { $ne: 'Completed' }
+        });
+
+        const completedPMs = await PM.find({
+          serialNumber: equipment.serialnumber,
+          pmStatus: 'Completed'
+        });
+
+        // Generate PMs
+        const product = productMap.get(equipment.materialcode);
+        const customer = customerMap.get(equipment.currentcustomer);
+        const amc = amcMap.get(equipment.serialnumber);
+
+        const pmBatch = [];
+        let pmCount = 0;
+
+        if (product && ['3', '6', '12'].includes(product.frequency)) {
+          const freq = parseInt(product.frequency, 10);
+
+          // Base Warranty PMs
+          if (equipment.custWarrantystartdate) {
+            const baseDate = parseUniversalDate(equipment.custWarrantystartdate);
+            if (baseDate) {
+              const endDate = parseUniversalDate(equipment.custWarrantyenddate) || addMonths(baseDate, 12);
+              const diffMonths = (endDate.getFullYear() - baseDate.getFullYear()) * 12 + 
+                               (endDate.getMonth() - baseDate.getMonth()) + 1;
+              const numBase = Math.floor(diffMonths / freq);
+              job.summary.totalPMExpected += numBase;
+
+              for (let j = 1; j <= numBase; j++) {
+                const type = `WPM${String(j).padStart(2, '0')}`;
+                pmCount++;
+
+                if (!completedPMs.some(pm => pm.pmType === type)) {
+                  const dueMonth = computeDueMonth(baseDate, (j - 1) * freq);
+                  pmBatch.push({
                     pmType: type,
-                    status: 'Completed',
-                    message: 'Already completed'
-                  });
-                } else {
-                  const dueMonth = computeDueMonth(start, j * freq);
-                  const pmData = {
-                    pmType: type,
-                    materialDescription: equipmentDoc.materialdescription,
-                    serialNumber: equipmentDoc.serialnumber,
-                    customerCode: equipmentDoc.currentcustomer,
+                    materialDescription: equipment.materialdescription,
+                    serialNumber: equipment.serialnumber,
+                    customerCode: equipment.currentcustomer,
                     region: customer?.region || '',
                     city: customer?.city || '',
                     pmDueMonth: dueMonth,
                     pmStatus: 'Due',
-                    partNumber: equipmentDoc.materialcode
-                  };
-                  
-                  try {
-                    await new PM(pmData).save();
-                    totalPMCreated++;
-                    pmResults.push({
-                      serialnumber: equipmentDoc.serialnumber,
+                    partNumber: equipment.materialcode
+                  });
+                }
+              }
+            }
+          }
+
+          // Dealer Warranty PMs
+          if (equipment.dealerwarrantystartdate && equipment.dealerwarrantyenddate) {
+            const start = parseUniversalDate(equipment.dealerwarrantystartdate);
+            const end = parseUniversalDate(equipment.dealerwarrantyenddate);
+
+            if (start && end) {
+              const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 +
+                               (end.getMonth() - start.getMonth()) + 1;
+              const numDealer = Math.floor(diffMonths / freq);
+              job.summary.totalPMExpected += numDealer;
+
+              for (let j = 1; j <= numDealer; j++) {
+                const type = `EPM${String(j).padStart(2, '0')}`;
+                pmCount++;
+
+                if (!completedPMs.some(pm => pm.pmType === type)) {
+                  const dueMonth = computeDueMonth(start, (j - 1) * freq);
+                  pmBatch.push({
+                    pmType: type,
+                    materialDescription: equipment.materialdescription,
+                    serialNumber: equipment.serialnumber,
+                    customerCode: equipment.currentcustomer,
+                    region: customer?.region || '',
+                    city: customer?.city || '',
+                    pmDueMonth: dueMonth,
+                    pmStatus: 'Due',
+                    partNumber: equipment.materialcode
+                  });
+                }
+              }
+            }
+          }
+
+          // AMC Contract PMs
+          if (amc) {
+            const start = parseUniversalDate(amc.startdate);
+            const end = parseUniversalDate(amc.enddate);
+
+            if (start && end) {
+              const diffMonthsAMC = (end.getFullYear() - start.getFullYear()) * 12 +
+                                  (end.getMonth() - start.getMonth()) + 1;
+              const numAMC = Math.floor(diffMonthsAMC / freq);
+              job.summary.totalPMExpected += numAMC;
+
+              const prefix = amc.satypeZDRC_ZDRN?.toUpperCase() === 'ZDRC'
+                ? 'CPM'
+                : amc.satypeZDRC_ZDRN?.toUpperCase() === 'ZDRN'
+                  ? 'NPM'
+                  : '';
+
+              if (prefix) {
+                for (let j = 1; j <= numAMC; j++) {
+                  const type = `${prefix}${String(j).padStart(2, '0')}`;
+                  pmCount++;
+
+                  if (!completedPMs.some(pm => pm.pmType === type)) {
+                    const dueMonth = computeDueMonth(start, (j - 1) * freq);
+                    pmBatch.push({
                       pmType: type,
-                      status: 'Created'
-                    });
-                  } catch (e) {
-                    pmResults.push({
-                      serialnumber: equipmentDoc.serialnumber,
-                      pmType: type,
-                      status: 'Failed',
-                      error: e.message
+                      materialDescription: equipment.materialdescription,
+                      serialNumber: equipment.serialnumber,
+                      customerCode: equipment.currentcustomer,
+                      region: customer?.region || '',
+                      city: customer?.city || '',
+                      pmDueMonth: dueMonth,
+                      pmStatus: 'Due',
+                      partNumber: equipment.materialcode
                     });
                   }
                 }
@@ -356,29 +378,67 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             }
           }
         }
+
+        // Batch insert PMs
+        if (pmBatch.length > 0) {
+          const inserted = await PM.insertMany(pmBatch);
+          job.summary.totalPMCreated += inserted.length;
+
+          inserted.forEach(pm => {
+            job.pmResults.push({
+              serialnumber: pm.serialNumber,
+              pmType: pm.pmType,
+              status: 'Created',
+              error: null
+            });
+          });
+        }
+
+        // Update progress
+        job.processedEquipment = i + 1;
+        job.summary.pmCompletionPercentage = job.summary.totalPMExpected > 0
+          ? Math.round((job.summary.totalPMCreated / job.summary.totalPMExpected) * 100)
+          : 100;
+
+        // Update job store every 10 records or last record
+        if (i % 10 === 0 || i === jsonData.length - 1) {
+          jobStore.set(jobId, job);
+        }
+
+      } catch (err) {
+        job.equipmentResults.push({
+          serialnumber: record.serialnumber || 'Unknown',
+          status: 'Failed',
+          error: err.message
+        });
+        jobStore.set(jobId, job);
       }
     }
 
-    const pmCompletionPercentage = totalPMExpected > 0
-      ? Math.round((totalPMCreated / totalPMExpected) * 100)
-      : 100;
+    // Finalize job
+    job.status = 'completed';
+    job.completedAt = Date.now();
+    job.duration = `${((job.completedAt - startTime) / 1000).toFixed(2)}s`;
+    jobStore.set(jobId, job);
 
-    return res.status(200).json({
-      totalEquipment,
-      processedEquipment,
-      equipmentResults,
-      totalPMExpected,
-      totalPMCreated,
-      pmCompletionPercentage,
-      pmResults
-    });
+    return res.status(200).json({ jobId });
 
   } catch (error) {
-    console.error('Server error:', error);
-    return res.status(500).json({ 
+    console.error('Bulk upload error:', error);
+
+    // If job exists, update its status
+    if (jobId) {
+      const job = jobStore.get(jobId) || {};
+      job.status = 'failed';
+      job.error = error.message;
+      job.completedAt = Date.now();
+      jobStore.set(jobId, job);
+    }
+
+    return res.status(500).json({
       error: 'Server Error',
       details: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      ...(jobId && { jobId })
     });
   }
 });
