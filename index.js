@@ -44,6 +44,7 @@ const ProductBulk = require('./BulkUpload/Master/ProductBulk');
 const ChecklistBulk = require('./BulkUpload/Master/CheckListBulk');
 const AmcContractBulk = require('./BulkUpload/Upload/AmcContractBulk');
 const DealerStockBulk = require('./BulkUpload/Upload/DealerStockBulk');
+const pendingInstallationBulk = require('./BulkUpload/Upload/PendingInstallationBulk');
 const HubStockBulk = require('./BulkUpload/Upload/HubStockBulk');
 const PendingComplaintsBulk = require('./BulkUpload/Upload/PendingComplaintsBulk');
 const SpareMasterBulk = require('./BulkUpload/Master/SpareMasterBulk');
@@ -142,6 +143,7 @@ app.use('/bulk/dealerstock', DealerStockBulk);
 app.use('/bulk/hubstock', HubStockBulk);
 app.use('/bulk/pendingcomplaints', PendingComplaintsBulk);
 app.use('/bulk/sparemaster', SpareMasterBulk);
+app.use('/bulk/pendinginstallation', pendingInstallationBulk);
 
 
 // Routes

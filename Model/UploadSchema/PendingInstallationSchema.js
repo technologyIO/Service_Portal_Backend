@@ -5,10 +5,7 @@ const PendingInstallationSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    invoicedate: {
-        type: String,
-        required: true
-    },
+    invoicedate: { type: Date, required: true },
     distchnl: {
         type: String,
         required: true
@@ -19,19 +16,19 @@ const PendingInstallationSchema = new mongoose.Schema({
     },
     customername1: {
         type: String,
-        required: true
+
     },
     customername2: {
         type: String,
-        required: true
+
     },
     customercity: {
         type: String,
-        required: true
+
     },
     customerpostalcode: {
         type: String,
-        required: true
+
     },
     material: {
         type: String,
@@ -41,7 +38,7 @@ const PendingInstallationSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    serialnumber : {
+    serialnumber: {
         type: String,
         required: true,
         unique: true
@@ -56,11 +53,11 @@ const PendingInstallationSchema = new mongoose.Schema({
     },
     customercountry: {
         type: String,
-        required: true
+
     },
     customerregion: {
         type: String,
-        required: true
+
     },
     currentcustomerid: {
         type: String,
@@ -68,27 +65,27 @@ const PendingInstallationSchema = new mongoose.Schema({
     },
     currentcustomername1: {
         type: String,
-        required: true
+
     },
     currentcustomername2: {
         type: String,
-        required: true
+
     },
     currentcustomercity: {
         type: String,
-        required: true
+
     },
     currentcustomerregion: {
         type: String,
-        required: true
+
     },
     currentcustomerpostalcode: {
         type: String,
-        required: true
+
     },
     currentcustomercountry: {
         type: String,
-        required: true
+
     },
     mtl_grp4: {
         type: String,
@@ -96,15 +93,17 @@ const PendingInstallationSchema = new mongoose.Schema({
     },
     key: {
         type: String,
-        required: true
+
     },
     palnumber: {
         type: String,
     },
     status: {
         type: String,
-        required: true
-    },
+        enum: ['Active', 'Deactive'],
+        default: 'Active',
+    }
+    ,
     createdAt: {
         type: Date,
         default: Date.now

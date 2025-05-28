@@ -1,7 +1,8 @@
+const { parse, isValid } = require('date-fns');
+const XLSX = require('xlsx');
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const xlsx = require('xlsx');
 
 // Import Mongoose models
 const Equipment = require('../../Model/MasterSchema/EquipmentSchema');
@@ -14,41 +15,76 @@ const Customer = require('../../Model/UploadSchema/CustomerSchema');
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-/** Convert Excel serial date to JS Date */
-function excelDateToJSDate(serial) {
-  const utcDays = Math.floor(serial - 25569);
-  const utcValue = utcDays * 86400;
-  const dateInfo = new Date(utcValue * 1000);
-  const fractionalDay = serial - Math.floor(serial);
-  const totalSeconds = Math.floor(86400 * fractionalDay);
-  dateInfo.setSeconds(dateInfo.getSeconds() + totalSeconds);
-  return dateInfo;
-}
+/** 
+ * Universal date parser supporting multiple formats and Excel serials
+ * Returns Date object or null if invalid
+ */
+function parseUniversalDate(dateInput) {
+  if (dateInput == null || dateInput === '') return null;
 
-/** Parse either a numeric Excel date or a standard date string */
-function parseExcelDate(value) {
-  if (value == null) return null;
-  if (typeof value === 'number') {
-    return excelDateToJSDate(value);
+  // Handle Date instances
+  if (dateInput instanceof Date && !isNaN(dateInput)) {
+    return dateInput;
   }
-  if (typeof value === 'string') {
-    const num = Number(value);
-    if (!isNaN(num)) {
-      return excelDateToJSDate(num);
+
+  // Handle Excel serial numbers
+  if (typeof dateInput === 'number') {
+    try {
+      const excelDate = XLSX.SSF.parse_date_code(dateInput);
+      return new Date(excelDate.y, excelDate.m - 1, excelDate.d);
+    } catch (e) {
+      return null;
     }
-    let d = new Date(value);
-    if (!isNaN(d.getTime())) return d;
-    d = new Date(value.replace(/-/g, '/'));
-    if (!isNaN(d.getTime())) return d;
-    if (value.includes('/')) {
-      const parts = value.split('/');
-      if (parts.length === 3 && parts[0].length === 2) {
-        d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
-        if (!isNaN(d.getTime())) return d;
+  }
+
+  // Handle string dates
+  if (typeof dateInput === 'string') {
+    // Clean the string first
+    const cleanedDate = dateInput
+      .replace(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/, '$1/$2/$3') // DD-MM-YYYY -> DD/MM/YYYY
+      .replace(/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/, '$2/$3/$1'); // YYYY-MM-DD -> MM/DD/YYYY
+
+    const formats = [
+      'dd/MM/yyyy', 'dd-MM-yyyy', 'dd.MM.yyyy',  // Indian formats
+      'MM/dd/yyyy', 'MM-dd-yyyy', 'MM.dd.yyyy',  // US formats
+      'yyyy/MM/dd', 'yyyy-MM-dd', 'yyyy.MM.dd',  // ISO formats
+      'd/M/yyyy', 'd-M-yyyy', 'd.M.yyyy',        // Single digit day/month
+      'M/d/yyyy', 'M-d-yyyy', 'M.d.yyyy',        // US single digit
+      'yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX'           // ISO with timezone
+    ];
+
+    for (const format of formats) {
+      try {
+        const parsedDate = parse(cleanedDate, format, new Date());
+        if (isValid(parsedDate)) {
+          return parsedDate;
+        }
+      } catch (e) {
+        continue;
       }
     }
+
+    // Try native Date parsing as fallback
+    const nativeDate = new Date(dateInput);
+    if (!isNaN(nativeDate)) {
+      return nativeDate;
+    }
   }
+
   return null;
+}
+
+/** Convert date to ISO format string (YYYY-MM-DD) */
+function toISODateString(date) {
+  if (!date) return null;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return null;
+  
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
 }
 
 /** Add months to a date */
@@ -58,10 +94,7 @@ function addMonths(date, months) {
   return d;
 }
 
-/**
- * Compute PM due month string (MM/YYYY)
- * monthsToAdd is the scheduled interval; due is one month before.
- */
+/** Compute PM due month string (MM/YYYY) */
 function computeDueMonth(baseDate, monthsToAdd) {
   const dueDate = addMonths(baseDate, monthsToAdd - 2);
   const month = String(dueDate.getMonth() + 1).padStart(2, '0');
@@ -76,10 +109,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     }
 
     // Read the Excel workbook
-    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const jsonData = xlsx.utils.sheet_to_json(worksheet);
+    const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
     let equipmentResults = [];
     let pmResults = [];
@@ -89,32 +122,32 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     let totalPMCreated = 0;
 
     for (let record of jsonData) {
-      // ─────────────────────────────────────────────────────────────
-      // Normalize date fields to "YYYY-MM-DD" strings
+      // Normalize date fields to ISO format strings
       const dateFields = [
         'custWarrantystartdate',
-        'custWarrantyenddate',       // ← added so end date is normalized too
+        'custWarrantyenddate',
         'dealerwarrantystartdate',
         'dealerwarrantyenddate'
       ];
+
       for (const field of dateFields) {
         if (record[field] != null) {
-          const parsed = parseExcelDate(record[field]);
-          if (parsed) {
-            record[field] = parsed.toISOString().split('T')[0];
-          }
+          const parsedDate = parseUniversalDate(record[field]);
+          record[field] = toISODateString(parsedDate);
         }
       }
-      // ─────────────────────────────────────────────────────────────
 
+      // Process equipment record
       let equipmentDoc;
       try {
         const existing = await Equipment.findOne({ serialnumber: record.serialnumber });
         let status = 'Created';
+        
         if (existing) {
           await Equipment.deleteOne({ _id: existing._id });
           status = 'Updated';
         }
+        
         equipmentDoc = await new Equipment(record).save();
         equipmentResults.push({
           serialnumber: record.serialnumber,
@@ -130,7 +163,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       }
       processedEquipment++;
 
-      // Remove non-completed PMs, keep completed
+      // Clean up existing PMs (keep only completed ones)
       await PM.deleteMany({
         serialNumber: equipmentDoc.serialnumber,
         pmStatus: { $ne: 'Completed' }
@@ -140,24 +173,24 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         pmStatus: 'Completed'
       });
 
-      // Look up product frequency
+      // Get product and customer info
       const product = await Product.findOne({ partnoid: equipmentDoc.materialcode }).catch(() => null);
-      // Look up customer for region/city
       const customer = await Customer.findOne({ customercodeid: equipmentDoc.currentcustomer }).catch(() => null);
 
       if (product && ['3', '6', '12'].includes(product.frequency)) {
         const freq = parseInt(product.frequency, 10);
 
         // ─── Base Warranty PMs (WPM) ──────────────────────────────
-        const numBase = Math.floor(12 / freq);
-        totalPMExpected += numBase;
         if (equipmentDoc.custWarrantystartdate) {
-          const baseDate = parseExcelDate(equipmentDoc.custWarrantystartdate) ||
-                           new Date(equipmentDoc.custWarrantystartdate);
+          const baseDate = parseUniversalDate(equipmentDoc.custWarrantystartdate);
           if (baseDate && !isNaN(baseDate)) {
+            const numBase = Math.floor(12 / freq);
+            totalPMExpected += numBase;
+            
             for (let j = 1; j <= numBase; j++) {
-              const type = `WPM${String(j).padStart(2,'0')}`;
+              const type = `WPM${String(j).padStart(2, '0')}`;
               const exists = completedPMs.some(pm => pm.pmType === type);
+              
               if (exists) {
                 totalPMCreated++;
                 pmResults.push({
@@ -179,6 +212,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                   pmStatus: 'Due',
                   partNumber: equipmentDoc.materialcode
                 };
+                
                 try {
                   await new PM(pmData).save();
                   totalPMCreated++;
@@ -202,16 +236,19 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
         // ─── Dealer Warranty PMs (EPM) ────────────────────────────
         if (equipmentDoc.dealerwarrantystartdate && equipmentDoc.dealerwarrantyenddate) {
-          const start = parseExcelDate(equipmentDoc.dealerwarrantystartdate);
-          const end   = parseExcelDate(equipmentDoc.dealerwarrantyenddate);
+          const start = parseUniversalDate(equipmentDoc.dealerwarrantystartdate);
+          const end = parseUniversalDate(equipmentDoc.dealerwarrantyenddate);
+          
           if (start && end && !isNaN(start) && !isNaN(end)) {
             const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 +
-                               (end.getMonth() - start.getMonth()) + 1;
+                              (end.getMonth() - start.getMonth()) + 1;
             const numDealer = Math.floor(diffMonths / freq);
             totalPMExpected += numDealer;
+            
             for (let j = 1; j <= numDealer; j++) {
-              const type = `EPM${String(j).padStart(2,'0')}`;
+              const type = `EPM${String(j).padStart(2, '0')}`;
               const exists = completedPMs.some(pm => pm.pmType === type);
+              
               if (exists) {
                 totalPMCreated++;
                 pmResults.push({
@@ -233,6 +270,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                   pmStatus: 'Due',
                   partNumber: equipmentDoc.materialcode
                 };
+                
                 try {
                   await new PM(pmData).save();
                   totalPMCreated++;
@@ -257,20 +295,24 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // ─── AMC Contract PMs (CPM/NPM) ───────────────────────────
         const amc = await AMCContract.findOne({ serialnumber: equipmentDoc.serialnumber }).catch(() => null);
         if (amc) {
-          const start = parseExcelDate(amc.startdate) || new Date(amc.startdate);
-          const end   = parseExcelDate(amc.enddate)   || new Date(amc.enddate);
+          const start = parseUniversalDate(amc.startdate);
+          const end = parseUniversalDate(amc.enddate);
+          
           if (start && end && !isNaN(start) && !isNaN(end)) {
             const diffMonthsAMC = (end.getFullYear() - start.getFullYear()) * 12 +
-                                  (end.getMonth() - start.getMonth()) + 1;
+                                 (end.getMonth() - start.getMonth()) + 1;
             const numAMC = Math.floor(diffMonthsAMC / freq);
             totalPMExpected += numAMC;
+            
             const prefix = (amc.satypeZDRC_ZDRN || '').toUpperCase() === 'ZDRC'
               ? 'CPM' : (amc.satypeZDRC_ZDRN || '').toUpperCase() === 'ZDRN'
               ? 'NPM' : '';
+              
             if (prefix) {
               for (let j = 1; j <= numAMC; j++) {
-                const type = `${prefix}${String(j).padStart(2,'0')}`;
+                const type = `${prefix}${String(j).padStart(2, '0')}`;
                 const exists = completedPMs.some(pm => pm.pmType === type);
+                
                 if (exists) {
                   totalPMCreated++;
                   pmResults.push({
@@ -292,6 +334,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     pmStatus: 'Due',
                     partNumber: equipmentDoc.materialcode
                   };
+                  
                   try {
                     await new PM(pmData).save();
                     totalPMCreated++;
@@ -332,7 +375,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
   } catch (error) {
     console.error('Server error:', error);
-    return res.status(500).json({ error: 'Server Error' });
+    return res.status(500).json({ 
+      error: 'Server Error',
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
