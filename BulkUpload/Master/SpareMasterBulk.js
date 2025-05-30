@@ -1,166 +1,165 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const multer = require("multer");
-const xlsx = require("xlsx");
-const SpareMaster = require("../../Model/MasterSchema/SpareMasterSchema");
+const multer = require('multer');
+const XLSX = require('xlsx');
+const SpareMaster = require('../../Model/MasterSchema/SpareMasterSchema');
 const cors = require('cors');
 
-// Multer memory storage configuration
+// Configure multer with memory storage
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
-router.options("/bulk-upload", cors());
+const upload = multer({ storage });
 
-// POST /bulk-upload
-router.post("/bulk-upload", upload.single("file"), async (req, res) => {
+// Enable CORS pre-flight for bulk-upload
+router.options('/bulk-upload', cors());
+
+/** Helper function to clean and convert numeric values */
+function cleanNumber(value) {
+  if (value === undefined || value === null) return 0;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    // Remove commas and any non-numeric characters except decimal point
+    const cleaned = value.replace(/[^0-9.-]/g, '');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  }
+  return 0;
+}
+
+router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+  // Initialize response object with streaming support
+  const response = {
+    status: 'processing',
+    startTime: new Date(),
+    totalRecords: 0,
+    processedRecords: 0,
+    createdCount: 0,
+    updatedCount: 0,
+    errorCount: 0,
+    currentRecord: null,
+    errors: [],
+    message: 'Starting processing'
+  };
+
   try {
     if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+      response.status = 'failed';
+      response.errors.push('No file uploaded');
+      return res.status(400).json(response);
     }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
-    res.flushHeaders(); // Important for AWS/Nginx
+    // Set headers for streaming response
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('Access-Control-Allow-Origin', '*');
 
-    // Flush headers immediately
-    res.flushHeaders();
-
-    const sendEvent = (data) => {
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
-      // Ensure data is sent immediately
-      if (typeof res.flush === 'function') {
-        res.flush();
-      }
-    };
-
-    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    let jsonData = xlsx.utils.sheet_to_json(worksheet);
-
-    // Initialize counters and results
-    const results = {
-      totalRecords: jsonData.length,
-      processed: 0,
-      created: 0,
-      updated: 0,
-      failed: 0,
-      details: []
-    };
-
-    sendEvent({
-      type: 'init',
-      data: {
-        totalRecords: results.totalRecords,
-        message: 'Starting processing...'
-      }
+    // Read and parse Excel file
+    const workbook = XLSX.read(req.file.buffer, {
+      type: 'buffer',
+      cellDates: true,
+      raw: false // Get formatted strings for dates
     });
+    
+    const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+    response.totalRecords = jsonData.length;
+    response.message = `Found ${response.totalRecords} records to process`;
 
-    // Process each record sequentially
-    for (const [index, record] of jsonData.entries()) {
-      try {
-        // Pre-process the data
-        if (record.Charges === "-") record.Charges = 0;
+    // Send initial response
+    res.write(JSON.stringify(response) + '\n');
 
-        // Clean numeric fields
-        const cleanNumber = (value) => {
-          if (typeof value === 'string') {
-            return parseFloat(value.replace(/,/g, '')) || 0;
+    // Process records in batches
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < jsonData.length; i += BATCH_SIZE) {
+      const batch = jsonData.slice(i, i + BATCH_SIZE);
+
+      for (const [index, record] of batch.entries()) {
+        const absoluteIndex = i + index;
+        response.currentRecord = {
+          partNumber: record.PartNumber || 'Unknown',
+          description: record.Description || 'Unknown',
+          index: absoluteIndex + 1
+        };
+        response.processedRecords = absoluteIndex + 1;
+        response.message = `Processing record ${absoluteIndex + 1} of ${response.totalRecords}`;
+
+        try {
+          // Validate required fields
+          const requiredFields = ['PartNumber', 'Description', 'Type', 'Rate'];
+          const missingFields = requiredFields.filter(field => !record[field]);
+          if (missingFields.length > 0) {
+            throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
           }
-          return value || 0;
-        };
 
-        const processedRecord = {
-          Sub_grp: record.Sub_grp,
-          PartNumber: record.PartNumber,
-          Description: record.Description,
-          Type: record.Type,
-          Rate: cleanNumber(record.Rate),
-          DP: cleanNumber(record.DP),
-          Charges: cleanNumber(record.Charges),
-          spareiamegUrl: record.spareiamegUrl
-        };
+          // Prepare document with cleaned data
+          const doc = {
+            Sub_grp: record.Sub_grp || '',
+            PartNumber: record.PartNumber,
+            Description: record.Description,
+            Type: record.Type,
+            Rate: cleanNumber(record.Rate),
+            DP: cleanNumber(record.DP),
+            Charges: record.Charges === '-' ? 0 : cleanNumber(record.Charges),
+            spareiamegUrl: record.spareiamegUrl || ''
+          };
 
-        // Check for existing record
-        const existing = await SpareMaster.findOne({ PartNumber: processedRecord.PartNumber });
-        let status = "created";
+          // Check for existing record
+          const existingRecord = await SpareMaster.findOne({ PartNumber: doc.PartNumber });
 
-        if (existing) {
-          // Update existing record
-          await SpareMaster.findByIdAndUpdate(existing._id, processedRecord);
-          status = "updated";
-          results.updated++;
-        } else {
-          // Create new record
-          await SpareMaster.create(processedRecord);
-          status = "created";
-          results.created++;
+          if (existingRecord) {
+            // Update existing record
+            await SpareMaster.findByIdAndUpdate(existingRecord._id, doc);
+            response.updatedCount++;
+            response.message = `Updated record ${doc.PartNumber}`;
+          } else {
+            // Create new record
+            await SpareMaster.create(doc);
+            response.createdCount++;
+            response.message = `Created record ${doc.PartNumber}`;
+          }
+        } catch (error) {
+          response.errorCount++;
+          response.errors.push({
+            record: record.PartNumber || 'Unknown',
+            description: record.Description || 'Unknown',
+            error: error.message
+          });
         }
 
-        // Add to details
-        results.details.push({
-          recordNumber: index + 1,
-          partNumber: processedRecord.PartNumber,
-          status,
-          message: `Record ${status} successfully`
-        });
-
-      } catch (error) {
-        results.failed++;
-        results.details.push({
-          recordNumber: index + 1,
-          partNumber: record.PartNumber || 'N/A',
-          status: "failed",
-          message: error.message
-        });
+        // Send progress update after each record
+        res.write(JSON.stringify(response) + '\n');
       }
-
-      results.processed++;
-
-      // Send progress update
-      sendEvent({
-        type: 'progress',
-        data: {
-          processed: results.processed,
-          total: results.totalRecords,
-          currentStatus: `Processing record ${results.processed} of ${results.totalRecords}`,
-          latestRecord: results.details[results.details.length - 1]
-        }
-      });
     }
 
-    // Final summary
-    sendEvent({
-      type: 'complete',
-      data: {
-        summary: {
-          totalRecords: results.totalRecords,
-          successfullyProcessed: results.processed - results.failed,
-          created: results.created,
-          updated: results.updated,
-          failed: results.failed
-        },
-        details: results.details
-      }
-    });
-
+    // Finalize response
+    response.status = 'completed';
+    response.endTime = new Date();
+    response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
+    response.message = `Processing completed. Created: ${response.createdCount}, Updated: ${response.updatedCount}, Errors: ${response.errorCount}`;
+    
+    res.write(JSON.stringify(response) + '\n');
     res.end();
 
   } catch (error) {
-    console.error("Bulk upload error:", error);
-    if (!res.headersSent) {
-      res.status(500).json({
-        error: "Server Error",
-        message: error.message
-      });
-    } else {
-      // If headers were already sent, try to send error as SSE
-      res.write(`event: error\ndata: ${JSON.stringify({
-        error: "Server Error",
-        message: error.message
-      })}\n\n`);
+    console.error('Bulk upload error:', error);
+    
+    // If headers were already sent, try to send the error as the last chunk
+    if (res.headersSent) {
+      response.status = 'failed';
+      response.endTime = new Date();
+      response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
+      response.errors.push(error.message);
+      response.message = 'Processing failed due to unexpected error';
+      
+      res.write(JSON.stringify(response) + '\n');
       res.end();
+    } else {
+      // If headers weren't sent, send a normal error response
+      response.status = 'failed';
+      response.endTime = new Date();
+      response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
+      response.errors.push(error.message);
+      response.message = 'Processing failed due to unexpected error';
+      
+      res.status(500).json(response);
     }
   }
 });
