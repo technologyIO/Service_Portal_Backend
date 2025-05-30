@@ -3,10 +3,12 @@ const router = express.Router();
 const multer = require("multer");
 const xlsx = require("xlsx");
 const SpareMaster = require("../../Model/MasterSchema/SpareMasterSchema");
+const cors = require('cors');
 
 // Multer memory storage configuration
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
+router.options("/bulk-upload", cors());
 
 // POST /bulk-upload
 router.post("/bulk-upload", upload.single("file"), async (req, res) => {
@@ -15,7 +17,23 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    // Process the Excel file
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
+    res.flushHeaders(); // Important for AWS/Nginx
+
+    // Flush headers immediately
+    res.flushHeaders();
+
+    const sendEvent = (data) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      // Ensure data is sent immediately
+      if (typeof res.flush === 'function') {
+        res.flush();
+      }
+    };
+
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
@@ -31,10 +49,12 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
       details: []
     };
 
-    // Set up response headers for progressive updates
-    res.writeHead(200, {
-      'Content-Type': 'text/plain',
-      'Transfer-Encoding': 'chunked'
+    sendEvent({
+      type: 'init',
+      data: {
+        totalRecords: results.totalRecords,
+        message: 'Starting processing...'
+      }
     });
 
     // Process each record sequentially
@@ -42,7 +62,7 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
       try {
         // Pre-process the data
         if (record.Charges === "-") record.Charges = 0;
-        
+
         // Clean numeric fields
         const cleanNumber = (value) => {
           if (typeof value === 'string') {
@@ -97,39 +117,51 @@ router.post("/bulk-upload", upload.single("file"), async (req, res) => {
       }
 
       results.processed++;
-      
-      // Send progressive updates
-      res.write(JSON.stringify({
-        progress: {
+
+      // Send progress update
+      sendEvent({
+        type: 'progress',
+        data: {
           processed: results.processed,
           total: results.totalRecords,
-          currentStatus: `Processing record ${results.processed} of ${results.totalRecords}`
-        },
-        latestRecord: results.details[results.details.length - 1]
-      }) + '\n');
+          currentStatus: `Processing record ${results.processed} of ${results.totalRecords}`,
+          latestRecord: results.details[results.details.length - 1]
+        }
+      });
     }
 
     // Final summary
-    const finalResult = {
-      summary: {
-        totalRecords: results.totalRecords,
-        successfullyProcessed: results.processed - results.failed,
-        created: results.created,
-        updated: results.updated,
-        failed: results.failed
-      },
-      details: results.details
-    };
+    sendEvent({
+      type: 'complete',
+      data: {
+        summary: {
+          totalRecords: results.totalRecords,
+          successfullyProcessed: results.processed - results.failed,
+          created: results.created,
+          updated: results.updated,
+          failed: results.failed
+        },
+        details: results.details
+      }
+    });
 
-    res.write(JSON.stringify(finalResult));
     res.end();
 
   } catch (error) {
     console.error("Bulk upload error:", error);
-    res.status(500).json({ 
-      error: "Server Error",
-      message: error.message 
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Server Error",
+        message: error.message
+      });
+    } else {
+      // If headers were already sent, try to send error as SSE
+      res.write(`event: error\ndata: ${JSON.stringify({
+        error: "Server Error",
+        message: error.message
+      })}\n\n`);
+      res.end();
+    }
   }
 });
 
