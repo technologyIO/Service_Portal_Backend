@@ -95,17 +95,17 @@ module.exports = function getCertificateHTML(data) {
       table {
         border-collapse: collapse;
         width: 100%;
-        font-size: 24px;
-        margin-bottom: 60px;
+        font-size: 10px;
+        margin-bottom: 10px;
       }
       h1 {
-        font-size: 50px;
+        font-size: 20px;
         margin: 0;
         padding: 0;
         line-height: 1.2;
       }
       .sub-title {
-        font-size: 28px;
+        font-size: 12px;
         line-height: 1.2;
       }
       td {
@@ -119,10 +119,10 @@ module.exports = function getCertificateHTML(data) {
       .disclaimer-box {
         border: 1.5px solid #000;
         padding: 15px;
-        font-size: 24px;
+        font-size: 9px;
         line-height: 1.5;
         font-weight: bold;
-        margin-bottom: 60px;
+        margin-bottom: 10px;
       }
       .no-border td {
         border: none !important;
@@ -131,12 +131,12 @@ module.exports = function getCertificateHTML(data) {
         page-break-before: always;
       }
       .warranty-text {
-        font-size: 28px;
+        font-size: 12px;
         line-height: 1.5;
-        margin-bottom: 40px;
+        margin-bottom: 20px;
       }
       ol.warranty-list {
-        font-size: 24px;
+        font-size: 10px;
         line-height: 1.5;
         margin-left: 40px;
         margin-bottom: 20px;
@@ -150,11 +150,11 @@ module.exports = function getCertificateHTML(data) {
       <!-- Header -->
       <table class="no-border" style="margin-bottom: 0;">
         <tr>
-          <td style="width: 200px; vertical-align: middle; text-align: left; border: none;">
+          <td style="width: 70px; vertical-align: middle; text-align: left; border: none;">
             <img
               src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRXw9vrbn9kBdgshQc4BipXz7u0XR6Zd4hwgg&s"
               alt="Skanray Logo"
-              style="width: 180px; height: auto; display: block;"
+              style="width: 60px; height: auto; display: block;"
             />
           </td>
           <td style="vertical-align: middle; text-align: left; border: none;">
@@ -254,7 +254,7 @@ module.exports = function getCertificateHTML(data) {
       </div>
 
       <!-- Signature Section -->
-      <table style="font-size: 20px;">
+      <table style="font-size: 10px;">
         <tr>
           <td
             style="
@@ -285,7 +285,7 @@ module.exports = function getCertificateHTML(data) {
           </td>
           <td style="border: 1.5px solid #000; padding: 8px; width: 30%;">
             <p style="font-weight: bold; margin: 0;">Signature valid</p>
-            <div style="font-size: 16px;">
+            <div style="font-size: 10px;">
               Digitally signed by <br />
               SKANRAY TECHNOLOGIES LIMITED <br />
               P1 ${dateOfInstallation}
@@ -294,10 +294,10 @@ module.exports = function getCertificateHTML(data) {
               src="https://www.iconpacks.net/icons/2/free-check-icon-3278-thumb.png"
               alt="Signature Check"
               style="
-                width: 90px;
+                width: 60px;
                 height: auto;
                 margin-top: -70px;
-                margin-left: 150px;
+                margin-left: 120px;
               "
             />
           </td>
@@ -308,10 +308,10 @@ module.exports = function getCertificateHTML(data) {
     <!-- PAGE 2 -->
     <div class="page-break"></div>
     <div class="main-container">
-      <h1 style="text-align: center; margin-bottom: 15px; font-size: 40px;">
+      <h1 style="text-align: center; margin-bottom: 15px; font-size: 20px;">
         Skanray Technologies Limited
       </h1>
-      <h2 style="text-align: center; margin-bottom: 30px; font-size: 28px;">
+      <h2 style="text-align: center; margin-bottom: 30px; font-size: 18px;">
         Installation Report &amp; Warranty Certificate
       </h2>
 

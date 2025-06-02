@@ -2,11 +2,10 @@ const mongoose = require('mongoose');
 const express = require('express');
 const CNote = require('../../Model/AppSchema/CNote');
 const Proposal = require('../../Model/AppSchema/proposalSchema');
-const pdf = require('html-pdf');
+const puppeteer = require('puppeteer');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
- 
 
 const router = express.Router();
 
@@ -18,17 +17,6 @@ const transporter = nodemailer.createTransport({
         pass: 'rdzegwmzirvbjcpm'
     }
 });
-
-// PDF options
-const pdfOptions = {
-    format: 'A4',
-    border: {
-        top: '10mm',
-        right: '10mm',
-        bottom: '10mm',
-        left: '10mm'
-    }
-};
 
 // Function to generate HTML template from CNote data
 const generateHtmlTemplate = (cnoteData) => {
@@ -279,8 +267,6 @@ const generateHtmlTemplate = (cnoteData) => {
 
 // Helper function to convert numbers to words
 function numberToWords(num) {
-    // Implement your number to words conversion logic here
-    // This is a simplified version - you might want to use a library for full implementation
     const units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
     const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
     const tens = ['', 'Ten', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -316,8 +302,9 @@ function numberToWords(num) {
     return words.trim() + ' Only';
 }
 
-// Function to generate PDF and send email
+// Function to generate PDF using Puppeteer and send email
 const generateAndSendPdf = async (cnoteData, res) => {
+    let browser;
     try {
         const htmlContent = generateHtmlTemplate(cnoteData);
         const pdfFileName = `CNote_${cnoteData.cnoteNumber}_${Date.now()}.pdf`;
@@ -328,44 +315,73 @@ const generateAndSendPdf = async (cnoteData, res) => {
             fs.mkdirSync(path.join(__dirname, 'generated_pdfs'));
         }
 
-        // Generate PDF
-        pdf.create(htmlContent, pdfOptions).toFile(pdfPath, async (err, result) => {
-            if (err) {
-                console.error('PDF generation error:', err);
-                return res.status(500).json({ message: 'Failed to generate PDF' });
-            }
+        // Try with Chrome first, fall back to Chromium
+        let executablePath = '/usr/bin/google-chrome-stable';
+        if (!fs.existsSync(executablePath)) {
+            executablePath = '/usr/bin/chromium-browser';
+        }
 
-            // Send email with PDF attachment
-            const mailOptions = {
-                from: 'webadmin@skanray-access.com',
-                to: 'shivamt2023@gmail.com',
-                subject: `CNote Generated - ${cnoteData.cnoteNumber}`,
-                text: `Please find attached the CNote ${cnoteData.cnoteNumber} for ${cnoteData.customer.customername}.`,
-                attachments: [
-                    {
-                        filename: pdfFileName,
-                        path: pdfPath
-                    }
-                ]
-            };
-
-            transporter.sendMail(mailOptions, (error, info) => {
-                if (error) {
-                    console.error('Email sending error:', error);
-                    return res.status(500).json({ message: 'CNote created but failed to send email' });
-                }
-
-                console.log('Email sent:', info.response);
-                res.status(201).json({
-                    message: 'CNote created and email sent successfully',
-                    cnote: cnoteData,
-                    pdfPath: pdfPath
-                });
-            });
+        browser = await puppeteer.launch({
+            headless: 'new',
+            executablePath,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process'
+            ]
         });
+
+        const page = await browser.newPage();
+        await page.setContent(htmlContent, {
+            waitUntil: 'networkidle0'
+        });
+
+        await page.pdf({
+            path: pdfPath,
+            format: 'A4',
+            margin: {
+                top: '10mm',
+                right: '10mm',
+                bottom: '10mm',
+                left: '10mm'
+            },
+            printBackground: true
+        });
+
+        // Send email with PDF attachment
+        const mailOptions = {
+            from: 'webadmin@skanray-access.com',
+            to: 'shivamt2023@gmail.com',
+            subject: `CNote Generated - ${cnoteData.cnoteNumber}`,
+            text: `Please find attached the CNote ${cnoteData.cnoteNumber} for ${cnoteData.customer.customername}.`,
+            attachments: [{
+                filename: pdfFileName,
+                path: pdfPath
+            }]
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.status(201).json({
+            message: 'CNote created and email sent successfully',
+            cnote: cnoteData,
+            pdfPath: pdfPath
+        });
+
     } catch (error) {
         console.error('Error in generateAndSendPdf:', error);
-        res.status(500).json({ message: error.message });
+        res.status(500).json({
+            message: 'Failed to generate PDF',
+            error: error.message
+        });
+    } finally {
+        if (browser) {
+            await browser.close();
+        }
     }
 };
 
@@ -427,8 +443,6 @@ router.post('/', async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
-
-
 
 // Get all CNotes
 router.get('/', async (req, res) => {

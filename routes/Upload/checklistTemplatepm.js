@@ -54,8 +54,8 @@ const getChecklistHTMLPM = ({
         <meta charset="UTF-8" />
         <title>Preventive Maintenence Checklist</title>
       </head>
-      <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; font-size: 16px;">
-        <div style="border: 2px solid red; margin: 20px; padding: 20px">
+      <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; font-size: 10px;">
+        <div style="border: 2px solid red; margin: 10px; padding: 10px">
           <!-- Top Table with Logo + "Skanray Technologies Limited" + "Preventive Maintenence Checklist" together -->
           <table style="width: 100%; border-collapse: collapse; border: 1px solid black;">
             <tr>
@@ -81,21 +81,21 @@ const getChecklistHTMLPM = ({
                 style="
                   text-align: center;
                   font-weight: bold;
-                  font-size: 20px; /* Increased size */
+                  font-size: 13px; /* Increased size */
                   border-bottom: 1px solid black;
                   padding: 5px;
                 "
               >
                 Skanray Technologies Limited
                 <br />
-                <span style="font-size: 18px;">Installation Checklist</span>
+                <span style="font-size: 12px;">Installation Checklist</span>
               </td>
     
               <!-- Right cell: Format No & Revision -->
               <td style="width: 30%; border: 1px solid black;">
                 <table style="width: 100%; height: 100px; border-collapse: collapse;">
                   <tr>
-                    <td style="border-bottom: 1px solid black; font-weight: bold; height: 50px;">
+                    <td style="border-bottom: 1px solid black; font-weight: bold; height: 40px;">
                       Format No &amp; Revision:${formatChlNo}-${formatRevNo}
                     </td>
                   </tr>
@@ -190,7 +190,7 @@ const getChecklistHTMLPM = ({
                     font-weight: bold;
                     border: 0px solid black;
                     padding: 5px;
-                    height: 25px;
+                    height: 20px;
                   "
                 >
                   Part Number:
@@ -205,7 +205,7 @@ const getChecklistHTMLPM = ({
                     font-weight: bold;
                     border: 1px solid black;
                     padding: 5px;
-                    height: 25px;
+                    height: 20px;
                   "
                 >
                   Model Description:
@@ -220,7 +220,7 @@ const getChecklistHTMLPM = ({
                     font-weight: bold;
                     /* border: 1px solid black; */
                     padding: 5px;
-                    height: 25px;
+                    height: 20px;
                   "
                 >
                   Serial Number:
@@ -237,16 +237,16 @@ const getChecklistHTMLPM = ({
           <!-- Checklist Table -->
           <table style="width: 100%; border-collapse: collapse; border: 1px solid black;">
             <tr>
-              <th style="width: 10%; border: 1px solid black; padding: 5px; text-align: center; font-size:16px;">
+              <th style="width: 10%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
                 Sl. No
               </th>
-              <th style="width: 50%; border: 1px solid black; padding: 5px; text-align: center; font-size:16px;">
+              <th style="width: 50%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
                 Description
               </th>
-              <th style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:16px;">
+              <th style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
                 Result
               </th>
-              <th style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:16px;">
+              <th style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
                 Remarks
               </th>
             </tr>
@@ -272,7 +272,7 @@ const getChecklistHTMLPM = ({
               </td>
               <td style="border: 1.5px solid #000; padding: 0px 0px 0px 8px; width: 30%">
                 <p style="font-weight: bold; margin: 0">Signature valid</p>
-                <div style="font-size: 12px">
+                <div style="font-size: 9px">
                   Digitally signed by <br />
                   SKANRAY TECHNOLOGIES LIMITED <br />
                   P1 ${date || ""}
@@ -281,9 +281,9 @@ const getChecklistHTMLPM = ({
                   src="https://www.iconpacks.net/icons/2/free-check-icon-3278-thumb.png"
                   alt="Signature Check"
                   style="
-                    width: 60px;
+                    width: 50px;
                     margin-top: -80px;
-                    margin-left: 120px;
+                    margin-left: 100px;
                   "
                 />
               </td>

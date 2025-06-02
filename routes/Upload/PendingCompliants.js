@@ -885,27 +885,24 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
     const dateAttended = new Date().toLocaleDateString("en-GB"); // e.g. "02/04/2025"
     const currentDate = new Date().toLocaleDateString("en-GB");
 
-    // 3) Build the 5 rows for “Parts/Modules replaced”
-    // Always show exactly 5 rows. If more than 5, we only show first 5.
+    // 3) Build the 5 rows for "Parts/Modules replaced"
     const maxRows = 5;
     let partsRowsHTML = "";
     for (let i = 0; i < maxRows; i++) {
       const item = sparesReplaced[i];
       if (item) {
-        // Show actual data
         partsRowsHTML += `
         <tr>
-          <td style="vertical-align: top;">${i + 1}</td>
+          <td style="vertical-align: top; height: 20px;">${i + 1}</td>
           <td style="vertical-align: top;">${item.Description || ""}</td>
           <td style="vertical-align: top;">${item.defectivePartNumber || ""}</td>
           <td style="vertical-align: top;">${item.replacedPartNumber || ""}</td>
         </tr>
       `;
       } else {
-        // Show empty row
         partsRowsHTML += `
         <tr>
-          <td style="vertical-align: top;">${i + 1}</td>
+          <td style="vertical-align: top; height: 20px;">${i + 1}</td>
           <td style="vertical-align: top;"></td>
           <td style="vertical-align: top;"></td>
           <td style="vertical-align: top;"></td>
@@ -914,7 +911,23 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       }
     }
 
-    // 4) Build the Service Report HTML with bigger font & 5 fixed rows
+    function formatExcelDate(serial) {
+      if (!serial || isNaN(serial)) return "";
+
+      const excelEpoch = new Date(1899, 11, 30);
+      const days = Math.floor(serial);
+      const milliseconds = (serial - days) * 24 * 60 * 60 * 1000;
+      const date = new Date(excelEpoch.getTime() + days * 86400000 + milliseconds);
+
+      // Format as dd-mm-yyyy
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}-${month}-${year}`;
+    }
+
+
+    // 4) Build the Service Report HTML with compact styling
     const serviceReportHTML = `
 <!DOCTYPE html>
 <html lang="en">
@@ -922,75 +935,73 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
     <meta charset="UTF-8" />
     <title>Skanray Service Report</title>
     <style>
-      /* Force A4 page size and 15mm margins */
       @page {
         size: A4;
-        margin: 15mm;
+        margin: 2mm;
       }
       body {
         margin: 0;
         padding: 0;
         font-family: Arial, sans-serif;
-        background-color: #fff;
-        font-size: 16px;       /* Larger base font */
-        line-height: 1.4;
+        font-size: 8px;
+        line-height: 1.7;
       }
-      /* Outer container can fill the page width */
       .outer-container {
-        border: 1px solid #000;
-        margin: 0 auto;
         width: 100%;
+        max-width: 100%;
       }
-      /* Default table styling: all cells get a border */
       table {
         width: 100%;
         border-collapse: collapse;
+        table-layout: fixed;
       }
       table, td, th {
         border: 1px solid #000;
       }
       td, th {
-        padding: 10px;   /* Increased padding for more space */
+        padding: 4px;
+        vertical-align: top;
       }
-      /* Larger text for the main headings */
       .main-title {
-        font-size: 20px;
+        font-size: 7px;
         font-weight: bold;
       }
       .sub-title {
-        font-size: 20px;
+        font-size: 6px;
         font-weight: bold;
+      }
+      .compact-row {
+        height: 20px;
+      }
+      .small-text {
+        font-size: 7px;
       }
     </style>
   </head>
   <body>
-    <!-- Outer container -->
     <div class="outer-container">
       <!-- 1) Top Row: Logo + Title + Format/Number/Revision -->
       <table>
         <tr>
-          <!-- Left cell: Logo + tagline -->
-          <td style="width: 14.5%; text-align: center; vertical-align: top;">
+          <td style="width: 15%; text-align: center;">
             <img
               src="https://skanray.com/wp-content/uploads/2024/07/Skanray-logo.png"
               alt="Skanray Logo"
-              style="width: 80px; margin-top: 4px;"
-            /><br />
+              style="width: 60px;"
+            />
           </td>
-          <!-- Middle cell: Main title -->
-          <td style="width: 50%; text-align: center; vertical-align: middle;">
+          <td style="width: 60%; text-align: center;">
             <div class="main-title">Skanray Technologies Limited.</div>
             <div class="sub-title">Service Report</div>
           </td>
-          <!-- Right cell: format/Number/Revision sub-table -->
-          <td style="width: 25%; vertical-align: top; padding: 0;">
+          <td style="width: 35%;">
             <table>
-              <tr>
+              <tr class="compact-row">
                 <td>format</td>
                 <td>Number</td>
                 <td>3F5014</td>
               </tr>
-              <tr>
+              <tr class="compact-row">
                 <td>&nbsp;</td>
                 <td>Revision</td>
                 <td>03</td>
@@ -1000,42 +1011,43 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         </tr>
       </table>
 
-      <!-- 2) Row for Notification No / Date / Service Type -->
+      <!-- 2) Notification No / Date / Service Type -->
       <table>
-        <tr>
+        <tr class="compact-row">
           <td style="width: 16%;">Notification No:</td>
           <td style="width: 17%;">${complaintNumber || "N/A"}</td>
           <td style="width: 16%;">Date:</td>
-          <td style="width: 17%;">${notificationDate || dateAttended}</td>
+          <td style="width: 17%;">
+  ${formatExcelDate(notificationDate) || "N/A"}
+</td>
+
           <td style="width: 17%;">Service Type:</td>
           <td style="width: 17%;">${notificationType || "N/A"}</td>
         </tr>
       </table>
 
-      <!-- 3) Customer Details (left) + Part Details (right) -->
+      <!-- 3) Customer Details + Part Details -->
       <table>
         <tr>
-          <!-- Customer Detail Section -->
-          <td style="width: 50%; vertical-align: top;">
-            <strong>Customer Code:</strong> ${customerDetails?.customerCode || "N/A"}<br />
-            <strong>Name:</strong> ${customerDetails?.hospitalName || "N/A"}<br />
-            <strong>Address:</strong> ${customerDetails?.street || "N/A"}<br />
-            <strong>City:</strong> ${customerDetails?.city || "N/A"}<br />
-            <strong>Telephone:</strong> ${customerDetails?.phone || "N/A"}<br />
+          <td style="width: 50%;">
+            <strong>Customer Code:</strong> ${customerDetails?.customerCode || "N/A"}<br/>
+            <strong>Name:</strong> ${customerDetails?.hospitalName || "N/A"}<br/>
+            <strong>Address:</strong> ${customerDetails?.street || "N/A"}<br/>
+            <strong>City:</strong> ${customerDetails?.city || "N/A"}<br/>
+            <strong>Telephone:</strong> ${customerDetails?.phone || "N/A"}<br/>
             <strong>Email:</strong> ${customerDetails?.email || "N/A"}
           </td>
-          <!-- Part Detail Section -->
-          <td style="width: 50%; vertical-align: top;">
+          <td style="width: 50%;">
             <table>
-              <tr>
+              <tr class="compact-row">
                 <td><strong>Part Number:</strong></td>
                 <td>${partNumber || "N/A"}</td>
               </tr>
-              <tr>
-                <td style="height: 60px;"><strong>Description:</strong></td>
+              <tr class="compact-row">
+                <td><strong>Description:</strong></td>
                 <td>${description || "N/A"}</td>
               </tr>
-              <tr>
+              <tr class="compact-row">
                 <td><strong>Serial Number:</strong></td>
                 <td>${serialNumber || "N/A"}</td>
               </tr>
@@ -1046,54 +1058,44 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
 
       <!-- Notification Details -->
       <table>
-        <tr>
-          <td style="width: 25%; vertical-align: top;">
+        <tr class="compact-row">
+          <td style="width: 25%;">
             <strong>Date Attended:</strong> ${dateAttended}
           </td>
-          <td style="width: 75%; vertical-align: top;">
+          <td style="width: 75%;">
             <strong>Problem Reported:</strong> ${reportedProblem || "N/A"}
           </td>
         </tr>
         <tr>
-          <td style="vertical-align: top;">
+          <td style="width: 25%;">
             <strong>Problem Observed & Action Taken:</strong>
           </td>
-          <td style="vertical-align: top;">
+          <td style="width: 75%;">
             ${actionTaken || "N/A"}
-          </td>
-        </tr>
-        <tr>
-          <td style="vertical-align: top;">
-            <strong>Any abnormal site conditions:</strong>
-          </td>
-          <td style="vertical-align: top;">
-            <!-- Add details if needed -->
           </td>
         </tr>
       </table>
 
       <!-- Supply Voltage Table -->
       <table>
-        <tr>
-          <td style="vertical-align: top;"><strong>Supply Voltage(V)</strong></td>
-          <td style="vertical-align: top;">L-N/R-Y</td>
-          <td style="vertical-align: top;">${voltageLN_RY || "N/A"}</td>
-          <td style="vertical-align: top;">L-GY-B</td>
-          <td style="vertical-align: top;">${voltageLG_YB || "N/A"}</td>
-          <td style="vertical-align: top;">N-G/B-R</td>
-          <td style="vertical-align: top;">${voltageNG_BR || "N/A"}</td>
+        <tr class="compact-row">
+          <td><strong>Supply Voltage(V)</strong></td>
+          <td>L-N/R-Y</td>
+          <td>${voltageLN_RY || "N/A"}</td>
+          <td>L-GY-B</td>
+          <td>${voltageLG_YB || "N/A"}</td>
+          <td>N-G/B-R</td>
+          <td>${voltageNG_BR || "N/A"}</td>
         </tr>
       </table>
 
       <!-- Injury Details -->
       <table>
-        <tr>
-          <td><strong>Injury Details:</strong></td>
+        <tr class="compact-row">
+          <td colspan="2"><strong>Injury Details:</strong></td>
         </tr>
-      </table>
-      <table>
-        <tr>
-          <td style="width: 50%; vertical-align: top;">
+        <tr class="compact-row">
+          <td style="width: 50%;">
             <strong>Device User / Affected Person:</strong>
             ${(() => {
         const users = [];
@@ -1104,17 +1106,15 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         if (injuryDetails?.deviceUsers?.serviceEngineer) users.push("Service Engineer");
         if (injuryDetails?.deviceUsers?.none) users.push("None");
         return users.join(", ") || "N/A";
-      })()
-      }
-        
+      })()}
           </td>
-          <td style="width: 50%; vertical-align: top;">
+          <td style="width: 50%;">
             <strong>Did Incident occur during procedure:</strong>
             ${injuryDetails?.incidentDuringProcedure === "yes" ? "Yes" : "No"}
           </td>
         </tr>
-        <tr>
-          <td colspan="2" style="vertical-align: top;">
+        <tr class="compact-row">
+          <td colspan="2">
             <strong>Provide usage protocol:</strong>
             KV ${injuryDetails?.exposureProtocol?.kv || "____"}
             &nbsp;mA/mAs ${injuryDetails?.exposureProtocol?.maMas || "____"}
@@ -1122,14 +1122,14 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
             &nbsp;Time ${injuryDetails?.exposureProtocol?.time || "____"}
           </td>
         </tr>
-        <tr>
-          <td colspan="2" style="vertical-align: top;">
+        <tr class="compact-row">
+          <td colspan="2">
             <strong>Outcome Attributed to Event:</strong>
             ${injuryDetails?.outcomeAttributed || "N/A"}
           </td>
         </tr>
-        <tr>
-          <td colspan="2" style="vertical-align: top;">
+        <tr class="compact-row">
+          <td colspan="2">
             <strong>Describe injury/Treatment or other safety issues:</strong>
             ${injuryDetails?.description || "N/A"}
           </td>
@@ -1138,79 +1138,78 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
 
       <!-- Parts/Modules replaced -->
       <table>
-        <tr>
+        <tr class="compact-row">
           <td colspan="4">
             <strong>Details of Parts/Modules/Sub-assemblies replaced (Write NA if serial number is not available)</strong>
           </td>
         </tr>
-        <tr>
-          <th style="width: 10%; vertical-align: top;">SL.No</th>
-          <th style="width: 35%; vertical-align: top;">Part Description</th>
-          <th style="width: 25%; vertical-align: top;">Defective part serial number</th>
-          <th style="width: 30%; vertical-align: top;">Replaced part Serial number</th>
+        <tr class="compact-row">
+          <th style="width: 10%;">SL.No</th>
+          <th style="width: 35%;">Part Description</th>
+          <th style="width: 25%;">Defective part serial number</th>
+          <th style="width: 30%;">Replaced part Serial number</th>
         </tr>
         ${partsRowsHTML}
       </table>
 
       <!-- Service Engineer and Customer Remarks -->
       <table>
-        <tr>
-          <td style="width: 50%; vertical-align: top;">
-            <strong>Service Engineer's Name:</strong><br />
+        <tr class="compact-row">
+          <td style="width: 50%;">
+            <strong>Service Engineer's Name:</strong><br/>
             ${serviceEngineer?.firstName || "N/A"} ${serviceEngineer?.lastName || ""}
-            <br />
+            <br/>
             ${serviceEngineer?.location || ""}
           </td>
-          <td style="width: 50%; vertical-align: top;">
-            <strong>Specific actions required from customer:</strong><br />
+          <td style="width: 50%;">
+            <strong>Specific actions required from customer:</strong><br/>
             ${instructionToCustomer || "N/A"}
           </td>
         </tr>
-        <tr>
-          <td colspan="2" style="vertical-align: top;">
-            <strong>Customer Remark's:</strong><br />
-           <strong>
-           The above equipment has been handed over to us in satisfactorily working condition</strong>
+        <tr class="compact-row">
+          <td colspan="2">
+            <strong>Customer Remark's:</strong><br/>
+            <strong>The above equipment has been handed over to us in satisfactorily working condition</strong>
           </td>
         </tr>
-        <tr>
-          <td style="width: 50%; vertical-align: top;">
-          <strong>
-          Digitally Authorised by ${customerDetails?.hospitalName || "N/A"}
-          by providing OTP ${otp} sent on ${notificationDate || dateAttended}
-          to ${customerEmail} and ${customerDetails?.phone || "N/A"} by Skanray
-          </strong>
+        <tr class="compact-row">
+          <td style="width: 50%;">
+            <strong>
+              Digitally Authorised by ${customerDetails?.hospitalName || "N/A"}
+              by providing OTP ${otp} sent on ${notificationDate || dateAttended}
+              to ${customerEmail} and ${customerDetails?.phone || "N/A"} by Skanray
+            </strong>
           </td>
-          <td style="width: 30%; padding: 10px 0px 0px 98px;">
+          <td style="width: 30%; padding-left: 50px;">
             <p style="font-weight: bold; margin: 0;">Signature valid</p>
-            <div style="font-size: 16px;">
-              Digitally signed by <br />
-              SKANRAY TECHNOLOGIES LIMITED <br />
+            <div class="small-text">
+              Digitally signed by <br/>
+              SKANRAY TECHNOLOGIES LIMITED <br/>
               P1 ${currentDate}
             </div>
             <img
               src="https://www.iconpacks.net/icons/2/free-check-icon-3278-thumb.png"
               alt="Signature Check"
-              style="width: 60px; margin-top: -80px; margin-left: 120px;"
+              style="width: 40px; margin-top: -50px; margin-left: 80px;"
             />
           </td>
         </tr>
       </table>
 
-      <!-- Payment and Terms (still 16px for consistency) -->
+      <!-- Payment and Terms -->
       <table>
         <tr>
-          <td>
-            <div style="border-bottom: 1px solid black; padding-left: 5px;">
+          <td class="small-text">
+            <div style="border-bottom: 1px solid black; padding-left: 5px;  ">
               <strong>
-                Payments to be made through Cheque / DD in favour of Skanray Technologies Limited. only<br /><br />
+                Payments to be made through Cheque / DD in favour of Skanray Technologies Limited. only<br/>
               </strong>
             </div>
             <div style="border-bottom: 1px solid black; padding-left: 5px;">
               <strong>
-                TERMS FOR ON-CALL SERVICE<br />
-                Payment: Full Payment as per the rate schedule available with the engineer should be made in advance.<br />
-                Agreements: The forgoing terms & conditions shall prevail not withstanding any variations contained in any document received from any customer unless such variations have been specifically agreed upon in writing by Skanray Technologies Limited<br /><br />
+                TERMS FOR ON-CALL SERVICE<br/>
+                Payment: Full Payment as per the rate schedule available with the engineer should be made in advance.<br/>
+                Agreements: The forgoing terms & conditions shall prevail not withstanding any variations contained in any document received from any customer unless such variations have been specifically agreed upon in writing by Skanray Technologies Limited<br/>
               </strong>
             </div>
             <div style="padding-left: 5px;">
@@ -1226,24 +1225,23 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
 </html>
 `;
 
-    // 5) Set PDF file name based on complaint number and reported problem
+    // 5) Set PDF file name
     const pdfFileName = `${complaintNumber || "report"}_${(description || "description").replace(/\s+/g, "_")}.pdf`;
 
-    // 6) Generate a PDF from serviceReportHTML
+    // 6) Generate PDF with adjusted settings
     pdf.create(serviceReportHTML, {
       format: "A4",
       orientation: "portrait",
       border: {
-        top: "5mm",
-        right: "5mm",
-        bottom: "5mm",
-        left: "5mm",
+        top: "2mm",
+        right: "2mm",
+        bottom: "2mm",
+        left: "2mm",
       },
-      // If it still appears small, try increasing zoomFactor further
-      zoomFactor: 1.3,
+      zoomFactor: 1.0,
       childProcessOptions: {
         env: {
-          OPENSSL_CONF: "/dev/null", // Bypass OpenSSL config issues
+          OPENSSL_CONF: "/dev/null",
         },
       },
     }).toBuffer(async (err, pdfBuffer) => {
