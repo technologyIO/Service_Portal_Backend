@@ -67,15 +67,13 @@ require('dotenv').config();
 const app = express();
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like curl, mobile apps, etc.)
-    if (!origin) return callback(null, true);
-    return callback(null, true); // Reflect origin
-  },
+  origin: 'http://localhost:3000',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+
 // Middleware
 app.use(bodyParser.json());
 app.use(express.json({ limit: '50mb' })); // Increase JSON body parser limit
