@@ -5,8 +5,10 @@ const nodemailer = require('nodemailer');
 const Equipment = require('../../Model/MasterSchema/EquipmentSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 const pdf = require("html-pdf");
+const cors = require('cors');
 let otpStore = {};
-
+const app = express();
+app.options('*', cors());
 // Middleware to get a PendingComplaint by ID
 async function getPendingComplaintById(req, res, next) {
   let pendingComplaint;
