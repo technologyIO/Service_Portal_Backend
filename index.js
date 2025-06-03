@@ -73,7 +73,6 @@ app.use(cors({
 }));
 
 
-app.options('*', cors());
 // Middleware
 app.use(bodyParser.json());
 app.use(express.json({ limit: '50mb' })); // Increase JSON body parser limit
