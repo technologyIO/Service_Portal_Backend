@@ -67,15 +67,21 @@ require('dotenv').config();
 const app = express();
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like curl, mobile apps, etc.)
-    if (!origin) return callback(null, true);
-    return callback(null, true); // Reflect origin
-  },
+  origin: [
+    'http://your-frontend-domain.com',
+    'https://your-frontend-domain.com',
+    'http://localhost:3000', // for local development
+    'http://localhost:3001' // for local development
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
+
+// Handle preflight requests
+app.options('*', cors());
 // Middleware
 app.use(bodyParser.json());
 app.use(express.json({ limit: '50mb' })); // Increase JSON body parser limit
