@@ -5,6 +5,7 @@ const nodemailer = require('nodemailer');
 const Equipment = require('../../Model/MasterSchema/EquipmentSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 const pdf = require("html-pdf");
+const User = require('../../Model/MasterSchema/UserSchema');
 const cors = require('cors');
 let otpStore = {};
 const app = express();
@@ -242,10 +243,21 @@ router.post('/sendComplaintEmail', async (req, res) => {
       },
     });
 
+    const cicUser = await User.findOne({
+      'role.roleName': 'CIC',
+      'role.roleId': 'C1'
+    });
+
+    if (!cicUser) {
+      console.error("CIC user not found");
+      return;
+    }
+
+
     // 7. Set up mail options with the HTML body
     const mailOptions = {
       from: 'webadmin@skanray-access.com',
-      to: 'mrshivamtiwari2025@gmail.com', // Recipient email
+      to: cicUser.email,
       subject: 'New Complaint',
       html: emailBodyHtml,
     };
@@ -376,10 +388,21 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
       },
     });
 
+
+    const cicUser = await User.findOne({
+      'role.roleName': 'CIC',
+      'role.roleId': 'C1'
+    });
+
+    if (!cicUser) {
+      console.error("CIC user not found");
+      return;
+    }
+
     // 6. Set up mail options
     const mailOptions = {
       from: 'webadmin@skanray-access.com',
-      to: 'mrshivamtiwari2025@gmail.com', // Adjust as needed
+      to: cicUser.email,
       subject: 'Updated Complaint',
       html: emailHTML
     };
@@ -1264,10 +1287,19 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
             pass: "rdzegwmzirvbjcpm",
           },
         });
+        const cicUser = await User.findOne({
+          'role.roleName': 'CIC',
+          'role.roleId': 'C1'
+        });
+
+        if (!cicUser) {
+          console.error("CIC user not found");
+          return;
+        }
 
         const mailOptions = {
           from: "webadmin@skanray-access.com",
-          to: [customerEmail, "mrshivamtiwari2025@gmail.com"],
+          to: [customerEmail, cicUser.email],
           subject: "Final Complaint Details with Service Report",
           html: `
           <div style="font-family: Arial, sans-serif; margin: 10px; font-size:16px;">

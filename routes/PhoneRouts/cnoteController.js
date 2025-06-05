@@ -6,6 +6,7 @@ const puppeteer = require('puppeteer');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
+const User = require('../../Model/MasterSchema/UserSchema');
 
 const router = express.Router();
 
@@ -305,83 +306,95 @@ function numberToWords(num) {
 // Function to generate PDF using Puppeteer and send email
 const generateAndSendPdf = async (cnoteData, res) => {
     let browser;
+    let page;
+    const maxRetries = 3;
+    let retryCount = 0;
+    let pdfBuffer = null;
+
     try {
         const htmlContent = generateHtmlTemplate(cnoteData);
-        const pdfFileName = `CNote_${cnoteData.cnoteNumber}_${Date.now()}.pdf`;
-        const pdfPath = path.join(__dirname, 'generated_pdfs', pdfFileName);
-
-        // Create directory if it doesn't exist
-        if (!fs.existsSync(path.join(__dirname, 'generated_pdfs'))) {
-            fs.mkdirSync(path.join(__dirname, 'generated_pdfs'));
-        }
-
-        // Try with Chrome first, fall back to Chromium
-        let executablePath = '/usr/bin/google-chrome-stable';
-        if (!fs.existsSync(executablePath)) {
-            executablePath = '/usr/bin/chromium-browser';
-        }
 
         browser = await puppeteer.launch({
             headless: 'new',
-            executablePath,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--single-process'
+                '--disable-dev-shm-usage'
             ]
         });
 
-        const page = await browser.newPage();
-        await page.setContent(htmlContent, {
-            waitUntil: 'networkidle0'
+        while (retryCount < maxRetries && !pdfBuffer) {
+            try {
+                page = await browser.newPage();
+                await page.setContent(htmlContent, {
+                    waitUntil: ['load', 'domcontentloaded', 'networkidle0']
+                });
+
+                await page.waitForSelector('.total-row', { timeout: 5000 });
+
+                pdfBuffer = await page.pdf({
+                    format: 'A4',
+                    printBackground: true,
+                    margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' }
+                });
+
+            } catch (attemptError) {
+                retryCount++;
+                console.error(`PDF attempt ${retryCount} failed:`, attemptError);
+
+                if (page && !page.isClosed()) await page.close();
+
+                if (retryCount === maxRetries) {
+                    throw new Error(`PDF generation failed after ${maxRetries} attempts`);
+                }
+            }
+        }
+
+        if (!pdfBuffer) {
+            throw new Error('PDF generation failed');
+        }
+
+        const cicUser = await User.findOne({
+            'role.roleName': 'CIC',
+            'role.roleId': 'C1'
         });
 
-        await page.pdf({
-            path: pdfPath,
-            format: 'A4',
-            margin: {
-                top: '10mm',
-                right: '10mm',
-                bottom: '10mm',
-                left: '10mm'
-            },
-            printBackground: true
-        });
+        if (!cicUser) {
+            console.error("CIC user not found");
+            return;
+        }
 
-        // Send email with PDF attachment
         const mailOptions = {
             from: 'webadmin@skanray-access.com',
-            to: 'shivamt2023@gmail.com',
+            to: cicUser.email,
             subject: `CNote Generated - ${cnoteData.cnoteNumber}`,
-            text: `Please find attached the CNote ${cnoteData.cnoteNumber} for ${cnoteData.customer.customername}.`,
-            attachments: [{
-                filename: pdfFileName,
-                path: pdfPath
-            }]
+            text: `CNote ${cnoteData.cnoteNumber} for ${cnoteData.customer.customername}`,
+            attachments: [
+                {
+                    filename: `CNote_${cnoteData.cnoteNumber}_${Date.now()}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                }
+            ]
         };
 
         await transporter.sendMail(mailOptions);
 
         res.status(201).json({
-            message: 'CNote created and email sent successfully',
-            cnote: cnoteData,
-            pdfPath: pdfPath
+            message: 'CNote created and email sent',
+            cnote: cnoteData
         });
 
     } catch (error) {
-        console.error('Error in generateAndSendPdf:', error);
+        console.error('Final PDF generation failure:', error);
+
         res.status(500).json({
-            message: 'Failed to generate PDF',
+            message: 'CNote creation aborted - PDF generation failed',
             error: error.message
         });
     } finally {
-        if (browser) {
-            await browser.close();
-        }
+        if (page && !page.isClosed()) await page.close();
+        if (browser) await browser.close();
     }
 };
 

@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
     firstname: { type: String, required: true },
-    lastname: { type: String, required: true },
+    lastname: { type: String},
     email: { type: String, required: true, unique: true },
     mobilenumber: { type: String, required: true },
     status: { type: String, required: true },
@@ -17,7 +17,7 @@ const UserSchema = new mongoose.Schema({
     department: { type: String, required: true },
     password: { type: String, required: true },
     manageremail: { type: String, required: true },
-    skills: { type: String, required: true },
+    skills: { type: String },
     profileimage: { type: String, required: true },
     deviceid: { type: String, required: true },
     deviceregistereddate: { type: Date, default: Date.now },

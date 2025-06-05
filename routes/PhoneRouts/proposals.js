@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Proposal = require('../../Model/AppSchema/proposalSchema');
 const nodemailer = require('nodemailer');
-
+const User = require('../../Model/MasterSchema/UserSchema');
 
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -246,11 +246,20 @@ router.put('/:id/revision', async (req, res) => {
             { new: true }
         );
 
+         const cicUser = await User.findOne({
+                    'role.roleName': 'CIC',
+                    'role.roleId': 'C1'
+                });
+        
+                if (!cicUser) {
+                    console.error("CIC user not found");
+                    return;
+                }
         // Email setup
         const proposalLink = `http://localhost:3000/proposal/${req.params.id}`;
         const mailOptions = {
             from: 'webadmin@skanray-access.com',
-            to: 'shivamt2023@gmail.com',
+            to: cicUser.email,
             subject: `Proposal Revision #${newRevisionNumber} - Approval Needed`,
             html: `
                 <p>Dear CIC,</p>

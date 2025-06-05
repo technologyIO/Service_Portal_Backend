@@ -25,7 +25,8 @@ router.get("/search/:partno", async (req, res) => {
     // Map the result to return only PartNumber and Description
     const result = spareMasters.map(record => ({
       PartNumber: record.PartNumber,
-      Description: record.Description
+      Description: record.Description,
+      Image: record.spareiamegUrl
     }));
 
     res.status(200).json(result);

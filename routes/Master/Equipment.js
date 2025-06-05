@@ -3,11 +3,11 @@ const router = express.Router();
 const Equipment = require('../../Model/MasterSchema/EquipmentSchema');
 const PendingInstallation = require('../../Model/UploadSchema/PendingInstallationSchema'); // Adjust the path based on your folder structure
 const nodemailer = require('nodemailer');
-const puppeteer = require('puppeteer');
+const pdf = require('html-pdf');
 const FormatMaster = require("../../Model/MasterSchema/FormatMasterSchema");
 const { getChecklistHTML } = require("./getChecklistHTML"); // the new function above
 const EquipmentChecklist = require('../../Model/CollectionSchema/EquipmentChecklistSchema');
-// Add this at the top with other models
+const User = require('../../Model/MasterSchema/UserSchema');
 const InstallationReportCounter = require('../../Model/MasterSchema/InstallationReportCounterSchema');
 
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
@@ -24,48 +24,14 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-async function createPdfBuffer(htmlContent) {
-    let browser;
-    try {
-        // Launch Puppeteer with specific args for Ubuntu/DigitalOcean
-        browser = await puppeteer.launch({
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--single-process'
-            ]
+function createPdfBuffer(htmlContent, options = {}) {
+    return new Promise((resolve, reject) => {
+        pdf.create(htmlContent, options).toBuffer((err, buffer) => {
+            if (err) return reject(err);
+            resolve(buffer);
         });
-        
-        const page = await browser.newPage();
-        await page.setContent(htmlContent, {
-            waitUntil: 'networkidle0'
-        });
-        
-        // Generate PDF
-        const buffer = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            margin: {
-                top: '5mm',
-                right: '5mm',
-                bottom: '5mm',
-                left: '5mm'
-            }
-        });
-        
-        return buffer;
-    } catch (err) {
-        console.error('Error generating PDF:', err);
-        throw err;
-    } finally {
-        if (browser) {
-            await browser.close();
-        }
-    }
+    });
 }
-
 // Middleware to get equipment by ID
 async function getEquipmentById(req, res, next) {
     let equipment;
@@ -143,7 +109,7 @@ router.get('/equipment-details/:serialnumber', async (req, res) => {
         // 4. Find all equipments that have used this same customer code
         const customerEquipments = await Equipment.find(
             { currentcustomer: customerCode },
-            'serialnumber materialcode name'
+            'serialnumber materialcode name materialdescription'
         );
 
         // 5. Combine the data and return it
@@ -179,6 +145,9 @@ router.get('/checkequipments/:customerCode', async (req, res) => {
     }
 });
 
+
+
+
 router.get('/getbyserialno/:serialnumber', async (req, res) => {
     try {
         const serialnumber = req.params.serialnumber;
@@ -209,6 +178,7 @@ router.get('/getbyserialno/:serialnumber', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 // GET all equipment
 router.get('/equipment', async (req, res) => {
@@ -243,6 +213,7 @@ router.get('/allequipment', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 // GET equipment by ID
 router.get('/equipment/:id', getEquipmentById, (req, res) => {
@@ -296,6 +267,7 @@ router.post('/verify-otp', (req, res) => {
     res.status(200).json({ message: 'OTP verified successfully' });
 });
 
+
 // Updated bulk endpoint
 router.post("/equipment/bulk", async (req, res) => {
     try {
@@ -344,7 +316,13 @@ router.post("/equipment/bulk", async (req, res) => {
 
         let installationBuffer;
         try {
-            installationBuffer = await createPdfBuffer(installationHtml);
+            installationBuffer = await createPdfBuffer(installationHtml, {
+                format: "A4",
+                orientation: "portrait",
+                border: { top: "5mm", right: "5mm", bottom: "5mm", left: "5mm" },
+                zoomFactor: "0.5",
+                childProcessOptions: { env: { OPENSSL_CONF: "/dev/null" } },
+            });
             sendProgress({ type: 'status', message: 'Installation report PDF generated successfully' });
         } catch (err) {
             console.error("Error generating Installation PDF:", err);
@@ -420,7 +398,13 @@ router.post("/equipment/bulk", async (req, res) => {
 
                     // Generate PDF
                     const checklistHtml = getChecklistHTML(checklistHtmlData);
-                    checklistBuffer = await createPdfBuffer(checklistHtml);
+                    checklistBuffer = await createPdfBuffer(checklistHtml, {
+                        format: "A4",
+                        orientation: "portrait",
+                        border: { top: "5mm", right: "5mm", bottom: "5mm", left: "5mm" },
+                        zoomFactor: "0.5",
+                        childProcessOptions: { env: { OPENSSL_CONF: "/dev/null" } },
+                    });
 
                     sendProgress({
                         type: 'status',
@@ -447,17 +431,28 @@ router.post("/equipment/bulk", async (req, res) => {
                         content: checklistBuffer
                     });
                 }
+ 
+                const cicUser = await User.findOne({
+                    'role.roleName': 'CIC',
+                    'role.roleId': 'C1'
+                });
+
+                if (!cicUser) {
+                    console.error("CIC user not found");
+                    return;
+                }
+
 
                 const cicMailOptions = {
                     from: "webadmin@skanray-access.com",
-                    to: "mrshivamtiwari2025@gmail.com",
+                    to: cicUser.email,
                     subject: `Installation Report - ${serialNumber}`,
                     text: `Equipment processed: ${serialNumber}`,
                     attachments: cicAttachments
                 };
 
                 await transporter.sendMail(cicMailOptions);
-
+                console.log("Email sent to CIC:", cicUser.email);
                 sendProgress({
                     type: 'status',
                     serialNumber,
@@ -467,7 +462,7 @@ router.post("/equipment/bulk", async (req, res) => {
                 // Send equipment data to CIC (as text in email)
                 const dataMailOptions = {
                     from: "webadmin@skanray-access.com",
-                    to: "mrshivamtiwari2025@gmail.com",
+                    to: cicUser.email,
                     subject: `Equipment Data - ${serialNumber}`,
                     text: JSON.stringify(equipment, null, 2)
                 };
@@ -558,6 +553,15 @@ router.post("/equipment/bulk", async (req, res) => {
         res.end();
     }
 });
+
+
+
+
+
+
+
+
+
 
 // UPDATE equipment
 router.put('/equipment/:id', getEquipmentById, checkDuplicateSerialNumber, async (req, res) => {

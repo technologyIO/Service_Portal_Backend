@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 const nodemailer = require('nodemailer');
-
+const User = require('../../Model/MasterSchema/UserSchema');
 
 const transporter = nodemailer.createTransport({
     service: 'Gmail',  
@@ -159,11 +159,21 @@ router.post('/customer/send-email', async (req, res) => {
       </p>
     `;
 
+     const cicUser = await User.findOne({
+                        'role.roleName': 'CIC',
+                        'role.roleId': 'C1'
+                    });
+    
+                    if (!cicUser) {
+                        console.error("CIC user not found");
+                        return;
+                    }
+
     // Email options
     const mailOptions = {
-        from: 'webadmin@skanray-access.com', // Replace if needed
-        to: 'mrshivamtiwari2025@gmail.com',  // Replace with actual CIC email
-        subject: 'New Customer Submission',
+        from: 'webadmin@skanray-access.com',  
+        to: cicUser.email,   
+        subject: 'New Customer Creation',
         html: emailContent
     };
 
