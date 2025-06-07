@@ -66,34 +66,22 @@ require('dotenv').config();
 
 const app = express();
 
- 
-const allowedOrigins = [
-  'http://your-frontend.com',
-  'https://your-frontend.com',
-  'http://localhost:3000',
-  'http://localhost:3001'
-];
 
 const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: true,  
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200
 };
 
+
 app.use(cors(corsOptions));
 
 // Handle preflight for all routes
 app.options('*', cors(corsOptions));
 
- 
+
 // Middleware
 app.use(bodyParser.json());
 app.use(express.json({ limit: '50mb' })); // Increase JSON body parser limit

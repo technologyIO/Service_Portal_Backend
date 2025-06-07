@@ -256,7 +256,7 @@ router.put('/:id/revision', async (req, res) => {
                     return;
                 }
         // Email setup
-        const proposalLink = `http://localhost:3000/proposal/${req.params.id}`;
+        const proposalLink = `https://service-portal-admin.vercel.app/proposal/${req.params.id}`;
         const mailOptions = {
             from: 'webadmin@skanray-access.com',
             to: cicUser.email,

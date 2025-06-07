@@ -12,7 +12,7 @@ const getChecklistHTMLPM = ({
     formatRevNo,
   }) => {
     // 1) Decide how many total rows we want on one page
-    const maxRows = 24;
+    const maxRows = 14;
   
     // 2) Take up to 'maxRows' items from the array
     const displayedItems = checklistItems.slice(0, maxRows);
@@ -35,7 +35,7 @@ const getChecklistHTMLPM = ({
     for (let i = 0; i < blankRowsNeeded; i++) {
       blankRows.push(`
           <tr>
-            <td style="border: 1px solid black; padding: 5px; height: 30px; text-align:center"></td>
+            <td style="border: 1px solid black; padding: 5px; height: 15px; text-align:center"></td>
             <td style="border: 1px solid black; padding: 5px;"></td>
             <td style="border: 1px solid black; padding: 5px;"></td>
             <td style="border: 1px solid black; padding: 5px;"></td>
@@ -95,12 +95,12 @@ const getChecklistHTMLPM = ({
               <td style="width: 30%; border: 1px solid black;">
                 <table style="width: 100%; height: 100px; border-collapse: collapse;">
                   <tr>
-                    <td style="border-bottom: 1px solid black; font-weight: bold; height: 40px;">
+                    <td style="border-bottom: 1px solid black; font-weight: bold; height: 40px; font-size: 8px;">
                       Format No &amp; Revision:${formatChlNo}-${formatRevNo}
                     </td>
                   </tr>
                   <tr>
-                    <td style="font-weight: bold">
+                    <td style="font-weight: bold; font-size: 8px;">
                       Document reference no <br/>
                       &amp; Revision:
                     </td>

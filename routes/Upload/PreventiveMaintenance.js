@@ -242,7 +242,7 @@ router.post("/otp/send", async (req, res) => {
     // 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     // Store in memory or DB
-    global.otpStore = global.otpStore || {}; 
+    global.otpStore = global.otpStore || {};
     global.otpStore[customerCode] = { otp, timestamp: Date.now() };
     // Send via nodemailer
     await transporter.sendMail({
@@ -306,9 +306,7 @@ router.post("/reportAndUpdate", async (req, res) => {
     const { pmData, checklistData, customerCode, globalRemark } = req.body;
 
     if (!pmData || !customerCode) {
-      return res
-        .status(400)
-        .json({ message: "PM data and customer code are required" });
+      return res.status(400).json({ message: "PM data and customer code are required" });
     }
 
     const existingPm = await PM.findById(pmData._id);
@@ -316,39 +314,78 @@ router.post("/reportAndUpdate", async (req, res) => {
       return res.status(404).json({ message: "PM record not found" });
     }
 
-    // ✅ Generate and assign new pmNumber if not present
+    // Generate and assign new pmNumber if not present
     if (!existingPm.pmNumber) {
-      const lastPmWithNumber = await PM.find({ pmNumber: { $exists: true } })
-        .sort({ createdAt: -1 })
-        .limit(1);
+      try {
+        // Find all existing PM numbers sorted numerically
+        const allPMs = await PM.find({ pmNumber: { $regex: /^PM\d+$/ } })
+          .sort({ pmNumber: 1 });
 
-      let nextNumber = 1;
-      if (lastPmWithNumber.length > 0) {
-        const lastNumber = parseInt(
-          lastPmWithNumber[0].pmNumber.replace("PM", ""),
-          10
-        );
-        nextNumber = lastNumber + 1;
+        let nextNumber = 1; // Default starting number
+
+        if (allPMs.length > 0) {
+          // Extract all existing numbers
+          const existingNumbers = allPMs.map(pm => {
+            const numStr = pm.pmNumber.replace('PM', '');
+            return parseInt(numStr, 10);
+          }).filter(num => !isNaN(num));
+
+          // Find the first gap in numbering or the next number
+          for (let i = 0; i < existingNumbers.length; i++) {
+            if (existingNumbers[i] !== i + 1) {
+              nextNumber = i + 1;
+              break;
+            }
+          }
+
+          // If no gaps found, use next number after highest
+          if (nextNumber === 1 && existingNumbers.length > 0) {
+            nextNumber = Math.max(...existingNumbers) + 1;
+          }
+        }
+
+        // Format with leading zeros (minimum 4 digits, but can be more)
+        const newPmNumber = "PM" + nextNumber.toString().padStart(4, "0");
+
+        // Final check for uniqueness
+        const exists = await PM.findOne({ pmNumber: newPmNumber });
+        if (exists) {
+          // If by some chance it exists, find next available
+          let tempNumber = nextNumber + 1;
+          while (true) {
+            const tempPmNumber = "PM" + tempNumber.toString().padStart(4, "0");
+            const tempExists = await PM.findOne({ pmNumber: tempPmNumber });
+            if (!tempExists) {
+              existingPm.pmNumber = tempPmNumber;
+              break;
+            }
+            tempNumber++;
+          }
+        } else {
+          existingPm.pmNumber = newPmNumber;
+        }
+      } catch (err) {
+        console.error("Error generating PM number:", err);
+        // Fallback to timestamp-based number if something goes wrong
+        const timestamp = Date.now();
+        existingPm.pmNumber = "PM" + timestamp.toString().slice(-6); // Use last 6 digits
       }
-
-      const newPmNumber = "PM" + nextNumber.toString().padStart(5, "0");
-      existingPm.pmNumber = newPmNumber;
     }
 
-    // ✅ Only update necessary fields (do NOT update partNumber)
-    existingPm.pmDoneDate = pmData.pmDoneDate;
-    existingPm.pmEngineerCode = pmData.pmEngineerCode;
-    existingPm.pmStatus = pmData.pmStatus;
+    // Update necessary fields
+    existingPm.pmDoneDate = pmData.pmDoneDate || existingPm.pmDoneDate;
+    existingPm.pmEngineerCode = pmData.pmEngineerCode || existingPm.pmEngineerCode;
+    existingPm.pmStatus = pmData.pmStatus || existingPm.pmStatus;
 
     await existingPm.save();
 
-    // ✅ Fetch customer data
+    // Fetch customer data
     const customer = await Customer.findOne({ customercodeid: customerCode });
     if (!customer) {
       return res.status(404).json({ message: "Customer not found" });
     }
 
-    // ✅ Prepare checklist HTML
+    // Prepare checklist HTML
     const checklistHtml = getChecklistHTMLPM({
       reportNo: existingPm.pmNumber,
       date: existingPm.pmDoneDate,
@@ -361,11 +398,10 @@ router.post("/reportAndUpdate", async (req, res) => {
         serialNumber: existingPm.serialNumber,
         machineId: existingPm._id,
       },
-      // NOTE: Match the actual fields from your front-end data:
       checklistItems: (checklistData || []).map((c) => ({
-        checkpoint: c.checkpoint,         // previously was c.checklistId
-        result: c.result || "",           // previously was c.answer
-        remark: c.remark || "",           // previously was c.comment
+        checkpoint: c.checkpoint,
+        result: c.result || "",
+        remark: c.remark || "",
       })),
       serviceEngineer: existingPm.pmEngineerCode,
       remarkglobal: globalRemark || "N/A",
@@ -373,7 +409,7 @@ router.post("/reportAndUpdate", async (req, res) => {
       formatRevNo: "0",
     });
 
-    // ✅ Generate PDF from HTML
+    // Generate PDF from HTML
     const pdfOptions = {
       format: "A4",
       childProcessOptions: { env: { OPENSSL_CONF: "/dev/null" } },
@@ -382,12 +418,10 @@ router.post("/reportAndUpdate", async (req, res) => {
     pdf.create(checklistHtml, pdfOptions).toBuffer((err, pdfBuffer) => {
       if (err) {
         console.error("Error generating Checklist PDF:", err);
-        return res
-          .status(500)
-          .json({ message: "Failed to create Checklist PDF" });
+        return res.status(500).json({ message: "Failed to create Checklist PDF" });
       }
 
-      // ✅ Store in pdfStore
+      // Store in pdfStore
       if (!pdfStore[customerCode]) {
         pdfStore[customerCode] = [];
       }
@@ -397,16 +431,16 @@ router.post("/reportAndUpdate", async (req, res) => {
         buffer: pdfBuffer,
       });
 
-      // ✅ Send response for this file
-      res.json({ message: "PM updated & PDF generated successfully" });
+      res.json({
+        message: "PM updated & PDF generated successfully",
+        pmNumber: existingPm.pmNumber
+      });
     });
   } catch (err) {
     console.error("Server error:", err);
     res.status(500).json({ message: err.message });
   }
 });
-
-
 
 // ==========================
 // (C) Final Email Route

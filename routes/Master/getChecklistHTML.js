@@ -10,7 +10,7 @@ const getChecklistHTML = ({
   formatRevNo,
 }) => {
   // 1) Decide how many total rows we want on one page
-  const maxRows = 24;
+  const maxRows = 15;
 
   // 2) Take up to 'maxRows' items from the array
   const displayedItems = checklistItems.slice(0, maxRows);
@@ -33,7 +33,7 @@ const getChecklistHTML = ({
   for (let i = 0; i < blankRowsNeeded; i++) {
     blankRows.push(`
         <tr>
-          <td style="border: 1px solid black; padding: 5px; height: 30px; text-align:center"></td>
+          <td style="border: 1px solid black; padding: 5px; height: 14px; text-align:center"></td>
           <td style="border: 1px solid black; padding: 5px;"></td>
           <td style="border: 1px solid black; padding: 5px;"></td>
           <td style="border: 1px solid black; padding: 5px;"></td>
@@ -52,9 +52,8 @@ const getChecklistHTML = ({
       <meta charset="UTF-8" />
       <title>Installation Checklist</title>
     </head>
-    <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; font-size: 16px;">
-      <div style="border: 2px solid red; margin: 20px; padding: 20px">
-        <!-- Top Table with Logo + "Skanray Technologies Limited" + "Installation Checklist" together -->
+    <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; font-size: 8px;">
+      <div style="border: 2px solid red;  padding: 12px">
         <table style="width: 100%; border-collapse: collapse; border: 1px solid black;">
           <tr>
             <!-- Logo cell -->
@@ -79,26 +78,26 @@ const getChecklistHTML = ({
               style="
                 text-align: center;
                 font-weight: bold;
-                font-size: 20px; /* Increased size */
+                font-size: 14px; /* Increased size */
                 border-bottom: 1px solid black;
                 padding: 5px;
               "
             >
               Skanray Technologies Limited
               <br />
-              <span style="font-size: 18px;">Installation Checklist</span>
+              <span style="font-size: 12px;">Installation Checklist</span>
             </td>
   
             <!-- Right cell: Format No & Revision -->
             <td style="width: 30%; border: 1px solid black;">
               <table style="width: 100%; height: 100px; border-collapse: collapse;">
                 <tr>
-                  <td style="border-bottom: 1px solid black; font-weight: bold; height: 50px;">
+                  <td style="border-bottom: 1px solid black; font-weight: bold; height: 50px;font-size: 8px;  ">
                     Format No &amp; Revision:${formatChlNo}-${formatRevNo}
                   </td>
                 </tr>
                 <tr>
-                  <td style="font-weight: bold">
+                  <td style="font-weight: bold; font-size: 8px;">
                     Document reference no <br/>
                     &amp; Revision:
                   </td>
@@ -111,48 +110,48 @@ const getChecklistHTML = ({
         <!-- Top Info Table -->
         <table style="width: 100%; border-collapse: collapse; border: 1px solid black;">
           <tr>
-            <td style="width: 25%; font-weight: bold; border: 1px solid black; padding: 5px;">Report No:</td>
-            <td style="width: 25%; border: 1px solid black; padding: 5px;">${reportNo || ""}</td>
-            <td style="width: 25%; font-weight: bold; border: 1px solid black; padding: 5px;">Date:</td>
-            <td style="width: 25%; border: 1px solid black; padding: 5px;">${date || "DD/MM/YYYY"}</td>
+            <td style="width: 25%; font-weight: bold; border: 1px solid black; padding: 5px;font-size: 8px;">Report No:</td>
+            <td style="width: 25%; border: 1px solid black; padding: 5px; font-size: 8px;">${reportNo || ""}</td>
+            <td style="width: 25%; font-weight: bold; border: 1px solid black; padding: 5px; font-size: 8px;">Date:</td>
+            <td style="width: 25%; border: 1px solid black; padding: 5px; font-size: 8px;">${date || "DD/MM/YYYY"}</td>
           </tr>
           <tr>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Customer Code:</td>
-            <td style="border: 1px solid black; padding: 5px">${customer?.customercodeid || ""}</td>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Name:</td>
-            <td style="border: 1px solid black; padding: 5px">${customer?.hospitalname || ""}</td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px ">Customer Code:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px ">${customer?.customercodeid || ""}</td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Name:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px">${customer?.hospitalname || ""}</td>
           </tr>
           <tr>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Address:</td>
-            <td style="border: 1px solid black; padding: 5px">
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Address:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px">
               ${customer?.street || ""}, ${customer?.city || ""}
             </td>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Telephone:</td>
-            <td style="border: 1px solid black; padding: 5px">${customer?.telephone || ""}</td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Telephone:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px">${customer?.telephone || ""}</td>
           </tr>
           <tr>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Email:</td>
-            <td style="border: 1px solid black; padding: 5px">${customer?.email || ""}</td>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Doc No:</td>
-            <td style="border: 1px solid black; padding: 5px"></td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Email:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px">${customer?.email || ""}</td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Doc No:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px"></td>
           </tr>
           <tr>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Part Number:</td>
-            <td style="border: 1px solid black; padding: 5px">${machine?.partNumber || ""}</td>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Machine ID:</td>
-            <td style="border: 1px solid black; padding: 5px">${machine?.machineId || ""}</td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Part Number:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px">${machine?.partNumber || ""}</td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Machine ID:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px">${machine?.machineId || ""}</td>
           </tr>
           <tr>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Model Description:</td>
-            <td style="border: 1px solid black; padding: 5px">${machine?.modelDescription || ""}</td>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Serial Number:</td>
-            <td style="border: 1px solid black; padding: 5px">${machine?.serialNumber || ""}</td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Model Description:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px">${machine?.modelDescription || ""}</td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Serial Number:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px">${machine?.serialNumber || ""}</td>
           </tr>
           <tr>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Document Reference No:</td>
-            <td style="border: 1px solid black; padding: 5px"></td>
-            <td style="font-weight: bold; border: 1px solid black; padding: 5px">Revision #:</td>
-            <td style="border: 1px solid black; padding: 5px"></td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Document Reference No:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px"></td>
+            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Revision #:</td>
+            <td style="border: 1px solid black; font-size: 8px; padding: 5px"></td>
           </tr>
           
         </table>
@@ -160,16 +159,16 @@ const getChecklistHTML = ({
         <!-- Checklist Table -->
         <table style="width: 100%; border-collapse: collapse; border: 1px solid black;">
           <tr>
-            <th style="width: 10%; border: 1px solid black; padding: 5px; text-align: center; font-size:16px;">
+            <th style="width: 10%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
               Sl. No
             </th>
-            <th style="width: 50%; border: 1px solid black; padding: 5px; text-align: center; font-size:16px;">
+            <th style="width: 50%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
               Description
             </th>
-            <th style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:16px;">
+            <th style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
               Result
             </th>
-            <th style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:16px;">
+            <th style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
               Remarks
             </th>
           </tr>
@@ -178,7 +177,7 @@ const getChecklistHTML = ({
   
         <!-- Bottom Remarks & Signature -->
         <table style="width: 100%; border-collapse: collapse; border: 1px solid black;">
-          <tr style="height: 100px;">
+          <tr style="height: 60px;">
             <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center;">
               <strong>Remarks:</strong>
             </td>
@@ -195,7 +194,7 @@ const getChecklistHTML = ({
             </td>
             <td style="border: 1.5px solid #000; padding: 0px 0px 0px 8px; width: 30%">
               <p style="font-weight: bold; margin: 0">Signature valid</p>
-              <div style="font-size: 12px">
+              <div style="font-size: 10px">
                 Digitally signed by <br />
                 SKANRAY TECHNOLOGIES LIMITED <br />
                 P1 ${date || ""}
@@ -204,9 +203,9 @@ const getChecklistHTML = ({
                 src="https://www.iconpacks.net/icons/2/free-check-icon-3278-thumb.png"
                 alt="Signature Check"
                 style="
-                  width: 60px;
-                  margin-top: -80px;
-                  margin-left: 120px;
+                  width: 50px;
+                  margin-top: -60px;
+                  margin-left: 70px;
                 "
               />
             </td>
