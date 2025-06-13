@@ -49,6 +49,18 @@ router.get('/country', async (req, res) => {
         res.status(500).json({ message: err.message }); // Handle error and return JSON response with status 500 (Internal Server Error)
     }
 });
+router.get('/allcountry', async (req, res) => {
+    try {
+
+        const countries = await Country.find(); // Fetch countries for the current page
+
+        res.json({
+            countries
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message }); // Handle error and return JSON response with status 500 (Internal Server Error)
+    }
+});
 
 
 // Get a single country
@@ -106,7 +118,7 @@ router.get('/searchCountry', async (req, res) => {
         }
 
         const query = {
-            $or: [ 
+            $or: [
                 { name: { $regex: q, $options: 'i' } },
                 { status: { $regex: q, $options: 'i' } },
 

@@ -41,6 +41,59 @@ router.get('/product', async (req, res) => {
     }
 });
 
+router.get('/productbypage', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1; // Current page number, defaulting to 1
+        const limit = parseInt(req.query.limit) || 10; // Number of documents per page, defaulting to 10
+
+        const skip = (page - 1) * limit; // Calculate the number of documents to skip
+
+        const product = await Product.find().skip(skip).limit(limit); // Fetch Product Groups for the current page
+        const totalProduct = await Product.countDocuments(); // Total number of Product Groups
+
+        const totalPages = Math.ceil(totalProduct / limit); // Calculate total number of pages
+
+        res.status(200).json({
+            product,
+            totalPages,
+            totalProduct
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message }); // Handle error and return JSON response with status 500 (Internal Server Error)
+    }
+});
+
+
+
+router.get('/skillbyproductgroup', async (req, res) => {
+  try {
+    const groupedProducts = await Product.aggregate([
+      {
+        $group: {
+          _id: '$productgroup',
+          products: { $push: '$$ROOT' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          productgroup: '$_id',
+          products: 1
+        }
+      },
+      {
+        $sort: { productgroup: 1 }
+      }
+    ]);
+
+    res.status(200).json(groupedProducts);
+  } catch (error) {
+    console.error('Error fetching grouped products:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
 // GET product by ID
 router.get('/product/:id', getProductById, (req, res) => {
     res.json(res.product);

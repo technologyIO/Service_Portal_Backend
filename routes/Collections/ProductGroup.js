@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const ProductGroup = require("../../Model/CollectionSchema/ProductGroupSchema")
-
+const Product = require("../../Model/MasterSchema/ProductSchema")
 
 async function getProductGroup(req, res, next) {
     try {

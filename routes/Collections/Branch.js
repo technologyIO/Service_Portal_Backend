@@ -62,6 +62,18 @@ router.get('/branch', async (req, res) => {
         res.status(500).json({ message: err.message }); // Handle error and return JSON response with status 500 (Internal Server Error)
     }
 });
+router.get('/allbranch', async (req, res) => {
+    try {
+
+        const branches = await Branch.find();
+
+        res.json({
+            branches
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 
 router.get('/branch/:id', getBranch, (req, res) => {

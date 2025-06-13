@@ -1,39 +1,72 @@
 const mongoose = require('mongoose');
 
+const demographicSchema = new mongoose.Schema({
+    type: { type: String, enum: ['geo', 'region', 'country', 'state', 'city', 'branch'], required: true },
+    selectionType: { type: String, enum: ['single', 'multiple'], required: true },
+    values: [{
+        id: { type: String },
+        name: { type: String }
+    }]
+});
+
+const skillSchema = new mongoose.Schema({
+    productName: { type: String, required: true },
+    partNumbers: [{ type: String }],
+    productGroup: { type: String }
+});
+
 const UserSchema = new mongoose.Schema({
+    // Basic Info
     firstname: { type: String, required: true },
-    lastname: { type: String},
+    lastname: { type: String },
     email: { type: String, required: true, unique: true },
     mobilenumber: { type: String, required: true },
-    status: { type: String, required: true },
+    status: {
+        type: String,
+        enum: ["Active", "Deactive"],
+        default: "Active"
+    },
+
+    // Dates
     createdAt: { type: Date, default: Date.now },
     modifiedAt: { type: Date, default: Date.now },
-    branch: [{ type: String, required: true }],
-    loginexpirydate: { type: Date, required: true },
-    employeeid: { type: String, required: true },
-    country: { type: String, required: true },
-    state: { type: String, required: true },
-    city: { type: String, required: true },
-    department: { type: String, required: true },
-    password: { type: String, required: true },
-    manageremail: { type: String, required: true },
-    skills: { type: String },
-    profileimage: { type: String, required: true },
-    deviceid: { type: String, required: true },
+    loginexpirydate: { type: Date },
     deviceregistereddate: { type: Date, default: Date.now },
-    usertype: { type: String, enum: ['dealer', 'skanray'], required: true },
+
+    // Location Info
     
+    zipCode: { type: String },
+
+    // Company Info
+    employeeid: { type: String },
+    department: { type: String },
+    manageremail: { type: String },
+    profileimage: { type: String },
+    deviceid: { type: String },
+
+    // User Type
+    usertype: { type: String, enum: ['dealer', 'skanray'], required: true },
+
+    // Role/Dealer Info
     role: {
-        roleName: { type: String }, // ✅ Removed enum here to allow dynamic role names
+        roleName: { type: String },
         roleId: { type: String }
     },
-    
     dealerInfo: {
         dealerName: { type: String },
         dealerId: { type: String }
     },
 
-    location: [{ type: String, required: true }]
+    // Skills
+    skills: [skillSchema],
+    password: { type: String },
+
+    // Demographic Data
+    demographics: [demographicSchema],
+
+    // Legacy Fields (for backward compatibility)
+    branch: [{ type: String }],
+    location: [{ type: String }]
 });
 
 module.exports = mongoose.model('User', UserSchema);

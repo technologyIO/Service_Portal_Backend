@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const Component = require('../../Model/Role/ComponentSchema');  
+const Component = require('../../Model/Role/mobilecomponentSchema');  
 
 // Create a new component
 router.post('/', async (req, res) => {

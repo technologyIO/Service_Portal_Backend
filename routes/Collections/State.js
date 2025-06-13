@@ -42,10 +42,10 @@ router.post('/state', checkDuplicateState, async (req, res) => {
 });
 router.get('/allstate', async (req, res) => {
     try {
-        const state = await State.find();  
-        res.json(state);  
+        const state = await State.find();
+        res.json(state);
     } catch (err) {
-        res.status(500).json({ message: err.message });  
+        res.status(500).json({ message: err.message });
     }
 });
 
@@ -66,6 +66,18 @@ router.get('/state', async (req, res) => {
             states,
             totalPages,
             totalStates
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message }); // Handle error and return JSON response with status 500 (Internal Server Error)
+    }
+});
+router.get('/allstate', async (req, res) => {
+    try {
+
+        const states = await State.find(); // Fetch states for the current page
+
+        res.json({
+            states
         });
     } catch (err) {
         res.status(500).json({ message: err.message }); // Handle error and return JSON response with status 500 (Internal Server Error)

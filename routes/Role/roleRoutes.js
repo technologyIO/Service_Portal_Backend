@@ -3,6 +3,7 @@ const router = express.Router();
 const Role = require('../../Model/Role/RoleSchema');
 const Component = require('../../Model/Role/ComponentSchema');
 const City = require("../../Model/CollectionSchema/CitySchema");
+
 async function generateRoleId(name) {
     const firstLetter = name.charAt(0).toUpperCase();
 
@@ -33,54 +34,26 @@ router.get('/by-roleid/:roleId', async (req, res) => {
 
         if (!role) return res.status(404).json({ error: 'Role not found' });
 
-        // ✅ Replace featuresId with componentId
-        const featureIds = role.features.map(f => f.featuresId);
-        const components = await Component.find({ _id: { $in: featureIds } });
-
-        const componentMap = {};
-        components.forEach(comp => {
-            componentMap[comp._id.toString()] = comp.componentId;
-        });
-
-        role.features = role.features.map(f => ({
-            ...f,
-            featuresId: componentMap[f.featuresId] || f.featuresId
-        }));
-
-        // ✅ Replace city ObjectIds with cityID
-        const cities = await City.find({ _id: { $in: role.cities } });
-
-        const cityMap = {};
-        cities.forEach(city => {
-            cityMap[city._id.toString()] = city.cityID;
-        });
-
-        role.cities = role.cities.map(cityId =>
-            cityMap[cityId.toString()] || cityId
-        );
-
         res.status(200).json(role);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-
 // POST /api/roles
 router.post('/', async (req, res) => {
     try {
-        const { name, description, features, states, cities, isActive, parentRole } = req.body;
+        const { name, features, mobileComponents, reports, demographicSelections,  parentRole } = req.body;
 
         const roleId = await generateRoleId(name);
 
         const role = new Role({
             roleId,
-            name,
-            description,
+            name, 
             features,
-            states,
-            cities,
-            isActive,
+            mobileComponents,
+            reports,
+            demographicSelections, 
             parentRole
         });
 
@@ -91,14 +64,12 @@ router.post('/', async (req, res) => {
     }
 });
 
-// ✅ Get All Roles
+// Get All Roles
 router.get('/', async (req, res) => {
     try {
         const roles = await Role.find()
             .populate('parentRole', 'name')
-            .populate('states', 'name')
-            .populate('cities', 'name')
-            .populate('features.component', 'name');
+            .populate('demographicSelections'); // Adjust if you need to populate other fields
 
         res.status(200).json(roles);
     } catch (err) {
@@ -106,14 +77,12 @@ router.get('/', async (req, res) => {
     }
 });
 
-// ✅ Get Role by ID
+// Get Role by ID
 router.get('/:id', async (req, res) => {
     try {
         const role = await Role.findById(req.params.id)
             .populate('parentRole', 'name')
-            .populate('states', 'name')
-            .populate('cities', 'name')
-            .populate('features.component', 'name');
+            .populate('demographicSelections'); // Adjust if you need to populate other fields
 
         if (!role) return res.status(404).json({ error: 'Role not found' });
         res.status(200).json(role);
@@ -122,7 +91,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// ✅ Update Role
+// Update Role
 router.put('/:id', async (req, res) => {
     try {
         const updatedRole = await Role.findByIdAndUpdate(
@@ -138,7 +107,7 @@ router.put('/:id', async (req, res) => {
     }
 });
 
-// ✅ Delete Role
+// Delete Role
 router.delete('/:id', async (req, res) => {
     try {
         const deletedRole = await Role.findByIdAndDelete(req.params.id);

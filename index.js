@@ -20,6 +20,7 @@ const formatMasterRoutes = require('./routes/Master/formatMaster');
 const installationChecklistRoutes = require('./routes/Master/InstallationChecklist');
 const SpareMaster = require('./routes/Master/SpareMaster');
 const equipmentChecklistRoutes = require('./routes/Collections/EquipmentChecklist');
+const Geo = require('./routes/Admin/geo');
 const Product = require('./routes/Master/Product');
 const ReportedProblemSchema = require('./routes/Master/ReportedProblem');
 const WarrantyCode = require('./routes/Master/WarrantyCode');
@@ -52,12 +53,15 @@ const ContractProposal = require('./routes/Upload/ContractProposal');
 const CmcNcmcYears = require('./routes/Admin/CmcNcmcYears');
 const CmcNcmcPrice = require('./routes/Admin/cmcNcmcPriceRoutes');
 const CmcNcmcTds = require('./routes/Admin/CmcNcmcTds');
+const Region = require('./routes/Admin/region');
 const gstRoutes = require('./routes/Admin/GstRoutes');
 const discountRoutes = require('./routes/Admin/DiscountRoutes');
 const proposalRoutes = require('./routes/PhoneRouts/proposals');
 const CNoteRoutes = require('./routes/PhoneRouts/cnoteController');
 const componentRoutes = require('./routes/Role/componentRoutes');
 const roleRoutes = require('./routes/Role/roleRoutes');
+const reportRoutes = require('./routes/Role/reportRoutes');
+const mobilecomponentRoutes = require('./routes/Role/MobileComponent');
 
 
 
@@ -105,6 +109,8 @@ app.use('/api/overlays', overlayRoutes);
 app.use('/collections', Country);
 app.use('/collections', State);
 app.use('/collections', City);
+app.use('/collections', Geo);
+app.use('/collections', Region);
 app.use('/collections', Branch);
 // app.use('/collections', Role);
 app.use('/collections', UserType);
@@ -134,6 +140,8 @@ app.use('/complaints', ComplaintType)
 app.use('/complaints', ProblemType)
 app.use('/master', formatMasterRoutes)
 app.use('/role/components', componentRoutes);
+app.use('/role/mobilecomponents', mobilecomponentRoutes);
+app.use('/role', reportRoutes);
 app.use('/roles', roleRoutes);
 app.use("/complaints/installationschecklist", installationChecklistRoutes);
 app.use('/complaints', ProblemName)

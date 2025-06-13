@@ -2,11 +2,20 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const xlsx = require('xlsx');
-const Product = require('../../Model/MasterSchema/ProductSchema'); // aapka mongoose model
+const Product = require('../../Model/MasterSchema/ProductSchema');
 
-// Multer memory storage ka istemal
+// Multer memory storage
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
+
+// Excel serial date converter
+function convertExcelDate(excelDate) {
+  if (!excelDate) return null;
+  if (typeof excelDate === 'number') {
+    return new Date((excelDate - 25569) * 86400 * 1000); // Excel to JS Date
+  }
+  return new Date(excelDate); // Already date string
+}
 
 // POST /bulk-upload
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
@@ -15,7 +24,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Excel file ko parse karna
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
@@ -24,12 +32,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     const totalRecords = jsonData.length;
     let processed = 0;
     const results = [];
-    // Set to track part numbers already processed in the file
     const seenPartNos = new Set();
 
-    // Har record ko process karte hue DB mein save karte hain
     for (const record of jsonData) {
-      // Agar file ke andar duplicate part number hai to skip karein
       if (seenPartNos.has(record.partnoid)) {
         results.push({
           partnoid: record.partnoid,
@@ -42,32 +47,31 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       seenPartNos.add(record.partnoid);
 
       try {
-        // DB mein check karein ki same partnoid ka record exist karta hai ya nahi
         const existingProduct = await Product.findOne({ partnoid: record.partnoid });
         let statusMessage = 'Created';
+
         if (existingProduct) {
-          // Agar exist karta hai, to usko delete kar dein (replace operation)
           await Product.deleteOne({ _id: existingProduct._id });
           statusMessage = 'Updated';
         }
 
-        // Naya Product document banayein
         const newProduct = new Product({
           productgroup: record.productgroup,
           partnoid: record.partnoid,
           product: record.product,
           subgrp: record.subgrp,
           frequency: record.frequency,
-          dateoflaunch: record.dateoflaunch, // Date conversion agar required ho
-          endofsaledate: record.endofsaledate,
-          endofsupportdate: record.endofsupportdate,
-          exsupportavlb: record.exsupportavlb, // File mein yeh value true/false honi chahiye
-          installationcheckliststatusboolean: record.installationcheckliststatusboolean,
-          pmcheckliststatusboolean: record.pmcheckliststatusboolean
+          dateoflaunch: convertExcelDate(record.dateoflaunch),
+          endofsaledate: convertExcelDate(record.endofsaledate),
+          endofsupportdate: convertExcelDate(record.endofsupportdate),
+          exsupportavlb: convertExcelDate(record.exsupportavlb),
+          installationcheckliststatusboolean: String(record.installationcheckliststatusboolean),
+          pmcheckliststatusboolean: String(record.pmcheckliststatusboolean),
         });
 
         await newProduct.save();
         results.push({ partnoid: record.partnoid, status: statusMessage });
+
       } catch (error) {
         results.push({
           partnoid: record.partnoid,
@@ -75,8 +79,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
           error: error.message
         });
       }
+
       processed++;
     }
+
     return res.status(200).json({
       total: totalRecords,
       processed: processed,

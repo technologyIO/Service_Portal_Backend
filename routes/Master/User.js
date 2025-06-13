@@ -99,7 +99,8 @@ router.get('/alluser', async (req, res) => {
     }
 });
 
-// CREATE a new user
+
+
 router.post('/user', checkDuplicateEmail, async (req, res) => {
     try {
         const {
@@ -107,75 +108,102 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
             lastname,
             email,
             mobilenumber,
-            status,
-            branch,
+            address,
+            city,
+            state,
+            country,
+            zipCode,
             loginexpirydate,
             employeeid,
-            country,
-            state,
-            city,
             department,
             password,
             manageremail,
-            skills,
             profileimage,
             deviceid,
             usertype,
-            location,
-            roleName,
-            roleId,
-            dealerName,
-            dealerId
+            role,
+            dealerInfo,
+            skills,
+            demographics
         } = req.body;
 
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
+        // Validate required fields
+        if (!password || typeof password !== 'string') {
+            return res.status(400).json({ message: 'Password is required and must be a string' });
+        }
 
+        if (!email) {
+            return res.status(400).json({ message: 'Email is required' });
+        }
+
+        // Hash password with proper error handling
+        let hashedPassword;
+        try {
+            const salt = await bcrypt.genSalt(10);
+            hashedPassword = await bcrypt.hash(password, salt);
+        } catch (hashError) {
+            console.error('Password hashing failed:', hashError);
+            return res.status(500).json({ message: 'Password processing failed' });
+        }
+
+        // Prepare user data with null checks
         const userData = {
-            firstname,
-            lastname,
-            email,
-            mobilenumber,
-            status,
-            branch,
-            loginexpirydate,
-            employeeid,
-            country,
-            state,
-            city,
-            department,
+            firstname: firstname || '',
+            lastname: lastname || '',
+            email: email || '',
+            mobilenumber: mobilenumber || '',
+            status: "Active",
+            location: address || '',
+            city: city || '',
+            state: state || '',
+            country: country || '',
+            zipCode: zipCode || '',
+            loginexpirydate: loginexpirydate ? new Date(loginexpirydate) : null,
+            employeeid: employeeid || '',
+            department: department || '',
             password: hashedPassword,
-            manageremail,
-            skills,
-            profileimage,
-            deviceid,
-            usertype,
-            location,
+            manageremail: manageremail || '',
+            profileimage: profileimage || '',
+            deviceid: deviceid || '',
             deviceregistereddate: new Date(),
-            modifiedAt: new Date()
+            usertype: usertype || 'skanray',
+            skills: skills || [],
+            demographics: demographics || [],
+            modifiedAt: new Date(),
+            createdAt: new Date()
         };
 
+        // Add role/dealer info based on user type
         if (usertype === 'skanray') {
             userData.role = {
-                roleName,
-                roleId
+                roleName: role?.roleName || '',
+                roleId: role?.roleId || ''
             };
         } else if (usertype === 'dealer') {
             userData.dealerInfo = {
-                dealerName,
-                dealerId
+                dealerName: dealerInfo?.dealerName || '',
+                dealerId: dealerInfo?.dealerId || ''
             };
+        }
+
+        // For backward compatibility
+        const branchData = demographics?.find(d => d.type === 'branch');
+        if (branchData) {
+            userData.branch = branchData.values.map(v => v.name) || [];
         }
 
         const newUser = new User(userData);
         const savedUser = await newUser.save();
+
         res.status(201).json(savedUser);
     } catch (err) {
         console.error("Error creating user:", err);
-        res.status(400).json({ message: err.message });
+        res.status(400).json({
+            message: err.message,
+            errorDetails: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
     }
 });
-
 // LOGIN route
 router.post('/login', getUserForLogin, async (req, res) => {
 
