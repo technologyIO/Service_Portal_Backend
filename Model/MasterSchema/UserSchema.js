@@ -32,18 +32,18 @@ const UserSchema = new mongoose.Schema({
     modifiedAt: { type: Date, default: Date.now },
     loginexpirydate: { type: Date },
     deviceid: { type: String },
-    deviceregistereddate: { type: Date},
+    deviceregistereddate: { type: Date },
 
     // Location Info
-    
+
     zipCode: { type: String },
 
     // Company Info
-    employeeid: { type: String },
+    employeeid: { type: String, unique: true },
     department: { type: String },
     manageremail: { type: String },
     profileimage: { type: String },
-    
+
 
     // User Type
     usertype: { type: String, enum: ['dealer', 'skanray'], required: true },
