@@ -5,6 +5,9 @@ const CountrySchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  geo: {
+    type: String 
+  },
   status: {
     type: String,
     required: true

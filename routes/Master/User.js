@@ -209,12 +209,25 @@ router.post('/login', getUserForLogin, async (req, res) => {
 
 
     try {
-        const isMatch = await bcrypt.compare(req.body.password, res.user.password);
-        console.log("ismatch", isMatch)
+        const user = res.user;
+        const isMatch = await bcrypt.compare(req.body.password, user.password);
         if (!isMatch) return res.status(400).json({ message: 'Invalid password' });
+        console.log("ismatch", isMatch)
+        const currentDeviceId = req.body.deviceid;
+
+        if (user.deviceid && user.deviceid !== currentDeviceId) {
+            return res.status(403).json({
+                message: 'User is already logged in on another device',
+                errorCode: 'DEVICE_MISMATCH'
+            });
+        }
+        // Update device information
+        user.deviceid = currentDeviceId;
+        user.deviceregistereddate = new Date();
+        await user.save();
 
         const token = jwt.sign(
-            { id: res.user._id, email: res.user.email },
+            { id: user._id, email: user.email },
             "myservice-secret"
         );
 
@@ -242,6 +255,38 @@ router.post('/login', getUserForLogin, async (req, res) => {
                 dealerInfo: res.user.dealerInfo,
                 location: res.user.location
             }
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+router.post('/remove-device', async (req, res) => {
+    try {
+        const { userId } = req.body; // frontend se userId ayega
+
+        if (!userId) {
+            return res.status(400).json({ message: 'User ID is required' });
+        }
+
+        // Find user and clear device information
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            {
+                $set: {
+                    deviceid: null,
+                    deviceregistereddate: null
+                }
+            },
+            { new: true } // Return updated document
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.json({
+            message: 'Device ID cleared successfully',
+            user: updatedUser
         });
     } catch (err) {
         res.status(500).json({ message: err.message });

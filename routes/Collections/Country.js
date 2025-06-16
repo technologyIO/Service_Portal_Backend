@@ -84,10 +84,17 @@ router.patch('/country/:id', getCountry, async (req, res) => {
     if (req.body.name) {
         res.country.name = req.body.name;
     }
+
     if (req.body.status) {
         res.country.status = req.body.status;
     }
+
+    if (req.body.geo) {
+        res.country.geo = req.body.geo;
+    }
+
     res.country.modifiedAt = Date.now(); // Update modifiedAt timestamp
+
     try {
         const updatedCountry = await res.country.save();
         res.json(updatedCountry); // Return updated country
@@ -95,6 +102,7 @@ router.patch('/country/:id', getCountry, async (req, res) => {
         res.status(400).json({ message: err.message });
     }
 });
+
 
 // Delete a country
 router.delete('/country/:id', async (req, res) => {
