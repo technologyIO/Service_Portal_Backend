@@ -13,6 +13,7 @@ const cors = require('cors');
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
+const getTransporter = require("../../utils/mailAuth");
 
 // router.options('/send-otp', cors());
 
@@ -223,28 +224,29 @@ router.get('/equipment/:id', getEquipmentById, (req, res) => {
     res.json(res.equipment);
 });
 
-router.post('/send-otp', async (req, res) => {
+router.post("/send-otp", async (req, res) => {
     const { email } = req.body;
+
     if (!email) {
-        return res.status(400).json({ message: 'Email is required' });
+        return res.status(400).json({ message: "Email is required" });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
 
-    const mailOptions = {
-        from: process.env.GMAIL_USER,
-        to: email,
-        subject: 'Your OTP for Equipment Installation',
-        text: `Your OTP is: ${otp}. It is valid for 5 minutes.`
-    };
-
     try {
-        await transporter.sendMail(mailOptions);
-        res.status(200).json({ message: 'OTP sent successfully' });
+        const transporter = await getTransporter();
+        await transporter.sendMail({
+            from: process.env.GMAIL_USER,
+            to: email,
+            subject: "Your OTP for Equipment Installation",
+            text: `Your OTP is: ${otp}. It is valid for 5 minutes.`,
+        });
+
+        res.status(200).json({ message: "OTP sent successfully" });
     } catch (error) {
-        res.status(500).json({ message: 'Failed to send OTP', error: error.message });
-        console.log("email err", error)
+        console.error("Email error:", error);
+        res.status(500).json({ message: "Failed to send OTP", error: error.message });
     }
 });
 
