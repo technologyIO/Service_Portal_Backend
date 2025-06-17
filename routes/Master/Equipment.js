@@ -62,6 +62,8 @@ async function checkDuplicateSerialNumber(req, res, next) {
     next();
 }
 // GET all serial numbers
+
+
 router.get('/allequipment/serialnumbers', async (req, res) => {
     try {
         // Fetch all equipment entries
