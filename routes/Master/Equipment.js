@@ -14,7 +14,7 @@ const getCertificateHTML = require('./certificateTemplate'); // Our HTML templat
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 
-router.options('/send-otp', cors());  
+router.options('/send-otp', cors());
 
 const otpStore = {};
 const transporter = nodemailer.createTransport({
@@ -244,6 +244,7 @@ router.post('/send-otp', async (req, res) => {
         res.status(200).json({ message: 'OTP sent successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Failed to send OTP', error: error.message });
+        console.log("email err", error)
     }
 });
 
