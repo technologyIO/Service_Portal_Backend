@@ -21,8 +21,8 @@ const otpStore = {};
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'webadmin@skanray-access.com',
-        pass: 'rdzegwmzirvbjcpm'
+        user: 'shivamt2023@gmail.com',
+        pass: 'ooyo bmsw yzrg klrq'
     }
 });
 
@@ -63,7 +63,31 @@ async function checkDuplicateSerialNumber(req, res, next) {
     next();
 }
 // GET all serial numbers
+router.post("/send-otp", async (req, res) => {
+    const { email } = req.body;
 
+    if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
+
+    try {
+        const transporter = await getTransporter();
+        await transporter.sendMail({
+            from: "shivamt2023@gmail.com", // Match with hardcoded value
+            to: email,
+            subject: "Your OTP for Equipment Installation",
+            text: `Your OTP is: ${otp}. It is valid for 5 minutes.`,
+        });
+
+        res.status(200).json({ message: "OTP sent successfully" });
+    } catch (error) {
+        console.error("Email error:", error);
+        res.status(500).json({ message: "Failed to send OTP", error: error.message });
+    }
+});
 
 router.get('/allequipment/serialnumbers', async (req, res) => {
     try {
@@ -224,31 +248,10 @@ router.get('/equipment/:id', getEquipmentById, (req, res) => {
     res.json(res.equipment);
 });
 
-router.post("/send-otp", async (req, res) => {
-    const { email } = req.body;
 
-    if (!email) {
-        return res.status(400).json({ message: "Email is required" });
-    }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
 
-    try {
-        const transporter = await getTransporter();
-        await transporter.sendMail({
-            from: process.env.GMAIL_USER,
-            to: email,
-            subject: "Your OTP for Equipment Installation",
-            text: `Your OTP is: ${otp}. It is valid for 5 minutes.`,
-        });
 
-        res.status(200).json({ message: "OTP sent successfully" });
-    } catch (error) {
-        console.error("Email error:", error);
-        res.status(500).json({ message: "Failed to send OTP", error: error.message });
-    }
-});
 
 // Endpoint to verify OTP
 router.post('/verify-otp', (req, res) => {

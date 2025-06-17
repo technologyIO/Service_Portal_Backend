@@ -1,12 +1,12 @@
+// utils/mailAuth.js
+
 const nodemailer = require("nodemailer");
 const { google } = require("googleapis");
 
-// 🛑 REPLACE these values with your actual credentials
-const GMAIL_USER = "shivamt2023@gmail.com";
-const CLIENT_ID = "762556497989-53mgepsksaua89un5q2asgffiocfj8ca.apps.googleusercontent.com";
-const CLIENT_SECRET = "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";
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REDIRECT_URI = "https://developers.google.com/oauthplayground";
-const REFRESH_TOKEN = "1//04oFTa8ZUP3wVCgYIARAAGAQSNwF-L9IrlFmxBy98-uIXTBNTv1tdZyLrbP_rTcYslTZd4MZ_pb-0RPyi1OncQ6isYCxzFOPGZ2U"; // 👈 Use the correct refresh token you got from OAuth playground
+const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
 
 const oAuth2Client = new google.auth.OAuth2(
   CLIENT_ID,
@@ -14,7 +14,6 @@ const oAuth2Client = new google.auth.OAuth2(
   REDIRECT_URI
 );
 
-// Set the refresh token to fetch access token
 oAuth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
 
 async function getTransporter() {
@@ -24,7 +23,7 @@ async function getTransporter() {
     service: "gmail",
     auth: {
       type: "OAuth2",
-      user: GMAIL_USER,
+      user: process.env.GMAIL_USER,
       clientId: CLIENT_ID,
       clientSecret: CLIENT_SECRET,
       refreshToken: REFRESH_TOKEN,
