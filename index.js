@@ -70,20 +70,22 @@ require('dotenv').config();
 
 const app = express();
 
-
 const corsOptions = {
-  origin: true,
+  origin: [
+    'https://service-portal-admin.vercel.app',
+    'http://service-portal-admin.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001'
+  ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200
 };
 
 
 app.use(cors(corsOptions));
-
-// Handle preflight for all routes
-app.options('*', cors(corsOptions));
+app.use(express.json());
 
 
 // Middleware

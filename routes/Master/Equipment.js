@@ -9,12 +9,13 @@ const { getChecklistHTML } = require("./getChecklistHTML"); // the new function 
 const EquipmentChecklist = require('../../Model/CollectionSchema/EquipmentChecklistSchema');
 const User = require('../../Model/MasterSchema/UserSchema');
 const InstallationReportCounter = require('../../Model/MasterSchema/InstallationReportCounterSchema');
-
+const cors = require('cors');
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 
-// In-memory OTP store (for demonstration; consider a persistent store in production)
+router.options('/send-otp', cors());  
+
 const otpStore = {};
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -225,9 +226,8 @@ router.post('/send-otp', async (req, res) => {
     if (!email) {
         return res.status(400).json({ message: 'Email is required' });
     }
-    // Generate a 6-digit OTP
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    // Store OTP with a 5-minute expiry
     otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
 
     const mailOptions = {
@@ -431,7 +431,7 @@ router.post("/equipment/bulk", async (req, res) => {
                         content: checklistBuffer
                     });
                 }
- 
+
                 const cicUser = await User.findOne({
                     'role.roleName': 'CIC',
                     'role.roleId': 'C1'
