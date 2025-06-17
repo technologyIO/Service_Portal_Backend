@@ -14,7 +14,7 @@ const getCertificateHTML = require('./certificateTemplate'); // Our HTML templat
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 
-router.options('/send-otp', cors());
+// router.options('/send-otp', cors());
 
 const otpStore = {};
 const transporter = nodemailer.createTransport({
