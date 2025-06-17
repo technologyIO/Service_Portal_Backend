@@ -31,7 +31,8 @@ const DealerStockSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        required: true
+        enum: ['available', 'unavailable'],
+        default: 'available',
     },
     createdAt: {
         type: Date,

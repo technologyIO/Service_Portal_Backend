@@ -147,12 +147,7 @@ const getChecklistHTML = ({
             <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Serial Number:</td>
             <td style="border: 1px solid black; font-size: 8px; padding: 5px">${machine?.serialNumber || ""}</td>
           </tr>
-          <tr>
-            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Document Reference No:</td>
-            <td style="border: 1px solid black; font-size: 8px; padding: 5px"></td>
-            <td style="font-weight: bold; border: 1px solid black; font-size: 8px; padding: 5px">Revision #:</td>
-            <td style="border: 1px solid black; font-size: 8px; padding: 5px"></td>
-          </tr>
+         
           
         </table>
   
