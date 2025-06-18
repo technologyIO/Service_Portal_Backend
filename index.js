@@ -71,17 +71,12 @@ require('dotenv').config();
 const app = express();
 
 const corsOptions = {
-  origin: [
-    'https://service-portal-admin.vercel.app',
-    'http://service-portal-admin.vercel.app',
-    'http://localhost:3000',
-    'http://localhost:3001'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200
 };
+
 
 
 app.use(cors(corsOptions));
