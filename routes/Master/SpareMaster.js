@@ -4,7 +4,7 @@ const SpareMaster = require("../../Model/MasterSchema/SpareMasterSchema");
 const Product = require("../../Model/MasterSchema/ProductSchema");
 
 // Endpoint 1: Get SpareMaster data based on product part number
-router.get("/search/:partno", async (req, res) => { 
+router.get("/search/:partno", async (req, res) => {
   try {
     const partNo = req.params.partno;
     // Find the product by its part number
@@ -109,5 +109,59 @@ router.delete("/spare/:id", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
+router.get('/searched/spare', async (req, res) => {
+  try {
+    const { q } = req.query;
+
+    if (!q || q.trim() === '') {
+      return res.status(400).json({ message: 'Query is required' });
+    }
+
+    const result = await SpareMaster.find({
+      $or: [
+        { Sub_grp: { $regex: q, $options: 'i' } },
+        { PartNumber: { $regex: q, $options: 'i' } },
+        { Description: { $regex: q, $options: 'i' } },
+        { Type: { $regex: q, $options: 'i' } },
+        {
+          $expr: {
+            $regexMatch: {
+              input: { $toString: "$Rate" },
+              regex: q,
+              options: "i"
+            }
+          }
+        },
+        {
+          $expr: {
+            $regexMatch: {
+              input: { $toString: "$DP" },
+              regex: q,
+              options: "i"
+            }
+          }
+        },
+        {
+          $expr: {
+            $regexMatch: {
+              input: { $toString: "$Charges" },
+              regex: q,
+              options: "i"
+            }
+          }
+        }
+      ]
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+
+
 
 module.exports = router;

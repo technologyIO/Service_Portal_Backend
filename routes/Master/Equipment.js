@@ -9,20 +9,18 @@ const { getChecklistHTML } = require("./getChecklistHTML"); // the new function 
 const EquipmentChecklist = require('../../Model/CollectionSchema/EquipmentChecklistSchema');
 const User = require('../../Model/MasterSchema/UserSchema');
 const InstallationReportCounter = require('../../Model/MasterSchema/InstallationReportCounterSchema');
-const cors = require('cors');
+
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
-const getTransporter = require("../../utils/mailAuth");
 
-// router.options('/send-otp', cors());
-
+// In-memory OTP store (for demonstration; consider a persistent store in production)
 const otpStore = {};
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'shivamt2023@gmail.com',
-        pass: 'ooyo bmsw yzrg klrq'
+        user: 'webadmin@skanray-access.com',
+        pass: 'rdzegwmzirvbjcpm'
     }
 });
 
@@ -63,32 +61,6 @@ async function checkDuplicateSerialNumber(req, res, next) {
     next();
 }
 // GET all serial numbers
-router.post("/send-otp", async (req, res) => {
-    const { email } = req.body;
-
-    if (!email) {
-        return res.status(400).json({ message: "Email is required" });
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
-
-    try {
-        const transporter = await getTransporter();
-        await transporter.sendMail({
-            from: "shivamt2023@gmail.com", // Match with hardcoded value
-            to: email,
-            subject: "Your OTP for Equipment Installation",
-            text: `Your OTP is: ${otp}. It is valid for 5 minutes.`,
-        });
-
-        res.status(200).json({ message: "OTP sent successfully" });
-    } catch (error) {
-        console.error("Email error:", error);
-        res.status(500).json({ message: "Failed to send OTP", error: error.message });
-    }
-});
-
 router.get('/allequipment/serialnumbers', async (req, res) => {
     try {
         // Fetch all equipment entries
@@ -248,10 +220,30 @@ router.get('/equipment/:id', getEquipmentById, (req, res) => {
     res.json(res.equipment);
 });
 
+router.post('/send-otp', async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ message: 'Email is required' });
+    }
+    // Generate a 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // Store OTP with a 5-minute expiry
+    otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
 
+    const mailOptions = {
+        from: process.env.GMAIL_USER,
+        to: email,
+        subject: 'Your OTP for Equipment Installation',
+        text: `Your OTP is: ${otp}. It is valid for 5 minutes.`
+    };
 
-
-
+    try {
+        await transporter.sendMail(mailOptions);
+        res.status(200).json({ message: 'OTP sent successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Failed to send OTP', error: error.message });
+    }
+});
 
 // Endpoint to verify OTP
 router.post('/verify-otp', (req, res) => {
@@ -439,7 +431,7 @@ router.post("/equipment/bulk", async (req, res) => {
                         content: checklistBuffer
                     });
                 }
-
+ 
                 const cicUser = await User.findOne({
                     'role.roleName': 'CIC',
                     'role.roleId': 'C1'

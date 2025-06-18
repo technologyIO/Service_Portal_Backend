@@ -476,6 +476,18 @@ router.get('/pendingcomplaints', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+router.get('/allpendingcomplaints', async (req, res) => {
+  try {
+  
+
+    const pendingComplaints = await PendingComplaints.find();
+    res.json({
+      pendingComplaints,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 
 // GET PendingComplaint by ID
