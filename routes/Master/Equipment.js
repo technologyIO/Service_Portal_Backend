@@ -66,7 +66,7 @@ const createPdfBuffer = async (html) => {
     try {
         browser = await puppeteer.launch(launchOptions);
         const page = await browser.newPage();
-        
+
         // Set HTML content with longer timeout
         await page.setContent(html, {
             waitUntil: 'networkidle0',
@@ -89,7 +89,7 @@ const createPdfBuffer = async (html) => {
         return pdf;
     } catch (error) {
         console.error('PDF generation error:', error);
-        
+
         // Fallback attempt with simplified settings
         try {
             if (!browser) {
@@ -98,13 +98,13 @@ const createPdfBuffer = async (html) => {
                     args: [...launchOptions.args, '--disable-extensions']
                 });
             }
-            
+
             const page = await browser.newPage();
             await page.setContent('<h1>Simplified Report</h1>' + html.substring(0, 2000), {
                 waitUntil: 'domcontentloaded',
                 timeout: 30000
             });
-            
+
             return await page.pdf({
                 format: 'A4',
                 margin: '10mm',
@@ -424,7 +424,7 @@ router.post("/equipment/bulk", async (req, res) => {
     // Set headers for streaming
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Transfer-Encoding', 'chunked');
-
+    res.flushHeaders?.();
     const sendUpdate = (data) => {
         try {
             res.write(JSON.stringify(data) + "\n");
