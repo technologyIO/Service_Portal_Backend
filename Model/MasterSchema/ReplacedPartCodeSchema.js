@@ -19,15 +19,14 @@ const ReplacedPartCodeSchema = new mongoose.Schema({
     },
     shorttextforcode: {
         type: String,
-        required: true
+        required: true,
     },
     slno: {
         type: String,
-        required: true
+        required: true,
     },
     status: {
         type: String,
-        required: true
     },
     createdAt: {
         type: Date,

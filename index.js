@@ -70,17 +70,21 @@ require('dotenv').config();
 
 const app = express();
 
+
 const corsOptions = {
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  origin: true,  
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200
 };
 
 
-
 app.use(cors(corsOptions));
-app.use(express.json());
+
+
+// Handle preflight for all routes
+app.options('*', cors(corsOptions));
 
 
 // Middleware

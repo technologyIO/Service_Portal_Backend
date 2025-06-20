@@ -6,12 +6,11 @@ const CmcNcmcTdsSchema = new mongoose.Schema({
         required: true
     },
     role: {
-        type: Number,
+        type: String,
         required: true
     },
     status: {
         type: String,
-        enum: ['Active', 'Inactive'],
         default: 'Active'
     },
     createdAt: {

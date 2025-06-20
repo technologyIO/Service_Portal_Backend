@@ -30,7 +30,6 @@ const CmcNcmcPriceSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['Active', 'Inactive'],
         default: 'Active'
     },
     createdAt: {

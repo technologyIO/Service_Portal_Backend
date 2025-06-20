@@ -23,6 +23,26 @@ const transporter = nodemailer.createTransport({
         pass: 'rdzegwmzirvbjcpm'
     }
 });
+// router.post('/send-otp', async (req, res) => {
+//     const { email } = req.body;
+
+//     if (!email) {
+//         return res.status(400).json({ message: 'Email is required' });
+//     }
+
+//     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+//     otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
+
+//     const subject = 'Your OTP for Equipment Installation';
+//     const body = `Your OTP is: ${otp}. It is valid for 5 minutes.`;
+
+//     try {
+//         await sendMail(email, subject, body);
+//         res.status(200).json({ message: 'OTP sent successfully' });
+//     } catch (error) {
+//         res.status(500).json({ message: 'Failed to send OTP', error: error.message });
+//     }
+// });
 
 function createPdfBuffer(htmlContent, options = {}) {
     return new Promise((resolve, reject) => {
@@ -73,6 +93,50 @@ router.get('/allequipment/serialnumbers', async (req, res) => {
         res.json(serialNumbers);
     } catch (err) {
         res.status(500).json({ message: err.message });
+    }
+});
+router.post('/equipment', async (req, res) => {
+    const {
+        materialdescription,
+        serialnumber,
+        materialcode,
+        status,
+        currentcustomer,
+        endcustomer,
+        equipmentid,
+        custWarrantystartdate,
+        custWarrantyenddate,
+        dealerwarrantystartdate,
+        dealerwarrantyenddate,
+        dealer,
+        palnumber,
+        installationreportno
+    } = req.body;
+
+    const equipment = new Equipment({
+        materialdescription,
+        serialnumber,
+        materialcode,
+        status,
+        currentcustomer,
+        endcustomer,
+        equipmentid,
+        custWarrantystartdate,
+        custWarrantyenddate,
+        dealerwarrantystartdate,
+        dealerwarrantyenddate,
+        dealer,
+        palnumber,
+        installationreportno,
+        createdAt: new Date(),
+        modifiedAt: new Date()
+    });
+
+    try {
+        const savedEquipment = await equipment.save();
+        res.status(201).json(savedEquipment);
+    } catch (err) {
+        res.status(400).json({ message: err.message });
     }
 });
 router.get('/equipment-details/:serialnumber', async (req, res) => {
@@ -219,6 +283,7 @@ router.get('/allequipment', async (req, res) => {
 router.get('/equipment/:id', getEquipmentById, (req, res) => {
     res.json(res.equipment);
 });
+
 
 router.post('/send-otp', async (req, res) => {
     const { email } = req.body;
@@ -431,7 +496,7 @@ router.post("/equipment/bulk", async (req, res) => {
                         content: checklistBuffer
                     });
                 }
- 
+
                 const cicUser = await User.findOne({
                     'role.roleName': 'CIC',
                     'role.roleId': 'C1'

@@ -8,7 +8,6 @@ const EquipmentSchema = new mongoose.Schema({
   serialnumber: {
     type: String,
     required: true,
-    unique: true
   },
   materialcode: {
     type: String,
@@ -26,12 +25,13 @@ const EquipmentSchema = new mongoose.Schema({
     default: Date.now
   },
   currentcustomer: {
-    type: String
+    type: String,
+    required: true
   },
   endcustomer: {
-    type: String
+    type: String,
+    required: true
   },
-  // Now the equipmentid MUST be provided from the frontend
   equipmentid: {
     type: String,
     required: true,
@@ -52,7 +52,8 @@ const EquipmentSchema = new mongoose.Schema({
     type: String
   },
   dealer: {
-    type: String
+    type: String,
+    required: true
   },
   palnumber: {
     type: String
@@ -60,7 +61,6 @@ const EquipmentSchema = new mongoose.Schema({
   // NEW FIELD: Installation Report No. (unique)
   installationreportno: {
     type: String,
-    unique: true
   }
 });
 

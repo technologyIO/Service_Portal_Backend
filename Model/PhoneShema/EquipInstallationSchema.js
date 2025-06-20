@@ -13,7 +13,7 @@ const installationSchema = new mongoose.Schema({
     telephone: { type: String },
     invoiceno: { type: String },
     abnormalSiteCondition: { type: String },
-    equipmentId: { type: String, unique: true }, // Equipment ID field
+    equipmentId: { type: String, unique: true },  
     enterVoltage: {
         lNry: { type: String },
         lgYb: { type: String },

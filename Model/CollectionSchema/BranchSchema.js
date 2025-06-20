@@ -17,15 +17,11 @@ const BranchSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     },
-    city: {
-        type: String,
-        required: true
-    },
     branchShortCode: {
         type: String,
         required: true
     },
-    state: {
+    region: {
         type: String,
         required: true
     }

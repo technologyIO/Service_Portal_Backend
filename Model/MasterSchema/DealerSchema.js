@@ -12,15 +12,12 @@ const DealerSchema = new mongoose.Schema({
     email: {
         type: String,
         required: true,
-        unique: true // Ensure email uniqueness
-    },
-    mobilenumber: {
-        type: String,
-        required: true
+        unique: true
     },
     status: {
         type: String,
-        required: true
+        enum: ['Active', 'Deactive'],
+        default: 'Active'
     },
     createdAt: {
         type: Date,
@@ -30,33 +27,20 @@ const DealerSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     },
-    branch: {
-        type: String,
-        required: true
-    },
-    loginexpirydate: {
-        type: Date,
-        required: true
-    },
-    dealerid: {
+    dealercode: {
         type: String,
         required: true,
-        unique: true // Ensure dealer ID uniqueness
-    },
-    country: {
-        type: String,
-        required: true
+        unique: true
     },
     state: {
         type: String,
         required: true
     },
- 
-    city: {
+    address: {
         type: String,
         required: true
     },
-    department: {
+    city: {
         type: String,
         required: true
     },
@@ -64,30 +48,8 @@ const DealerSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    password: {
-        type: String,
-        required: true
-    },
-    manageremail: {
-        type: String,
-        required: true
-    },
-    skills: {
-        type: String,
-        required: true
-    },
-    profileimage: {
-        type: String,
-        required: true
-    },
-    deviceid: {
-        type: String,
-        required: true
-    },
-    deviceregistereddate: {
-        type: Date,
-        default: Date.now
-    },
+
+
 });
 
 module.exports = mongoose.model('Dealer', DealerSchema);

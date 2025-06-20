@@ -16,7 +16,6 @@ const CustomerSchema = new mongoose.Schema({
     },
     street: {
         type: String,
-        required: true
     },
     city: {
         type: String,
@@ -28,9 +27,8 @@ const CustomerSchema = new mongoose.Schema({
     },
     district: {
         type: String,
-        required: true
     },
-    region: {
+    state: {
         type: String,
         required: true
     },

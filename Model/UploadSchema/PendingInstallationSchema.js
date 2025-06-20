@@ -100,7 +100,6 @@ const PendingInstallationSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['Active', 'Deactive'],
         default: 'Active',
     }
     ,

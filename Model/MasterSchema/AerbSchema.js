@@ -12,7 +12,6 @@ const AerbSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['Active', 'Pending', 'Inactive'], // optional: restrict values
         default: 'Active'
     },
     createdAt: {

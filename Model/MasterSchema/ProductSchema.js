@@ -8,7 +8,7 @@ const ProductSchema = new mongoose.Schema({
   partnoid: {
     type: String,
     required: true,
-    unique: true // This ensures no duplicate partnoid in DB
+    unique: true  
   },
   product: {
     type: String,

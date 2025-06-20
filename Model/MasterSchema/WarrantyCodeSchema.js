@@ -16,8 +16,6 @@ const WarrantyCodeSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        required: true,
-        enum: ['Active', 'Inactive']
     },
     createdAt: {
         type: Date,

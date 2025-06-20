@@ -7,12 +7,11 @@ const GstSchema = new mongoose.Schema({
         unique: true
     },
     role: {
-        type: Number,
+        type: String,
         required: true
     },
     status: {
-        type: String,
-        enum: ['Active', 'Inactive'],
+        type: String, 
         default: 'Active'
     },
     createdAt: {
