@@ -391,7 +391,7 @@ const generateSimplePdf = async (html) => {
 
 
 router.post("/equipment/bulk", async (req, res) => {
-    // Initialize response object
+    // Initialize response object with same structure as PM bulk upload
     const response = {
         status: 'processing',
         startTime: new Date(),
@@ -408,32 +408,39 @@ router.post("/equipment/bulk", async (req, res) => {
     };
 
     try {
+        // Disable compression and set streaming headers
+        res.removeHeader('Content-Encoding');
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders();
+
+        // Helper function to send updates
+        const sendUpdate = (data) => {
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+            if (typeof res.flush === 'function') {
+                res.flush();
+            }
+        };
+
         if (!req.body.equipmentPayloads) {
             response.status = 'failed';
             response.errors.push('No equipment payloads provided');
-            return res.status(400).json(response);
+            sendUpdate(response);
+            return res.end();
         }
-
-        // CRITICAL: Set proper streaming headers
-        res.setHeader('Content-Type', 'text/plain'); // Changed from application/json
-        res.setHeader('Transfer-Encoding', 'chunked');
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-
-        // Force flush headers immediately
-        res.flushHeaders();
 
         const { equipmentPayloads = [], pdfData = {}, checklistPayloads = [] } = req.body;
         response.totalRecords = equipmentPayloads.length;
         response.summary.totalExpected = equipmentPayloads.length;
 
-        // Send initial response - use res.write() directly without JSON.stringify
-        res.write(`\n${JSON.stringify(response)}\n`);
+        // Send initial response
+        sendUpdate(response);
 
         // Phase 1: Report Number Generation
         response.currentPhase = 'report-number-generation';
-        res.write(`\n${JSON.stringify(response)}\n`);
+        sendUpdate(response);
 
         const counter = await InstallationReportCounter.findOneAndUpdate(
             { _id: 'installationReportId' },
@@ -441,11 +448,11 @@ router.post("/equipment/bulk", async (req, res) => {
             { new: true, upsert: true }
         );
         const reportNo = `IR4000${counter.seq}`;
-        res.write(`\n${JSON.stringify(response)}\n`);
+        sendUpdate(response);
 
         // Phase 2: Installation PDF Generation
         response.currentPhase = 'installation-pdf-generation';
-        res.write(`\n${JSON.stringify(response)}\n`);
+        sendUpdate(response);
 
         const installationHtml = getCertificateHTML({
             ...pdfData,
@@ -458,17 +465,17 @@ router.post("/equipment/bulk", async (req, res) => {
         if (!installationBuffer) {
             response.status = 'failed';
             response.errors.push('Failed to generate installation PDF');
-            res.write(`\n${JSON.stringify(response)}\n`);
+            sendUpdate(response);
             return res.end();
         }
-        res.write(`\n${JSON.stringify(response)}\n`);
+        sendUpdate(response);
 
         // Phase 3: Equipment Processing
         response.currentPhase = 'equipment-processing';
-        res.write(`\n${JSON.stringify(response)}\n`);
+        sendUpdate(response);
 
-        // Process in smaller batches for better streaming
-        const BATCH_SIZE = 3; // Reduced batch size
+        // Process in small batches for better streaming
+        const BATCH_SIZE = 3;
         for (let i = 0; i < equipmentPayloads.length; i += BATCH_SIZE) {
             const batch = equipmentPayloads.slice(i, i + BATCH_SIZE);
 
@@ -497,15 +504,26 @@ router.post("/equipment/bulk", async (req, res) => {
                         const checklistHtml = getChecklistHTML({
                             reportNo,
                             date: pdfData.dateOfInstallation || new Date().toLocaleDateString("en-GB"),
-                            customer: pdfData.customerName || "",
-                            customercodeid: pdfData.customerId || "",
-                            street: pdfData.street || "",
-                            city: pdfData.city || "",
-                            telephone: pdfData.phoneNumber || "",
-                            email: pdfData.email || "",
-                        },
-                        // ... rest of checklist HTML generation
-                        );
+                            customer: {
+                                hospitalname: pdfData.customerName || "",
+                                customercodeid: pdfData.customerId || "",
+                                street: pdfData.street || "",
+                                city: pdfData.city || "",
+                                telephone: pdfData.phoneNumber || "",
+                                email: pdfData.email || "",
+                            },
+                            machine: {
+                                partNumber: equipment.materialcode,
+                                modelDescription: equipment.materialdescription,
+                                serialNumber,
+                                machineId: "",
+                            },
+                            remarkglobal: checklist.globalRemark || "",
+                            checklistItems: checklist.checklistResults,
+                            serviceEngineer: `${pdfData.userInfo?.firstName || ""} ${pdfData.userInfo?.lastName || ""}`,
+                            formatChlNo: formatDetails?.chlNo || "",
+                            formatRevNo: formatDetails?.revNo || "",
+                        });
 
                         checklistBuffer = await generateSimplePdf(checklistHtml);
                     }
@@ -553,11 +571,8 @@ router.post("/equipment/bulk", async (req, res) => {
                     ? Math.round((response.processedRecords / response.totalRecords) * 100)
                     : 100;
 
-                // CRITICAL: Force write and flush
-                res.write(`\n${JSON.stringify(response)}\n`);
-                if (typeof res.flush === 'function') {
-                    res.flush();
-                }
+                // Send progress update after each record
+                sendUpdate(response);
             }
         }
 
@@ -565,7 +580,7 @@ router.post("/equipment/bulk", async (req, res) => {
         response.status = 'completed';
         response.endTime = new Date();
         response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
-        res.write(`\n${JSON.stringify(response)}\n`);
+        sendUpdate(response);
         res.end();
 
     } catch (error) {
@@ -574,7 +589,7 @@ router.post("/equipment/bulk", async (req, res) => {
         response.endTime = new Date();
         response.errors.push(error.message);
         response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
-        res.write(`\n${JSON.stringify(response)}\n`);
+        sendUpdate(response);
         res.end();
     }
 });
