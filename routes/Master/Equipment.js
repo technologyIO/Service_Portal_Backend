@@ -11,7 +11,7 @@ const EquipmentChecklist = require('../../Model/CollectionSchema/EquipmentCheckl
 const User = require('../../Model/MasterSchema/UserSchema');
 const InstallationReportCounter = require('../../Model/MasterSchema/InstallationReportCounterSchema');
 const phantomjs = require('phantomjs-prebuilt');
-
+const puppeteer = require('puppeteer');
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
