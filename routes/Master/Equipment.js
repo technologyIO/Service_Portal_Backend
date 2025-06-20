@@ -10,7 +10,8 @@ const { getChecklistHTML } = require("./getChecklistHTML"); // the new function 
 const EquipmentChecklist = require('../../Model/CollectionSchema/EquipmentChecklistSchema');
 const User = require('../../Model/MasterSchema/UserSchema');
 const InstallationReportCounter = require('../../Model/MasterSchema/InstallationReportCounterSchema');
-const puppeteer = require('puppeteer');
+const phantomjs = require('phantomjs-prebuilt');
+
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
@@ -28,7 +29,6 @@ const transporter = nodemailer.createTransport({
         pass: 'rdzegwmzirvbjcpm'
     }
 });
-
 
 
 
@@ -83,6 +83,19 @@ const createPdfBuffer = async (html) => {
         if (browser) await browser.close();
     }
 };
+async function getEquipmentById(req, res, next) {
+    let equipment;
+    try {
+        equipment = await Equipment.findById(req.params.id);
+        if (!equipment) {
+            return res.status(404).json({ message: 'Equipment not found' });
+        }
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+    res.equipment = equipment;
+    next();
+}
 async function getEquipmentById(req, res, next) {
     let equipment;
     try {
