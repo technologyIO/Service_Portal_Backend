@@ -10,8 +10,7 @@ const { getChecklistHTML } = require("./getChecklistHTML"); // the new function 
 const EquipmentChecklist = require('../../Model/CollectionSchema/EquipmentChecklistSchema');
 const User = require('../../Model/MasterSchema/UserSchema');
 const InstallationReportCounter = require('../../Model/MasterSchema/InstallationReportCounterSchema');
-const phantomjs = require('phantomjs-prebuilt');
-
+const puppeteer = require('puppeteer');
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
@@ -33,46 +32,56 @@ const transporter = nodemailer.createTransport({
 
 
 
-const createPdfBuffer = (html) => {
-    return new Promise((resolve, reject) => {
-        const options = {
-            // Set the path to phantomjs executable
-            phantomPath: phantomjs.path,
-            
-            // Paper format and margins
+const createPdfBuffer = async (html) => {
+    const launchOptions = {
+        headless: 'new', // Use new Headless mode
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--single-process',
+        ],
+        timeout: 30000,
+    };
+
+    // Set executable path for production if needed
+    if (process.env.NODE_ENV === 'production') {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH ||
+            '/usr/bin/chromium-browser' ||
+            '/usr/bin/google-chrome-stable';
+    }
+
+    let browser;
+    try {
+        browser = await puppeteer.launch(launchOptions);
+        const page = await browser.newPage();
+
+        // Set longer timeout for content loading
+        await page.setDefaultNavigationTimeout(60000);
+
+        await page.setContent(html, {
+            waitUntil: 'networkidle0',
+            timeout: 60000
+        });
+
+        return await page.pdf({
             format: 'A4',
-            border: {
+            margin: {
                 top: '20mm',
                 right: '20mm',
                 bottom: '20mm',
                 left: '20mm'
             },
-            
-            // Timeout settings
-            timeout: 60000,
-            
-            // Render settings
-            renderDelay: 500, // wait a bit for any dynamic content
-            quality: '100',
-            
-            // PDF specific settings
-            type: 'pdf',
-            orientation: 'portrait',
-            paginationOffset: 0,
-            printBackground: true
-        };
-
-        pdf.create(html, options).toBuffer((err, buffer) => {
-            if (err) {
-                console.error('PDF generation error:', err);
-                reject(new Error('PDF generation failed'));
-            } else if (!buffer || buffer.length < 100) {
-                reject(new Error('Generated PDF is invalid'));
-            } else {
-                resolve(buffer);
-            }
+            printBackground: true,
         });
-    });
+    } catch (error) {
+        console.error('PDF generation error:', error);
+        throw new Error('PDF generation failed');
+    } finally {
+        if (browser) await browser.close();
+    }
 };
 async function getEquipmentById(req, res, next) {
     let equipment;
