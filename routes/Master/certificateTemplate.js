@@ -82,30 +82,30 @@ module.exports = function getCertificateHTML(data) {
       }
       body {
         margin: 0;
-        padding: 0;
+        padding: 5;
         font-family: sans-serif;
       }
       .main-container {
         width: 100%;
         border: 2px solid rgb(198, 3, 3);
         box-sizing: border-box;
-        margin: 0 auto;
+        margin: 10px auto;
         padding: 10px;
       }
       table {
         border-collapse: collapse;
         width: 100%;
-        font-size: 10px;
+        font-size: 16px;
         margin-bottom: 10px;
       }
       h1 {
-        font-size: 20px;
+        font-size: 28px;
         margin: 0;
         padding: 0;
         line-height: 1.2;
       }
       .sub-title {
-        font-size: 12px;
+        font-size: 20px;
         line-height: 1.2;
       }
       td {
@@ -119,7 +119,7 @@ module.exports = function getCertificateHTML(data) {
       .disclaimer-box {
         border: 1.5px solid #000;
         padding: 15px;
-        font-size: 9px;
+        font-size: 19px;
         line-height: 1.5;
         font-weight: bold;
         margin-bottom: 10px;
@@ -131,12 +131,12 @@ module.exports = function getCertificateHTML(data) {
         page-break-before: always;
       }
       .warranty-text {
-        font-size: 12px;
+        font-size: 19px;
         line-height: 1.5;
         margin-bottom: 20px;
       }
       ol.warranty-list {
-        font-size: 10px;
+        font-size: 19px;
         line-height: 1.5;
         margin-left: 40px;
         margin-bottom: 20px;
@@ -150,18 +150,20 @@ module.exports = function getCertificateHTML(data) {
       <!-- Header -->
       <table class="no-border" style="margin-bottom: 0;">
         <tr>
-          <td style="width: 70px; vertical-align: middle; text-align: left; border: none;">
+          <td style="width: 90px; vertical-align: middle; text-align: left; border: none;">
             <img
               src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRXw9vrbn9kBdgshQc4BipXz7u0XR6Zd4hwgg&s"
               alt="Skanray Logo"
-              style="width: 60px; height: auto; display: block;"
+              style="width: 80px; height: auto; display: block;"
             />
           </td>
           <td style="vertical-align: middle; text-align: left; border: none;">
-            <h1 style="margin-left: 50px;">Skanray Technologies Limited</h1>
-            <h1 class="sub-title" style="margin-left: 100px;">
-              Installation Report &amp; Warranty Certificate
-            </h1>
+             <h1 style="text-align: center; margin-bottom: 15px; font-size: 25px;">
+        Skanray Technologies Limited
+      </h1>
+      <h2 style="text-align: center; margin-bottom: 30px; font-size: 23px;">
+        Installation Report &amp; Warranty Certificate
+      </h2>
           </td>
         </tr>
       </table>
@@ -254,7 +256,7 @@ module.exports = function getCertificateHTML(data) {
       </div>
 
       <!-- Signature Section -->
-      <table style="font-size: 10px;">
+      <table style="font-size: 16px;">
         <tr>
           <td
             style="
@@ -285,7 +287,7 @@ module.exports = function getCertificateHTML(data) {
           </td>
           <td style="border: 1.5px solid #000; padding: 8px; width: 30%;">
             <p style="font-weight: bold; margin: 0;">Signature valid</p>
-            <div style="font-size: 10px;">
+            <div style="font-size: 16px;">
               Digitally signed by <br />
               SKANRAY TECHNOLOGIES LIMITED <br />
               P1 ${dateOfInstallation}
@@ -308,10 +310,10 @@ module.exports = function getCertificateHTML(data) {
     <!-- PAGE 2 -->
     <div class="page-break"></div>
     <div class="main-container">
-      <h1 style="text-align: center; margin-bottom: 15px; font-size: 20px;">
+      <h1 style="text-align: center; margin-bottom: 15px; font-size: 25px;">
         Skanray Technologies Limited
       </h1>
-      <h2 style="text-align: center; margin-bottom: 30px; font-size: 18px;">
+      <h2 style="text-align: center; margin-bottom: 30px; font-size: 23px;">
         Installation Report &amp; Warranty Certificate
       </h2>
 

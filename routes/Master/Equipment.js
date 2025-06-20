@@ -10,7 +10,6 @@ const { getChecklistHTML } = require("./getChecklistHTML"); // the new function 
 const EquipmentChecklist = require('../../Model/CollectionSchema/EquipmentChecklistSchema');
 const User = require('../../Model/MasterSchema/UserSchema');
 const InstallationReportCounter = require('../../Model/MasterSchema/InstallationReportCounterSchema');
-const phantomjs = require('phantomjs-prebuilt');
 const puppeteer = require('puppeteer');
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
@@ -41,7 +40,7 @@ const createPdfBuffer = async (html) => {
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
             '--disable-gpu',
-            '--single-process',
+            // '--single-process',
         ],
         timeout: 30000,
     };

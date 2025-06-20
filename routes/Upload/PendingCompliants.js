@@ -980,7 +980,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         margin: 0;
         padding: 0;
         font-family: Arial, sans-serif;
-        font-size: 8px;
+        font-size: 20px;
         line-height: 1.7;
       }
       .outer-container {
@@ -1000,18 +1000,18 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         vertical-align: top;
       }
       .main-title {
-        font-size: 7px;
+        font-size: 28px;
         font-weight: bold;
       }
       .sub-title {
-        font-size: 6px;
+        font-size: 15px;
         font-weight: bold;
       }
       .compact-row {
         height: 20px;
       }
       .small-text {
-        font-size: 7px;
+        font-size: 19px;
       }
     </style>
   </head>
@@ -1029,7 +1029,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
           </td>
           <td style="width: 60%; text-align: center;">
             <div class="main-title">Skanray Technologies Limited.</div>
-            <div class="sub-title">Service Report</div>
+            <div class="main-title">Service Report</div>
           </td>
           <td style="width: 35%;">
             <table>
