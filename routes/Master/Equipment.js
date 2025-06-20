@@ -10,28 +10,11 @@ const EquipmentChecklist = require('../../Model/CollectionSchema/EquipmentCheckl
 const User = require('../../Model/MasterSchema/UserSchema');
 const InstallationReportCounter = require('../../Model/MasterSchema/InstallationReportCounterSchema');
 const puppeteer = require('puppeteer');
-const fs = require('fs');
-const path = require('path');
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 
 
-// Configure PDF options for Digital Ocean compatibility
-const pdfOptions = {
-    format: 'A4',
-    orientation: 'portrait',
-    border: '10mm',
-    timeout: 120000, // 2 minutes timeout
-    childProcessOptions: {
-        env: {
-            ...process.env,
-            OPENSSL_CONF: '/dev/null',
-            FONTCONFIG_PATH: '/etc/fonts',
-            NODE_OPTIONS: '--max-old-space-size=512'
-        }
-    }
-};
 
 
 
@@ -44,36 +27,39 @@ const transporter = nodemailer.createTransport({
         pass: 'rdzegwmzirvbjcpm'
     }
 });
-const DEBUG = process.env.PDF_DEBUG === 'true';
 
 const createPdfBuffer = async (html) => {
-    // Configure launch options for production
+    const isProduction = process.env.NODE_ENV === "production";
+
+    // Launch options for puppeteer
     const launchOptions = {
         headless: true,
-        executablePath: '/usr/bin/chromium-browser',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
             '--disable-gpu',
-            '--single-process'
+            '--single-process',
         ],
-        timeout: 30000
+        timeout: 30000,
     };
+
+    // Only set executablePath in production
+    if (isProduction) {
+        launchOptions.executablePath = '/usr/bin/chromium-browser';
+    }
 
     let browser;
     try {
         browser = await puppeteer.launch(launchOptions);
         const page = await browser.newPage();
 
-        // Set HTML content with longer timeout
         await page.setContent(html, {
             waitUntil: 'networkidle0',
             timeout: 60000
         });
 
-        // Generate PDF with proper margins
         const pdf = await page.pdf({
             format: 'A4',
             margin: {
@@ -90,7 +76,7 @@ const createPdfBuffer = async (html) => {
     } catch (error) {
         console.error('PDF generation error:', error);
 
-        // Fallback attempt with simplified settings
+        // Fallback
         try {
             if (!browser) {
                 browser = await puppeteer.launch({
