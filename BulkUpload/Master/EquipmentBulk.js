@@ -129,6 +129,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     // Set headers for streaming response
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
 
     // Read and parse Excel file
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
