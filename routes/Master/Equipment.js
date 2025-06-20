@@ -391,289 +391,201 @@ const generateSimplePdf = async (html) => {
 
 
 router.post("/equipment/bulk", async (req, res) => {
-    // Set headers for streaming
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Transfer-Encoding', 'chunked');
-    res.flushHeaders?.();
-
-    // Create a counter for progress tracking
-    let totalEquipment = 0;
-    let processedCount = 0;
-    let successfulCount = 0;
-    let failedCount = 0;
-    let emailsSent = 0;
-
-    const sendUpdate = (data) => {
-        try {
-            // Include overall progress stats in every message
-            const progressData = {
-                ...data,
-                progress: {
-                    total: totalEquipment,
-                    processed: processedCount,
-                    successful: successfulCount,
-                    failed: failedCount,
-                    emailsSent: emailsSent,
-                    percentage: totalEquipment > 0 ? Math.round((processedCount / totalEquipment) * 100) : 0
-                }
-            };
-            res.write(JSON.stringify(progressData) + "\n");
-            if (res.flush) res.flush();
-        } catch (err) {
-            console.error('Failed to send update:', err);
-        }
+    // Initialize response object
+    const response = {
+        status: "processing",
+        startTime: new Date(),
+        totalEquipment: 0,
+        processedCount: 0,
+        successfulCount: 0,
+        failedCount: 0,
+        emailsSent: 0,
+        reportNo: null,
+        currentPhase: "initializing",
+        equipmentResults: [],
+        errors: []
     };
 
     try {
-        const { equipmentPayloads = [], pdfData = {}, checklistPayloads = [] } = req.body;
-        totalEquipment = equipmentPayloads.length;
+        // Set proper headers for streaming
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Transfer-Encoding', 'chunked');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        
+        // Immediately send initial response
+        res.write(JSON.stringify(response) + "\n");
 
-        // Validate input
-        if (!Array.isArray(equipmentPayloads) || totalEquipment === 0) {
-            return sendUpdate({
-                status: "error",
-                message: "No equipment payloads provided",
-                timestamp: new Date().toISOString()
-            });
+        const { equipmentPayloads = [], pdfData = {}, checklistPayloads = [] } = req.body;
+        response.totalEquipment = equipmentPayloads.length;
+
+        // Validate input - FIXED THE SYNTAX ERROR HERE
+        if (!Array.isArray(equipmentPayloads)) {
+            response.status = "error";
+            response.errors.push("Invalid equipment payload format");
+            res.write(JSON.stringify(response) + "\n");
+            return res.end();
+        }
+
+        if (response.totalEquipment === 0) {
+            response.status = "error";
+            response.errors.push("No equipment payloads provided");
+            res.write(JSON.stringify(response) + "\n");
+            return res.end();
         }
 
         // Phase 1: Report Number Generation
-        sendUpdate({
-            status: "phase-start",
-            phase: "report-number-generation",
-            message: "Starting report number generation...",
-            timestamp: new Date().toISOString()
-        });
+        response.currentPhase = "report-number-generation";
+        res.write(JSON.stringify(response) + "\n");
 
         const counter = await InstallationReportCounter.findOneAndUpdate(
             { _id: 'installationReportId' },
             { $inc: { seq: 1 } },
             { new: true, upsert: true }
         );
-        const reportNo = `IR4000${counter.seq}`;
-
-        sendUpdate({
-            status: "phase-complete",
-            phase: "report-number-generation",
-            message: "Report number generated successfully",
-            reportNo,
-            timestamp: new Date().toISOString()
-        });
+        response.reportNo = `IR4000${counter.seq}`;
+        res.write(JSON.stringify(response) + "\n");
 
         // Phase 2: Installation PDF Generation
-        sendUpdate({
-            status: "phase-start",
-            phase: "installation-pdf-generation",
-            message: "Starting installation PDF generation...",
-            timestamp: new Date().toISOString()
-        });
+        response.currentPhase = "installation-pdf-generation";
+        res.write(JSON.stringify(response) + "\n");
 
         const installationHtml = getCertificateHTML({
             ...pdfData,
-            installationreportno: reportNo,
+            installationreportno: response.reportNo,
             abnormalCondition: req.body.abnormalCondition || "",
             voltageData: req.body.voltageData || {}
         });
 
         const installationBuffer = await generateSimplePdf(installationHtml);
         if (!installationBuffer) {
-            return sendUpdate({
-                status: "error",
-                phase: "installation-pdf-generation",
-                message: "Failed to generate installation PDF",
-                timestamp: new Date().toISOString()
-            });
+            response.status = "error";
+            response.errors.push("Failed to generate installation PDF");
+            res.write(JSON.stringify(response) + "\n");
+            return res.end();
         }
-
-        sendUpdate({
-            status: "phase-complete",
-            phase: "installation-pdf-generation",
-            message: "Installation PDF generated successfully",
-            timestamp: new Date().toISOString()
-        });
+        res.write(JSON.stringify(response) + "\n");
 
         // Phase 3: Equipment Processing
-        sendUpdate({
-            status: "phase-start",
-            phase: "equipment-processing",
-            message: `Starting processing of ${totalEquipment} equipment...`,
-            timestamp: new Date().toISOString()
-        });
+        response.currentPhase = "equipment-processing";
+        res.write(JSON.stringify(response) + "\n");
 
-        // Process equipment sequentially
-        for (const [index, equipment] of equipmentPayloads.entries()) {
-            const serialNumber = equipment.serialnumber;
-            processedCount = index + 1;
-            let equipmentStatus = "processing";
-            let checklistGenerated = false;
-            let emailSent = false;
+        // Process equipment in batches
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < equipmentPayloads.length; i += BATCH_SIZE) {
+            const batch = equipmentPayloads.slice(i, i + BATCH_SIZE);
 
-            try {
-                sendUpdate({
-                    status: "equipment-start",
-                    phase: "equipment-processing",
-                    message: `Processing equipment ${serialNumber} (${index + 1}/${totalEquipment})`,
+            for (const equipment of batch) {
+                const serialNumber = equipment.serialnumber || 'Unknown';
+                const equipmentResult = {
                     serialNumber,
-                    timestamp: new Date().toISOString()
-                });
+                    status: "processing",
+                    checklistGenerated: false,
+                    emailSent: false,
+                    error: null
+                };
 
-                // Find matching checklist
-                const checklist = checklistPayloads.find(cp => cp.serialNumber === serialNumber);
+                try {
+                    // Find matching checklist
+                    const checklist = checklistPayloads.find(cp => cp.serialNumber === serialNumber);
 
-                // Generate checklist PDF if exists
-                let checklistBuffer = null;
-                if (checklist?.checklistResults?.length > 0) {
-                    sendUpdate({
-                        status: "progress",
-                        phase: "equipment-processing",
-                        message: `Generating checklist for ${serialNumber}`,
-                        serialNumber,
-                        timestamp: new Date().toISOString()
-                    });
+                    // Generate checklist PDF if exists
+                    let checklistBuffer = null;
+                    if (checklist?.checklistResults?.length > 0) {
+                        const formatDetails = checklist.prodGroup ?
+                            await FormatMaster.findOne({ productGroup: checklist.prodGroup }) :
+                            null;
 
-                    const formatDetails = checklist.prodGroup ?
-                        await FormatMaster.findOne({ productGroup: checklist.prodGroup }) :
-                        null;
-
-                    const checklistHtml = getChecklistHTML({
-                        reportNo,
-                        date: pdfData.dateOfInstallation || new Date().toLocaleDateString("en-GB"),
-                        customer: {
-                            hospitalname: pdfData.customerName || "",
-                            customercodeid: pdfData.customerId || "",
-                            street: pdfData.street || "",
-                            city: pdfData.city || "",
-                            telephone: pdfData.phoneNumber || "",
-                            email: pdfData.email || "",
-                        },
-                        machine: {
-                            partNumber: equipment.materialcode,
-                            modelDescription: equipment.materialdescription,
-                            serialNumber,
-                            machineId: "",
-                        },
-                        remarkglobal: checklist.globalRemark || "",
-                        checklistItems: checklist.checklistResults,
-                        serviceEngineer: `${pdfData.userInfo?.firstName || ""} ${pdfData.userInfo?.lastName || ""}`,
-                        formatChlNo: formatDetails?.chlNo || "",
-                        formatRevNo: formatDetails?.revNo || "",
-                    });
-
-                    checklistBuffer = await generateSimplePdf(checklistHtml);
-                    checklistGenerated = true;
-
-                    sendUpdate({
-                        status: "progress",
-                        phase: "equipment-processing",
-                        message: `Checklist generated for ${serialNumber}`,
-                        serialNumber,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-
-                // Send email to CIC
-                const cicUser = await User.findOne({
-                    'role.roleName': 'CIC',
-                    'role.roleId': 'C1'
-                });
-
-                if (cicUser) {
-                    sendUpdate({
-                        status: "progress",
-                        phase: "equipment-processing",
-                        message: `Sending email to CIC for ${serialNumber}`,
-                        serialNumber,
-                        timestamp: new Date().toISOString()
-                    });
-
-                    const cicAttachments = [{
-                        filename: `InstallationReport_${reportNo}.pdf`,
-                        content: installationBuffer
-                    }];
-
-                    if (checklistBuffer) {
-                        cicAttachments.push({
-                            filename: `Checklist_${serialNumber}.pdf`,
-                            content: checklistBuffer
+                        const checklistHtml = getChecklistHTML({
+                            reportNo: response.reportNo,
+                            date: pdfData.dateOfInstallation || new Date().toLocaleDateString("en-GB"),
+                            customer: {
+                                hospitalname: pdfData.customerName || "",
+                                customercodeid: pdfData.customerId || "",
+                                street: pdfData.street || "",
+                                city: pdfData.city || "",
+                                telephone: pdfData.phoneNumber || "",
+                                email: pdfData.email || "",
+                            },
+                            machine: {
+                                partNumber: equipment.materialcode,
+                                modelDescription: equipment.materialdescription,
+                                serialNumber,
+                                machineId: "",
+                            },
+                            remarkglobal: checklist.globalRemark || "",
+                            checklistItems: checklist.checklistResults,
+                            serviceEngineer: `${pdfData.userInfo?.firstName || ""} ${pdfData.userInfo?.lastName || ""}`,
+                            formatChlNo: formatDetails?.chlNo || "",
+                            formatRevNo: formatDetails?.revNo || "",
                         });
+
+                        checklistBuffer = await generateSimplePdf(checklistHtml);
+                        equipmentResult.checklistGenerated = true;
                     }
 
-                    await transporter.sendMail({
-                        from: process.env.EMAIL_FROM || "webadmin@skanray-access.com",
-                        to: cicUser.email,
-                        subject: `Installation Report ${reportNo} - ${serialNumber}`,
-                        text: `Please find attached the installation report and checklist for equipment with serial number ${serialNumber}`,
-                        attachments: cicAttachments,
-                        disableFileAccess: true,
-                        disableUrlAccess: true
+                    // Send email to CIC
+                    const cicUser = await User.findOne({
+                        'role.roleName': 'CIC',
+                        'role.roleId': 'C1'
                     });
 
-                    emailSent = true;
-                    emailsSent++;
+                    if (cicUser) {
+                        const cicAttachments = [{
+                            filename: `InstallationReport_${response.reportNo}.pdf`,
+                            content: installationBuffer
+                        }];
+
+                        if (checklistBuffer) {
+                            cicAttachments.push({
+                                filename: `Checklist_${serialNumber}.pdf`,
+                                content: checklistBuffer
+                            });
+                        }
+
+                        await transporter.sendMail({
+                            from: process.env.EMAIL_FROM || "webadmin@skanray-access.com",
+                            to: [cicUser.email, pdfData.email].filter(Boolean),
+                            subject: `Installation Report ${response.reportNo} - ${serialNumber}`,
+                            text: `Please find attached the installation report and checklist for equipment with serial number ${serialNumber}`,
+                            attachments: cicAttachments,
+                            disableFileAccess: true,
+                            disableUrlAccess: true
+                        });
+
+                        equipmentResult.emailSent = true;
+                        response.emailsSent++;
+                    }
+
+                    equipmentResult.status = "success";
+                    response.successfulCount++;
+                } catch (err) {
+                    console.error(`Error processing ${serialNumber}:`, err);
+                    equipmentResult.status = "error";
+                    equipmentResult.error = err.message;
+                    response.failedCount++;
+                    response.errors.push(`Error processing ${serialNumber}: ${err.message}`);
                 }
 
-                equipmentStatus = "success";
-                successfulCount++;
-
-                sendUpdate({
-                    status: "equipment-complete",
-                    phase: "equipment-processing",
-                    message: `Equipment ${serialNumber} processed successfully`,
-                    serialNumber,
-                    details: {
-                        checklistGenerated,
-                        emailSent
-                    },
-                    timestamp: new Date().toISOString()
-                });
-
-            } catch (err) {
-                console.error(`Error processing ${serialNumber}:`, err);
-                equipmentStatus = "error";
-                failedCount++;
-
-                sendUpdate({
-                    status: "equipment-error",
-                    phase: "equipment-processing",
-                    message: `Error processing equipment ${serialNumber}`,
-                    error: err.message,
-                    serialNumber,
-                    timestamp: new Date().toISOString()
-                });
+                response.processedCount++;
+                response.equipmentResults.push(equipmentResult);
+                res.write(JSON.stringify(response) + "\n");
             }
         }
 
         // Final completion message
-        sendUpdate({
-            status: "complete",
-            message: "Bulk processing completed",
-            reportNo,
-            summary: {
-                totalEquipment: totalEquipment,
-                successful: successfulCount,
-                failed: failedCount,
-                emailsSent: emailsSent
-            },
-            timestamp: new Date().toISOString()
-        });
+        response.status = "completed";
+        response.endTime = new Date();
+        response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
+        res.write(JSON.stringify(response) + "\n");
+        res.end();
 
     } catch (err) {
         console.error("Fatal error in bulk processing:", err);
-        sendUpdate({
-            status: "error",
-            message: "Bulk processing failed",
-            error: err.message,
-            progress: {
-                total: totalEquipment,
-                processed: processedCount,
-                successful: successfulCount,
-                failed: failedCount,
-                emailsSent: emailsSent,
-                percentage: totalEquipment > 0 ? Math.round((processedCount / totalEquipment) * 100) : 0
-            },
-            timestamp: new Date().toISOString()
-        });
-    } finally {
+        response.status = "error";
+        response.endTime = new Date();
+        response.errors.push(err.message);
+        response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
+        res.write(JSON.stringify(response) + "\n");
         res.end();
     }
 });
