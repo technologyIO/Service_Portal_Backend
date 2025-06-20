@@ -391,100 +391,94 @@ const generateSimplePdf = async (html) => {
 
 
 router.post("/equipment/bulk", async (req, res) => {
-    // Initialize response object
+    // Initialize response object with same structure as PM bulk upload
     const response = {
-        status: "processing",
+        status: 'processing',
         startTime: new Date(),
-        totalEquipment: 0,
-        processedCount: 0,
-        successfulCount: 0,
-        failedCount: 0,
-        emailsSent: 0,
-        reportNo: null,
-        currentPhase: "initializing",
+        totalRecords: 0,
+        processedRecords: 0,
         equipmentResults: [],
-        errors: []
+        summary: {
+            totalExpected: 0,
+            totalCreated: 0,
+            completionPercentage: 0
+        },
+        errors: [],
+        currentPhase: 'initializing'
     };
 
     try {
-        // Set proper headers for streaming
+        if (!req.body.equipmentPayloads) {
+            response.status = 'failed';
+            response.errors.push('No equipment payloads provided');
+            return res.status(400).json(response);
+        }
+
+        // Set headers for streaming response - EXACTLY like PM bulk upload
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Transfer-Encoding', 'chunked');
         res.setHeader('X-Content-Type-Options', 'nosniff');
-        
-        // Immediately send initial response
-        res.write(JSON.stringify(response) + "\n");
 
         const { equipmentPayloads = [], pdfData = {}, checklistPayloads = [] } = req.body;
-        response.totalEquipment = equipmentPayloads.length;
+        response.totalRecords = equipmentPayloads.length;
+        response.summary.totalExpected = equipmentPayloads.length;
 
-        // Validate input - FIXED THE SYNTAX ERROR HERE
-        if (!Array.isArray(equipmentPayloads)) {
-            response.status = "error";
-            response.errors.push("Invalid equipment payload format");
-            res.write(JSON.stringify(response) + "\n");
-            return res.end();
-        }
-
-        if (response.totalEquipment === 0) {
-            response.status = "error";
-            response.errors.push("No equipment payloads provided");
-            res.write(JSON.stringify(response) + "\n");
-            return res.end();
-        }
+        // Send initial response
+        res.write(JSON.stringify(response) + '\n');
 
         // Phase 1: Report Number Generation
-        response.currentPhase = "report-number-generation";
-        res.write(JSON.stringify(response) + "\n");
+        response.currentPhase = 'report-number-generation';
+        res.write(JSON.stringify(response) + '\n');
 
         const counter = await InstallationReportCounter.findOneAndUpdate(
             { _id: 'installationReportId' },
             { $inc: { seq: 1 } },
             { new: true, upsert: true }
         );
-        response.reportNo = `IR4000${counter.seq}`;
-        res.write(JSON.stringify(response) + "\n");
+        const reportNo = `IR4000${counter.seq}`;
+        res.write(JSON.stringify(response) + '\n');
 
         // Phase 2: Installation PDF Generation
-        response.currentPhase = "installation-pdf-generation";
-        res.write(JSON.stringify(response) + "\n");
+        response.currentPhase = 'installation-pdf-generation';
+        res.write(JSON.stringify(response) + '\n');
 
         const installationHtml = getCertificateHTML({
             ...pdfData,
-            installationreportno: response.reportNo,
+            installationreportno: reportNo,
             abnormalCondition: req.body.abnormalCondition || "",
             voltageData: req.body.voltageData || {}
         });
 
         const installationBuffer = await generateSimplePdf(installationHtml);
         if (!installationBuffer) {
-            response.status = "error";
-            response.errors.push("Failed to generate installation PDF");
-            res.write(JSON.stringify(response) + "\n");
+            response.status = 'failed';
+            response.errors.push('Failed to generate installation PDF');
+            res.write(JSON.stringify(response) + '\n');
             return res.end();
         }
-        res.write(JSON.stringify(response) + "\n");
+        res.write(JSON.stringify(response) + '\n');
 
         // Phase 3: Equipment Processing
-        response.currentPhase = "equipment-processing";
-        res.write(JSON.stringify(response) + "\n");
+        response.currentPhase = 'equipment-processing';
+        res.write(JSON.stringify(response) + '\n');
 
-        // Process equipment in batches
+        // Process in batches like PM bulk upload
         const BATCH_SIZE = 5;
         for (let i = 0; i < equipmentPayloads.length; i += BATCH_SIZE) {
             const batch = equipmentPayloads.slice(i, i + BATCH_SIZE);
 
             for (const equipment of batch) {
-                const serialNumber = equipment.serialnumber || 'Unknown';
                 const equipmentResult = {
-                    serialNumber,
-                    status: "processing",
-                    checklistGenerated: false,
-                    emailSent: false,
+                    serialnumber: equipment.serialnumber || 'Unknown',
+                    status: 'Processing',
                     error: null
                 };
 
                 try {
+                    // Process equipment
+                    const serialNumber = equipment.serialnumber;
+                    response.processedRecords++;
+
                     // Find matching checklist
                     const checklist = checklistPayloads.find(cp => cp.serialNumber === serialNumber);
 
@@ -496,7 +490,7 @@ router.post("/equipment/bulk", async (req, res) => {
                             null;
 
                         const checklistHtml = getChecklistHTML({
-                            reportNo: response.reportNo,
+                            reportNo,
                             date: pdfData.dateOfInstallation || new Date().toLocaleDateString("en-GB"),
                             customer: {
                                 hospitalname: pdfData.customerName || "",
@@ -520,7 +514,6 @@ router.post("/equipment/bulk", async (req, res) => {
                         });
 
                         checklistBuffer = await generateSimplePdf(checklistHtml);
-                        equipmentResult.checklistGenerated = true;
                     }
 
                     // Send email to CIC
@@ -531,7 +524,7 @@ router.post("/equipment/bulk", async (req, res) => {
 
                     if (cicUser) {
                         const cicAttachments = [{
-                            filename: `InstallationReport_${response.reportNo}.pdf`,
+                            filename: `InstallationReport_${reportNo}.pdf`,
                             content: installationBuffer
                         }];
 
@@ -545,52 +538,49 @@ router.post("/equipment/bulk", async (req, res) => {
                         await transporter.sendMail({
                             from: process.env.EMAIL_FROM || "webadmin@skanray-access.com",
                             to: [cicUser.email, pdfData.email].filter(Boolean),
-                            subject: `Installation Report ${response.reportNo} - ${serialNumber}`,
+                            subject: `Installation Report ${reportNo} - ${serialNumber}`,
                             text: `Please find attached the installation report and checklist for equipment with serial number ${serialNumber}`,
                             attachments: cicAttachments,
                             disableFileAccess: true,
                             disableUrlAccess: true
                         });
-
-                        equipmentResult.emailSent = true;
-                        response.emailsSent++;
                     }
 
-                    equipmentResult.status = "success";
-                    response.successfulCount++;
+                    equipmentResult.status = 'Completed';
+                    response.summary.totalCreated++;
                 } catch (err) {
-                    console.error(`Error processing ${serialNumber}:`, err);
-                    equipmentResult.status = "error";
+                    equipmentResult.status = 'Failed';
                     equipmentResult.error = err.message;
-                    response.failedCount++;
-                    response.errors.push(`Error processing ${serialNumber}: ${err.message}`);
+                    response.errors.push(`Error processing ${equipment.serialnumber}: ${err.message}`);
                 }
 
-                response.processedCount++;
                 response.equipmentResults.push(equipmentResult);
-                res.write(JSON.stringify(response) + "\n");
+                response.summary.completionPercentage = response.totalRecords > 0
+                    ? Math.round((response.processedRecords / response.totalRecords) * 100)
+                    : 100;
+
+                // Send progress update after each record like PM bulk upload
+                res.write(JSON.stringify(response) + '\n');
             }
         }
 
-        // Final completion message
-        response.status = "completed";
+        // Finalize response
+        response.status = 'completed';
         response.endTime = new Date();
         response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
-        res.write(JSON.stringify(response) + "\n");
+        res.write(JSON.stringify(response) + '\n');
         res.end();
 
-    } catch (err) {
-        console.error("Fatal error in bulk processing:", err);
-        response.status = "error";
+    } catch (error) {
+        console.error('Bulk equipment upload error:', error);
+        response.status = 'failed';
         response.endTime = new Date();
-        response.errors.push(err.message);
+        response.errors.push(error.message);
         response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
-        res.write(JSON.stringify(response) + "\n");
+        res.write(JSON.stringify(response) + '\n');
         res.end();
     }
 });
-
-
 
 
 
