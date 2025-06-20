@@ -10,7 +10,7 @@ const { getChecklistHTML } = require("./getChecklistHTML"); // the new function 
 const EquipmentChecklist = require('../../Model/CollectionSchema/EquipmentChecklistSchema');
 const User = require('../../Model/MasterSchema/UserSchema');
 const InstallationReportCounter = require('../../Model/MasterSchema/InstallationReportCounterSchema');
- 
+const phantomjs = require('phantomjs-prebuilt');
 
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
@@ -29,11 +29,17 @@ const transporter = nodemailer.createTransport({
         pass: 'rdzegwmzirvbjcpm'
     }
 });
- 
+
+
+
 
 const createPdfBuffer = (html) => {
     return new Promise((resolve, reject) => {
         const options = {
+            // Set the path to phantomjs executable
+            phantomPath: phantomjs.path,
+            
+            // Paper format and margins
             format: 'A4',
             border: {
                 top: '20mm',
@@ -41,8 +47,19 @@ const createPdfBuffer = (html) => {
                 bottom: '20mm',
                 left: '20mm'
             },
+            
+            // Timeout settings
+            timeout: 60000,
+            
+            // Render settings
+            renderDelay: 500, // wait a bit for any dynamic content
+            quality: '100',
+            
+            // PDF specific settings
             type: 'pdf',
-            timeout: 60000
+            orientation: 'portrait',
+            paginationOffset: 0,
+            printBackground: true
         };
 
         pdf.create(html, options).toBuffer((err, buffer) => {
@@ -57,7 +74,6 @@ const createPdfBuffer = (html) => {
         });
     });
 };
- 
 async function getEquipmentById(req, res, next) {
     let equipment;
     try {
@@ -337,9 +353,13 @@ router.post('/verify-otp', (req, res) => {
 });
 
 
+// Usage remains the same as before
 const generateSimplePdf = async (html) => {
     try {
         const buffer = await createPdfBuffer(html);
+        if (!buffer || buffer.length < 100) {
+            throw new Error('Generated PDF is invalid');
+        }
         return buffer;
     } catch (error) {
         console.error('PDF generation failed:', error);
@@ -353,7 +373,7 @@ router.post("/equipment/bulk", async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Transfer-Encoding', 'chunked');
     res.flushHeaders?.();
-    
+
     // Create a counter for progress tracking
     let totalEquipment = 0;
     let processedCount = 0;
