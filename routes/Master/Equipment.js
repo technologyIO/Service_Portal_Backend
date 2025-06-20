@@ -284,7 +284,6 @@ router.get('/equipment/:id', getEquipmentById, (req, res) => {
     res.json(res.equipment);
 });
 
-
 router.post('/send-otp', async (req, res) => {
     const { email } = req.body;
     if (!email) {
@@ -335,85 +334,41 @@ router.post('/verify-otp', (req, res) => {
 
 // Updated bulk endpoint
 router.post("/equipment/bulk", async (req, res) => {
-    try {
-        const {
-            equipmentPayloads = [],
-            pdfData = {},
-            checklistPayloads = [],
-            abnormalCondition = "",
-            voltageData = {},
-        } = req.body;
+    // Set headers for SSE (Server-Sent Events)
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
 
-        if (!Array.isArray(equipmentPayloads) || equipmentPayloads.length === 0) {
-            return res.status(400).json({ message: "No equipmentPayloads provided." });
-        }
-
-        // Set headers for SSE (Server-Sent Events)
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.flushHeaders();
-
-        // Function to send progress updates
-        const sendProgress = (data) => {
-            res.write(`data: ${JSON.stringify(data)}\n\n`);
-        };
-
-        // 1) Get next installation report number
-        sendProgress({ type: 'status', message: 'Generating installation report number...' });
-        const counter = await InstallationReportCounter.findOneAndUpdate(
-            { _id: 'installationReportId' },
-            { $inc: { seq: 1 } },
-            { new: true, upsert: true }
-        );
-        const newInstallationReportNo = `IR4000${counter.seq}`;
-        sendProgress({ type: 'report-number', number: newInstallationReportNo });
-
-        // 2) Generate Installation Report PDF (once for all equipment)
-        sendProgress({ type: 'status', message: 'Generating installation report PDF...' });
-        const dataForInstallationPDF = {
-            ...pdfData,
-            installationreportno: newInstallationReportNo,
-            abnormalCondition,
-            voltageData,
-        };
-        const installationHtml = getCertificateHTML(dataForInstallationPDF);
-
-        let installationBuffer;
+    // Helper function to send progress updates
+    const sendProgress = (data) => {
         try {
-            installationBuffer = await createPdfBuffer(installationHtml, {
-                format: "A4",
-                orientation: "portrait",
-                border: { top: "5mm", right: "5mm", bottom: "5mm", left: "5mm" },
-                zoomFactor: "0.5",
-                childProcessOptions: { env: { OPENSSL_CONF: "/dev/null" } },
-            });
-            sendProgress({ type: 'status', message: 'Installation report PDF generated successfully' });
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
         } catch (err) {
-            console.error("Error generating Installation PDF:", err);
-            sendProgress({ type: 'error', message: 'Failed to create Installation PDF' });
-            return res.end();
+            console.error('Failed to send progress update:', err);
         }
+    };
 
-        // 3) Process each equipment individually
-        const results = [];
+    // Helper function to process equipment with retries
+    const processEquipmentWithRetry = async (equipment, index, total, installationBuffer, newInstallationReportNo, pdfData) => {
+        const MAX_RETRIES = 2;
+        let retryCount = 0;
+        let lastError = null;
 
-        for (const [index, equipment] of equipmentPayloads.entries()) {
-            const serialNumber = equipment.serialnumber;
-            let status = "success";
-            let message = "Processed successfully";
+        const serialNumber = equipment.serialnumber;
 
-            sendProgress({
-                type: 'equipment-start',
-                serialNumber,
-                index,
-                total: equipmentPayloads.length,
-                message: `Starting processing for equipment ${index + 1}/${equipmentPayloads.length} (${serialNumber})`
-            });
-
+        while (retryCount <= MAX_RETRIES) {
             try {
+                sendProgress({
+                    type: 'equipment-start',
+                    serialNumber,
+                    index,
+                    total,
+                    message: `Processing equipment ${index + 1}/${total} (${serialNumber})${retryCount > 0 ? ` (retry ${retryCount})` : ''}`
+                });
+
                 // Find matching checklist
-                const checklist = checklistPayloads.find(cp =>
+                const checklist = (req.body.checklistPayloads || []).find(cp =>
                     cp.serialNumber === serialNumber
                 );
 
@@ -426,14 +381,18 @@ router.post("/equipment/bulk", async (req, res) => {
                         message: 'Generating checklist PDF...'
                     });
 
-                    // Fetch FormatMaster details
+                    // Fetch FormatMaster details with timeout
                     let formatDetails = { chlNo: "", revNo: "" };
-                    if (checklist.prodGroup) {
-                        const formatDoc = await FormatMaster.findOne({ productGroup: checklist.prodGroup });
-                        if (formatDoc) {
-                            formatDetails.chlNo = formatDoc.chlNo;
-                            formatDetails.revNo = formatDoc.revNo;
+                    try {
+                        if (checklist.prodGroup) {
+                            const formatDoc = await FormatMaster.findOne({ productGroup: checklist.prodGroup }).maxTimeMS(5000);
+                            if (formatDoc) {
+                                formatDetails.chlNo = formatDoc.chlNo;
+                                formatDetails.revNo = formatDoc.revNo;
+                            }
                         }
+                    } catch (err) {
+                        console.warn(`Failed to fetch format details for ${serialNumber}:`, err.message);
                     }
 
                     // Build checklist data
@@ -461,28 +420,32 @@ router.post("/equipment/bulk", async (req, res) => {
                         formatRevNo: formatDetails.revNo,
                     };
 
-                    // Generate PDF
-                    const checklistHtml = getChecklistHTML(checklistHtmlData);
-                    checklistBuffer = await createPdfBuffer(checklistHtml, {
-                        format: "A4",
-                        orientation: "portrait",
-                        border: { top: "5mm", right: "5mm", bottom: "5mm", left: "5mm" },
-                        zoomFactor: "0.5",
-                        childProcessOptions: { env: { OPENSSL_CONF: "/dev/null" } },
-                    });
-
-                    sendProgress({
-                        type: 'status',
-                        serialNumber,
-                        message: 'Checklist PDF generated successfully'
-                    });
+                    // Generate PDF with simplified options
+                    try {
+                        const checklistHtml = getChecklistHTML(checklistHtmlData);
+                        checklistBuffer = await createPdfBuffer(checklistHtml, {
+                            format: "A4",
+                            orientation: "portrait",
+                            border: "5mm",
+                            timeout: 30000 // 30 seconds timeout
+                        });
+                    } catch (pdfErr) {
+                        console.error(`PDF generation failed for ${serialNumber}:`, pdfErr);
+                        // Fallback - continue without checklist PDF
+                        checklistBuffer = null;
+                        sendProgress({
+                            type: 'warning',
+                            serialNumber,
+                            message: 'Checklist PDF generation failed, continuing without it'
+                        });
+                    }
                 }
 
                 // Send email to CIC
                 sendProgress({
                     type: 'status',
                     serialNumber,
-                    message: 'Sending email to CIC...'
+                    message: 'Preparing CIC email...'
                 });
 
                 const cicAttachments = [{
@@ -500,71 +463,171 @@ router.post("/equipment/bulk", async (req, res) => {
                 const cicUser = await User.findOne({
                     'role.roleName': 'CIC',
                     'role.roleId': 'C1'
-                });
+                }).maxTimeMS(5000);
 
-                if (!cicUser) {
-                    console.error("CIC user not found");
-                    return;
+                if (cicUser) {
+                    const cicMailOptions = {
+                        from: process.env.EMAIL_FROM || "webadmin@skanray-access.com",
+                        to: cicUser.email,
+                        subject: `Installation Report - ${serialNumber}`,
+                        text: `Equipment processed: ${serialNumber}`,
+                        attachments: cicAttachments,
+                        // Important for large attachments
+                        disableFileAccess: true,
+                        disableUrlAccess: true
+                    };
+
+                    await transporter.sendMail(cicMailOptions);
+                    sendProgress({
+                        type: 'status',
+                        serialNumber,
+                        message: 'CIC email sent successfully'
+                    });
+
+                    // Send equipment data separately
+                    const dataMailOptions = {
+                        from: process.env.EMAIL_FROM || "webadmin@skanray-access.com",
+                        to: cicUser.email,
+                        subject: `Equipment Data - ${serialNumber}`,
+                        text: JSON.stringify(equipment, null, 2)
+                    };
+
+                    await transporter.sendMail(dataMailOptions);
+                } else {
+                    sendProgress({
+                        type: 'warning',
+                        serialNumber,
+                        message: 'CIC user not found - skipping email'
+                    });
                 }
 
-
-                const cicMailOptions = {
-                    from: "webadmin@skanray-access.com",
-                    to: cicUser.email,
-                    subject: `Installation Report - ${serialNumber}`,
-                    text: `Equipment processed: ${serialNumber}`,
-                    attachments: cicAttachments
-                };
-
-                await transporter.sendMail(cicMailOptions);
-                console.log("Email sent to CIC:", cicUser.email);
-                sendProgress({
-                    type: 'status',
+                // If we got here, processing was successful
+                return {
                     serialNumber,
-                    message: 'CIC email sent successfully'
-                });
-
-                // Send equipment data to CIC (as text in email)
-                const dataMailOptions = {
-                    from: "webadmin@skanray-access.com",
-                    to: cicUser.email,
-                    subject: `Equipment Data - ${serialNumber}`,
-                    text: JSON.stringify(equipment, null, 2)
+                    status: "success",
+                    message: "Processed successfully",
+                    completed: index + 1,
+                    total
                 };
-
-                await transporter.sendMail(dataMailOptions);
-
-                sendProgress({
-                    type: 'status',
-                    serialNumber,
-                    message: 'Equipment data sent to CIC'
-                });
 
             } catch (error) {
-                status = "error";
-                message = error.message;
-                console.error(`Error processing ${serialNumber}:`, error);
+                lastError = error;
+                retryCount++;
+                console.error(`Attempt ${retryCount} failed for ${serialNumber}:`, error.message);
 
-                sendProgress({
-                    type: 'error',
-                    serialNumber,
-                    message: `Error processing equipment: ${error.message}`
-                });
+                if (retryCount <= MAX_RETRIES) {
+                    // Wait a bit before retrying
+                    await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                }
             }
+        }
 
-            const result = {
-                serialNumber,
-                status,
-                message,
-                completed: index + 1,
-                total: equipmentPayloads.length
-            };
+        // If we get here, all retries failed
+        sendProgress({
+            type: 'error',
+            serialNumber,
+            message: `Failed after ${MAX_RETRIES} attempts: ${lastError.message}`
+        });
 
-            results.push(result);
+        return {
+            serialNumber,
+            status: "error",
+            message: lastError.message,
+            completed: index + 1,
+            total
+        };
+    };
 
+    try {
+        const {
+            equipmentPayloads = [],
+            pdfData = {},
+            checklistPayloads = [],
+            abnormalCondition = "",
+            voltageData = {},
+        } = req.body;
+
+        if (!Array.isArray(equipmentPayloads) || equipmentPayloads.length === 0) {
             sendProgress({
-                type: 'equipment-complete',
-                ...result
+                type: 'error',
+                message: 'No equipmentPayloads provided'
+            });
+            return res.end();
+        }
+
+        // 1) Get next installation report number
+        sendProgress({ type: 'status', message: 'Generating installation report number...' });
+        const counter = await InstallationReportCounter.findOneAndUpdate(
+            { _id: 'installationReportId' },
+            { $inc: { seq: 1 } },
+            { new: true, upsert: true, maxTimeMS: 5000 }
+        );
+        const newInstallationReportNo = `IR4000${counter.seq}`;
+        sendProgress({ type: 'report-number', number: newInstallationReportNo });
+
+        // 2) Generate Installation Report PDF (once for all equipment)
+        sendProgress({ type: 'status', message: 'Generating installation report PDF...' });
+        const dataForInstallationPDF = {
+            ...pdfData,
+            installationreportno: newInstallationReportNo,
+            abnormalCondition,
+            voltageData,
+        };
+        const installationHtml = getCertificateHTML(dataForInstallationPDF);
+
+        let installationBuffer;
+        try {
+            // Simplified PDF options for better reliability
+            installationBuffer = await createPdfBuffer(installationHtml, {
+                format: "A4",
+                orientation: "portrait",
+                border: "5mm",
+                timeout: 60000 // 60 seconds timeout
+            });
+            sendProgress({ type: 'status', message: 'Installation report PDF generated successfully' });
+        } catch (err) {
+            console.error("Error generating Installation PDF:", err);
+            sendProgress({
+                type: 'error',
+                message: 'Failed to create Installation PDF',
+                error: err.message
+            });
+            return res.end();
+        }
+
+        // 3) Process each equipment with concurrency control
+        const results = [];
+        const CONCURRENT_PROCESSES = 2; // Process 2 at a time to reduce load
+
+        // Split equipment into chunks
+        const equipmentChunks = [];
+        for (let i = 0; i < equipmentPayloads.length; i += CONCURRENT_PROCESSES) {
+            equipmentChunks.push(equipmentPayloads.slice(i, i + CONCURRENT_PROCESSES));
+        }
+
+        for (const chunk of equipmentChunks) {
+            // Process each chunk in parallel
+            const chunkResults = await Promise.all(
+                chunk.map((equipment, i) =>
+                    processEquipmentWithRetry(
+                        equipment,
+                        equipmentPayloads.indexOf(equipment),
+                        equipmentPayloads.length,
+                        installationBuffer,
+                        newInstallationReportNo,
+                        pdfData
+                    )
+                )
+            );
+
+            results.push(...chunkResults);
+
+            // Send progress for each completed chunk
+            chunkResults.forEach(result => {
+                sendProgress({
+                    type: 'equipment-complete',
+                    ...result
+                });
             });
         }
 
@@ -575,23 +638,33 @@ router.post("/equipment/bulk", async (req, res) => {
                 message: 'Sending email to customer...'
             });
 
-            const customerMailOptions = {
-                from: "webadmin@skanray-access.com",
-                to: pdfData.email,
-                subject: "Your Installation Report",
-                text: "Thank you for choosing our services",
-                attachments: [{
-                    filename: "InstallationReport.pdf",
-                    content: installationBuffer
-                }]
-            };
+            try {
+                const customerMailOptions = {
+                    from: process.env.EMAIL_FROM || "webadmin@skanray-access.com",
+                    to: pdfData.email,
+                    subject: "Your Installation Report",
+                    text: "Thank you for choosing our services",
+                    attachments: [{
+                        filename: "InstallationReport.pdf",
+                        content: installationBuffer
+                    }],
+                    // Important for large attachments
+                    disableFileAccess: true,
+                    disableUrlAccess: true
+                };
 
-            await transporter.sendMail(customerMailOptions);
-
-            sendProgress({
-                type: 'status',
-                message: `Customer email sent to: ${pdfData.email}`
-            });
+                await transporter.sendMail(customerMailOptions);
+                sendProgress({
+                    type: 'status',
+                    message: `Customer email sent to: ${pdfData.email}`
+                });
+            } catch (emailErr) {
+                console.error('Failed to send customer email:', emailErr);
+                sendProgress({
+                    type: 'warning',
+                    message: `Failed to send customer email: ${emailErr.message}`
+                });
+            }
         } else {
             sendProgress({
                 type: 'warning',
@@ -607,18 +680,16 @@ router.post("/equipment/bulk", async (req, res) => {
             results
         });
 
-        res.end();
-
     } catch (err) {
         console.error("Error in bulk processing:", err);
-        res.write(`data: ${JSON.stringify({
+        sendProgress({
             type: 'error',
-            message: err.message
-        })}\n\n`);
+            message: `Fatal error: ${err.message}`
+        });
+    } finally {
         res.end();
     }
 });
-
 
 
 
