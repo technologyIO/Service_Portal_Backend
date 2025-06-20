@@ -33,7 +33,7 @@ const overlayRoutes = require('./routes/Upload/overlays');
 const Hubstocks = require('./routes/Upload/HubStock');
 const Pendinginstallations = require('./routes/Upload/PendingInstallation');
 const Pendingcomplaints = require('./routes/Upload/PendingCompliants');
-
+const compression = require('compression');
 const installationRoutes = require('./routes/PhoneRouts/EquipmentInstallation')
 const cors = require('cors');
 const ComplaintType = require('./routes/Complaints/ComplaintType');
@@ -82,7 +82,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-
+app.use(compression());
 // Handle preflight for all routes
 app.options('*', cors(corsOptions));
 
