@@ -13,8 +13,7 @@ const InstallationReportCounter = require('../../Model/MasterSchema/Installation
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
-const fs = require('fs');
-const path = require('path');
+
 // In-memory OTP store (for demonstration; consider a persistent store in production)
 const otpStore = {};
 const transporter = nodemailer.createTransport({
@@ -333,144 +332,41 @@ router.post('/verify-otp', (req, res) => {
 });
 
 
-const DEBUG_MODE = process.env.PDF_DEBUG === 'true';
-
-// Helper function to log debug information
-const debugLog = (message, data = null) => {
-    if (DEBUG_MODE) {
-        console.log(`[PDF DEBUG] ${message}`, data || '');
-        // Also write to debug file
-        fs.appendFileSync(
-            path.join(__dirname, '../pdf_debug.log'),
-            `${new Date().toISOString()} - ${message} ${data ? JSON.stringify(data) : ''}\n`
-        );
-    }
-};
-
-// Updated PDF generation with enhanced error handling
-const generatePdfWithFallback = async (html, options, purpose = '') => {
-    const startTime = Date.now();
-    debugLog(`Starting PDF generation for ${purpose}`);
-
+const generateSimplePdf = async (html) => {
     try {
-        // First try with standard options
-        const buffer = await createPdfBuffer(html, {
+        return await createPdfBuffer(html, {
             format: "A4",
             orientation: "portrait",
-            border: "5mm",
-            timeout: 60000,
-            ...options
+            border: "10mm",
+            timeout: 30000
         });
-
-        debugLog(`PDF generation successful for ${purpose}`, {
-            duration: `${(Date.now() - startTime) / 1000}s`,
-            size: `${(buffer.length / (1024 * 1024)).toFixed(2)}MB`
-        });
-
-        return buffer;
-    } catch (primaryError) {
-        debugLog(`Primary PDF generation failed for ${purpose}`, primaryError);
-
-        try {
-            // Fallback attempt with simplified options
-            debugLog(`Attempting fallback PDF generation for ${purpose}`);
-
-            const fallbackBuffer = await createPdfBuffer(html, {
-                format: "A4",
-                orientation: "portrait",
-                timeout: 120000,
-                // Extremely simplified options
-                quiet: true,
-                childProcessOptions: {
-                    env: {
-                        ...process.env,
-                        OPENSSL_CONF: '/dev/null',
-                        // Additional environment variables that might help
-                        NODE_OPTIONS: '--max-old-space-size=512'
-                    }
-                }
-            });
-
-            debugLog(`Fallback PDF generation succeeded for ${purpose}`, {
-                duration: `${(Date.now() - startTime) / 1000}s`,
-                size: `${(fallbackBuffer.length / (1024 * 1024)).toFixed(2)}MB`
-            });
-
-            return fallbackBuffer;
-        } catch (fallbackError) {
-            debugLog(`Fallback PDF generation failed for ${purpose}`, fallbackError);
-
-            // Final attempt - generate a simple error PDF
-            try {
-                const errorHtml = `
-                    <html>
-                        <body>
-                            <h1>PDF Generation Failed</h1>
-                            <p>Failed to generate original PDF: ${purpose}</p>
-                            <p>Error: ${fallbackError.message}</p>
-                            <p>Please contact support with this reference: ${new Date().toISOString()}</p>
-                        </body>
-                    </html>
-                `;
-
-                const errorBuffer = await createPdfBuffer(errorHtml, {
-                    format: "A4",
-                    orientation: "portrait",
-                    timeout: 30000
-                });
-
-                return errorBuffer;
-            } catch (finalError) {
-                debugLog(`Failed to generate even error PDF for ${purpose}`, finalError);
-                throw new Error(`Complete PDF generation failure for ${purpose}: ${finalError.message}`);
-            }
-        }
+    } catch (err) {
+        console.error("PDF generation error:", err);
+        return null;
     }
 };
 
-// Updated bulk endpoint with PDF debugging
+// New sequential processing endpoint
 router.post("/equipment/bulk", async (req, res) => {
-    // Set headers for SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    // Create debug log file
-    if (DEBUG_MODE) {
-        fs.writeFileSync(path.join(__dirname, '../pdf_debug.log'), '');
-    }
-
-    const sendProgress = (data) => {
-        try {
-            res.write(`data: ${JSON.stringify(data)}\n\n`);
-            debugLog('Progress update sent', data);
-        } catch (err) {
-            debugLog('Failed to send progress update', err);
-        }
-    };
-
     try {
         const { equipmentPayloads = [], pdfData = {} } = req.body;
 
         if (!Array.isArray(equipmentPayloads) || equipmentPayloads.length === 0) {
-            sendProgress({ type: 'error', message: 'No equipment payloads provided' });
-            return res.end();
+            return res.status(400).json({ 
+                status: "error",
+                message: "No equipment payloads provided" 
+            });
         }
 
-        // 1. Generate installation report number
-        sendProgress({ type: 'status', message: 'Generating report number...' });
+        // Generate installation report number
         const counter = await InstallationReportCounter.findOneAndUpdate(
             { _id: 'installationReportId' },
             { $inc: { seq: 1 } },
             { new: true, upsert: true }
         );
         const newInstallationReportNo = `IR4000${counter.seq}`;
-        sendProgress({ type: 'report-number', number: newInstallationReportNo });
 
-        // 2. Generate Installation Report PDF with enhanced error handling
-        sendProgress({ type: 'status', message: 'Generating installation PDF...' });
-
+        // Generate installation report PDF (once)
         const installationHtml = getCertificateHTML({
             ...pdfData,
             installationreportno: newInstallationReportNo,
@@ -478,79 +374,44 @@ router.post("/equipment/bulk", async (req, res) => {
             voltageData: req.body.voltageData || {}
         });
 
-        let installationBuffer;
-        try {
-            installationBuffer = await generatePdfWithFallback(
-                installationHtml,
-                { purpose: 'installation report' }
-            );
-
-            // Verify PDF was actually generated
-            if (!installationBuffer || installationBuffer.length < 100) {
-                throw new Error('Generated PDF is too small or invalid');
-            }
-
-            sendProgress({ type: 'status', message: 'Installation PDF generated' });
-
-            // Debug: Save PDF to file if in debug mode
-            if (DEBUG_MODE) {
-                fs.writeFileSync(
-                    path.join(__dirname, '../debug_installation.pdf'),
-                    installationBuffer
-                );
-                debugLog('Saved debug installation PDF');
-            }
-        } catch (pdfError) {
-            debugLog('Critical PDF generation failure', pdfError);
-            sendProgress({
-                type: 'error',
-                message: 'Failed to generate installation PDF',
-                error: pdfError.message
+        const installationBuffer = await generateSimplePdf(installationHtml);
+        if (!installationBuffer) {
+            return res.status(500).json({
+                status: "error",
+                message: "Failed to generate installation PDF"
             });
-            return res.end();
         }
 
-        // 3. Process equipment (simplified for debugging)
-        for (const [index, equipment] of equipmentPayloads.entries()) {
-            const serialNumber = equipment.serialnumber;
+        // Process each equipment sequentially
+        const results = [];
+        
+        for (const equipment of equipmentPayloads) {
+            try {
+                const serialNumber = equipment.serialnumber;
+                
+                // Find matching checklist
+                const checklist = (req.body.checklistPayloads || []).find(
+                    cp => cp.serialNumber === serialNumber
+                );
 
-            sendProgress({
-                type: 'equipment-start',
-                serialNumber,
-                index,
-                total: equipmentPayloads.length,
-                message: `Processing ${serialNumber}`
-            });
-
-            // Generate checklist PDF if needed
-            const checklist = (req.body.checklistPayloads || []).find(cp =>
-                cp.serialNumber === serialNumber
-            );
-
-            let checklistBuffer;
-            if (checklist?.checklistResults?.length > 0) {
-                try {
-                    sendProgress({
-                        type: 'status',
-                        serialNumber,
-                        message: 'Generating checklist PDF...'
-                    });
-
-                    const formatDetails = checklist.prodGroup ?
-                        await FormatMaster.findOne({ productGroup: checklist.prodGroup }) :
+                // Generate checklist PDF if exists
+                let checklistBuffer = null;
+                if (checklist?.checklistResults?.length > 0) {
+                    const formatDetails = checklist.prodGroup ? 
+                        await FormatMaster.findOne({ productGroup: checklist.prodGroup }) : 
                         null;
 
                     const checklistHtml = getChecklistHTML({
                         reportNo: newInstallationReportNo,
                         date: pdfData.dateOfInstallation || new Date().toLocaleDateString("en-GB"),
-                        customer: {
-                            hospitalname: pdfData.customerName || "",
+                        customer: pdfData.customerName ? {
+                            hospitalname: pdfData.customerName,
                             customercodeid: pdfData.customerId || "",
                             street: pdfData.street || "",
                             city: pdfData.city || "",
                             telephone: pdfData.phoneNumber || "",
                             email: pdfData.email || "",
-                        },
+                        } : null,
                         machine: {
                             partNumber: equipment.materialcode,
                             modelDescription: equipment.materialdescription,
@@ -564,65 +425,77 @@ router.post("/equipment/bulk", async (req, res) => {
                         formatRevNo: formatDetails?.revNo || "",
                     });
 
-                    checklistBuffer = await generatePdfWithFallback(
-                        checklistHtml,
-                        { purpose: `checklist for ${serialNumber}` }
-                    );
+                    checklistBuffer = await generateSimplePdf(checklistHtml);
+                }
 
-                    // Debug: Save PDF to file if in debug mode
-                    if (DEBUG_MODE && checklistBuffer) {
-                        fs.writeFileSync(
-                            path.join(__dirname, `../debug_checklist_${serialNumber}.pdf`),
-                            checklistBuffer
-                        );
-                        debugLog(`Saved debug checklist PDF for ${serialNumber}`);
+                // Send email to CIC
+                const cicUser = await User.findOne({
+                    'role.roleName': 'CIC',
+                    'role.roleId': 'C1'
+                });
+
+                if (cicUser) {
+                    const cicAttachments = [{
+                        filename: "InstallationReport.pdf",
+                        content: installationBuffer
+                    }];
+
+                    if (checklistBuffer) {
+                        cicAttachments.push({
+                            filename: `Checklist_${serialNumber}.pdf`,
+                            content: checklistBuffer
+                        });
                     }
 
-                    sendProgress({
-                        type: 'status',
-                        serialNumber,
-                        message: 'Checklist PDF generated'
-                    });
-                } catch (checklistError) {
-                    debugLog(`Checklist PDF failed for ${serialNumber}`, checklistError);
-                    sendProgress({
-                        type: 'warning',
-                        serialNumber,
-                        message: 'Checklist PDF generation failed - continuing without it'
+                    await transporter.sendMail({
+                        from: process.env.EMAIL_FROM || "webadmin@skanray-access.com",
+                        to: cicUser.email,
+                        subject: `Installation Report - ${serialNumber}`,
+                        text: `Equipment processed: ${serialNumber}`,
+                        attachments: cicAttachments
                     });
                 }
-            }
 
-            // Send completion update
-            sendProgress({
-                type: 'equipment-complete',
-                serialNumber,
-                status: 'success',
-                message: 'Processing complete',
-                completed: index + 1,
-                total: equipmentPayloads.length
-            });
+                // Send immediate response for this equipment
+                res.write(JSON.stringify({
+                    status: "success",
+                    serialNumber,
+                    message: "Processed successfully",
+                    reportNumber: newInstallationReportNo
+                }) + "\n");
+
+                // Flush the response to send it immediately
+                res.flush();
+
+            } catch (err) {
+                console.error(`Error processing equipment:`, err);
+                res.write(JSON.stringify({
+                    status: "error",
+                    serialNumber: equipment.serialnumber,
+                    message: err.message
+                }) + "\n");
+                res.flush();
+            }
         }
 
-        // 4. Send completion message
-        sendProgress({
-            type: 'complete',
-            message: 'Bulk processing finished',
-            installationReportNo: newInstallationReportNo
-        });
+        // Send completion message
+        res.write(JSON.stringify({
+            status: "complete",
+            message: "All equipment processed",
+            reportNumber: newInstallationReportNo
+        }) + "\n");
+
+        res.end();
 
     } catch (err) {
-        debugLog('Fatal error in bulk processing', err);
-        sendProgress({
-            type: 'error',
-            message: 'Fatal processing error',
+        console.error("Error in bulk processing:", err);
+        res.status(500).json({
+            status: "error",
+            message: "Failed to start bulk processing",
             error: err.message
         });
-    } finally {
-        res.end();
     }
 });
-
 
 
 
