@@ -27,27 +27,31 @@ const transporter = nodemailer.createTransport({
 });
 const DEBUG = process.env.PDF_DEBUG === 'true';
 
-const createPdfBuffer = async (html, options = {}) => {
+const createPdfBuffer = async (html) => {
+    // Configure launch options for production
+    const launchOptions = {
+        headless: true,
+        executablePath: '/usr/bin/chromium-browser',
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--single-process'
+        ],
+        timeout: 30000
+    };
+
     let browser;
     try {
-        // Configure Puppeteer with necessary flags
-        browser = await puppeteer.launch({
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--single-process'
-            ],
-            executablePath: process.env.CHROME_BIN || undefined
-        });
-
+        browser = await puppeteer.launch(launchOptions);
         const page = await browser.newPage();
-
-        // Set HTML content with network idle check
+        
+        // Set HTML content with longer timeout
         await page.setContent(html, {
             waitUntil: 'networkidle0',
-            timeout: 30000
+            timeout: 60000
         });
 
         // Generate PDF with proper margins
@@ -63,25 +67,29 @@ const createPdfBuffer = async (html, options = {}) => {
             timeout: 60000
         });
 
-        // Debug: Save HTML and PDF if enabled
-        if (DEBUG) {
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            fs.writeFileSync(`debug-${timestamp}.html`, html);
-            fs.writeFileSync(`debug-${timestamp}.pdf`, pdf);
-        }
-
         return pdf;
     } catch (error) {
         console.error('PDF generation error:', error);
-
-        // Fallback attempt with simplified HTML
+        
+        // Fallback attempt with simplified settings
         try {
-            const fallbackHtml = `<html><body><h1>Simplified Report</h1><p>${html.substring(0, 1000)}</p></body></html>`;
+            if (!browser) {
+                browser = await puppeteer.launch({
+                    ...launchOptions,
+                    args: [...launchOptions.args, '--disable-extensions']
+                });
+            }
+            
             const page = await browser.newPage();
-            await page.setContent(fallbackHtml);
+            await page.setContent('<h1>Simplified Report</h1>' + html.substring(0, 2000), {
+                waitUntil: 'domcontentloaded',
+                timeout: 30000
+            });
+            
             return await page.pdf({
                 format: 'A4',
-                margin: '10mm'
+                margin: '10mm',
+                timeout: 30000
             });
         } catch (fallbackError) {
             console.error('Fallback PDF generation failed:', fallbackError);
@@ -417,29 +425,29 @@ const generatePdf = async (html) => {
 // Simple PDF generation wrapper with error handling
 const generateSimplePdf = async (html) => {
     try {
-        const buffer = await generatePdf(html);
+        const buffer = await createPdfBuffer(html);
         if (!buffer || buffer.length < 100) {
-            throw new Error('Generated PDF is too small or invalid');
+            throw new Error('Generated PDF is invalid');
         }
         return buffer;
     } catch (error) {
-        console.error('Failed to generate PDF:', error);
+        console.error('PDF generation failed:', error);
         return null;
     }
 };
 
+
 router.post("/equipment/bulk", async (req, res) => {
-    // Set headers for streaming JSON responses
+    // Set headers for streaming
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Transfer-Encoding', 'chunked');
-
-    // Helper function to send responses
-    const sendResponse = (data) => {
+    
+    const sendUpdate = (data) => {
         try {
             res.write(JSON.stringify(data) + "\n");
             res.flush();
         } catch (err) {
-            console.error('Failed to send response:', err);
+            console.error('Failed to send update:', err);
         }
     };
 
@@ -448,14 +456,15 @@ router.post("/equipment/bulk", async (req, res) => {
 
         // Validate input
         if (!Array.isArray(equipmentPayloads) || equipmentPayloads.length === 0) {
-            return sendResponse({
+            return sendUpdate({ 
                 status: "error",
-                message: "No equipment payloads provided"
+                message: "No equipment payloads provided",
+                timestamp: new Date().toISOString()
             });
         }
 
-        // Generate installation report number
-        sendResponse({
+        // Generate report number
+        sendUpdate({
             status: "progress",
             message: "Generating report number...",
             timestamp: new Date().toISOString()
@@ -464,11 +473,11 @@ router.post("/equipment/bulk", async (req, res) => {
         const counter = await InstallationReportCounter.findOneAndUpdate(
             { _id: 'installationReportId' },
             { $inc: { seq: 1 } },
-            { new: true, upsert: true, maxTimeMS: 5000 }
+            { new: true, upsert: true }
         );
         const reportNo = `IR4000${counter.seq}`;
 
-        sendResponse({
+        sendUpdate({
             status: "progress",
             message: "Report number generated",
             reportNo,
@@ -476,9 +485,9 @@ router.post("/equipment/bulk", async (req, res) => {
         });
 
         // Generate installation PDF
-        sendResponse({
+        sendUpdate({
             status: "progress",
-            message: "Generating installation report PDF...",
+            message: "Generating installation PDF...",
             timestamp: new Date().toISOString()
         });
 
@@ -491,26 +500,25 @@ router.post("/equipment/bulk", async (req, res) => {
 
         const installationBuffer = await generateSimplePdf(installationHtml);
         if (!installationBuffer) {
-            return sendResponse({
+            return sendUpdate({
                 status: "error",
                 message: "Failed to generate installation PDF",
                 timestamp: new Date().toISOString()
             });
         }
 
-        sendResponse({
+        sendUpdate({
             status: "progress",
             message: "Installation PDF generated successfully",
             timestamp: new Date().toISOString()
         });
 
-        // Process each equipment sequentially
+        // Process equipment sequentially
         for (const [index, equipment] of equipmentPayloads.entries()) {
             const serialNumber = equipment.serialnumber;
-            let checklistBuffer = null;
-
+            
             try {
-                sendResponse({
+                sendUpdate({
                     status: "progress",
                     message: `Processing equipment ${index + 1}/${equipmentPayloads.length}`,
                     serialNumber,
@@ -521,20 +529,14 @@ router.post("/equipment/bulk", async (req, res) => {
                 const checklist = checklistPayloads.find(cp => cp.serialNumber === serialNumber);
 
                 // Generate checklist PDF if exists
+                let checklistBuffer = null;
                 if (checklist?.checklistResults?.length > 0) {
-                    sendResponse({
-                        status: "progress",
-                        message: "Generating checklist PDF...",
-                        serialNumber,
-                        timestamp: new Date().toISOString()
-                    });
-
-                    const formatDetails = checklist.prodGroup ?
-                        await FormatMaster.findOne({ productGroup: checklist.prodGroup }) :
+                    const formatDetails = checklist.prodGroup ? 
+                        await FormatMaster.findOne({ productGroup: checklist.prodGroup }) : 
                         null;
 
                     const checklistHtml = getChecklistHTML({
-                        reportNo: reportNo,
+                        reportNo,
                         date: pdfData.dateOfInstallation || new Date().toLocaleDateString("en-GB"),
                         customer: {
                             hospitalname: pdfData.customerName || "",
@@ -547,7 +549,7 @@ router.post("/equipment/bulk", async (req, res) => {
                         machine: {
                             partNumber: equipment.materialcode,
                             modelDescription: equipment.materialdescription,
-                            serialNumber: serialNumber,
+                            serialNumber,
                             machineId: "",
                         },
                         remarkglobal: checklist.globalRemark || "",
@@ -590,7 +592,7 @@ router.post("/equipment/bulk", async (req, res) => {
                     });
                 }
 
-                sendResponse({
+                sendUpdate({
                     status: "success",
                     message: "Equipment processed successfully",
                     serialNumber,
@@ -601,7 +603,7 @@ router.post("/equipment/bulk", async (req, res) => {
 
             } catch (err) {
                 console.error(`Error processing ${serialNumber}:`, err);
-                sendResponse({
+                sendUpdate({
                     status: "error",
                     message: "Equipment processing failed",
                     error: err.message,
@@ -613,8 +615,8 @@ router.post("/equipment/bulk", async (req, res) => {
             }
         }
 
-        // Send completion message
-        sendResponse({
+        // Final completion message
+        sendUpdate({
             status: "complete",
             message: "All equipment processed",
             reportNo,
@@ -623,7 +625,7 @@ router.post("/equipment/bulk", async (req, res) => {
 
     } catch (err) {
         console.error("Fatal error in bulk processing:", err);
-        sendResponse({
+        sendUpdate({
             status: "error",
             message: "Bulk processing failed",
             error: err.message,
