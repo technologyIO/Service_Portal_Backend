@@ -4,7 +4,7 @@ const CustomerSchema = new mongoose.Schema({
     customercodeid: {
         type: String,
         // required: true,
-        // unique: true
+        unique: true
     },
     customername: {
         type: String,

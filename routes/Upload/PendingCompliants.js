@@ -1311,7 +1311,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
 
         const mailOptions = {
           from: "webadmin@skanray-access.com",
-          to: [customerEmail, cicUser.email],
+          to: [ cicUser.email],
           subject: "Final Complaint Details with Service Report",
           html: `
           <div style="font-family: Arial, sans-serif; margin: 10px; font-size:16px;">

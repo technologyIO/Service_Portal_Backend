@@ -204,6 +204,51 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
         });
     }
 });
+router.post('/login/web', getUserForLogin, async (req, res) => {
+    try {
+        const user = res.user;
+
+        const isMatch = await bcrypt.compare(req.body.password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid password' });
+        }
+
+        const token = jwt.sign(
+            { id: user._id, email: user.email },
+            "myservice-secret"
+        );
+
+        res.json({
+            token,
+            user: {
+                id: user._id,
+                firstname: user.firstname,
+                lastname: user.lastname,
+                email: user.email,
+                mobilenumber: user.mobilenumber,
+                status: user.status,
+                branch: user.branch,
+                loginexpirydate: user.loginexpirydate,
+                employeeid: user.employeeid,
+                country: user.country,
+                state: user.state,
+                city: user.city,
+                department: user.department,
+                skills: user.skills,
+                profileimage: user.profileimage,
+                deviceid: user.deviceid,
+                usertype: user.usertype,
+                role: user.role,
+                dealerInfo: user.dealerInfo,
+                location: user.location
+            }
+        });
+
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // LOGIN route
 router.post('/login', getUserForLogin, async (req, res) => {
 

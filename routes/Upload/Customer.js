@@ -5,7 +5,7 @@ const nodemailer = require('nodemailer');
 const User = require('../../Model/MasterSchema/UserSchema');
 
 const transporter = nodemailer.createTransport({
-    service: 'Gmail',  
+    service: 'Gmail',
     auth: {
         user: 'webadmin@skanray-access.com',
         pass: 'rdzegwmzirvbjcpm'
@@ -27,19 +27,7 @@ async function getCustomerById(req, res, next) {
     res.customer = customer;
     next();
 }
-async function getCustomerByCode(req, res) {
-    try {
-        const customer = await Customer.findOne({ customercode: req.params.customercodeid });
 
-        if (!customer) {
-            return res.status(404).json({ message: 'Customer not found' });
-        }
-
-        res.json(customer);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-}
 
 // Middleware to check for duplicate customer code or email
 async function checkDuplicateCustomer(req, res, next) {
@@ -159,20 +147,20 @@ router.post('/customer/send-email', async (req, res) => {
       </p>
     `;
 
-     const cicUser = await User.findOne({
-                        'role.roleName': 'CIC',
-                        'role.roleId': 'C1'
-                    });
-    
-                    if (!cicUser) {
-                        console.error("CIC user not found");
-                        return;
-                    }
+    const cicUser = await User.findOne({
+        'role.roleName': 'CIC',
+        'role.roleId': 'C1'
+    });
+
+    if (!cicUser) {
+        console.error("CIC user not found");
+        return;
+    }
 
     // Email options
     const mailOptions = {
-        from: 'webadmin@skanray-access.com',  
-        to: cicUser.email,   
+        from: 'webadmin@skanray-access.com',
+        to: cicUser.email,
         subject: 'New Customer Creation',
         html: emailContent
     };
@@ -211,8 +199,23 @@ router.get('/customer', async (req, res) => {
     }
 });
 
-router.get('/customer/by-code/:customercode', getCustomerByCode);
+// router.get('/customer/by-code/:customercode', getCustomerByCode);
+router.get("/customer/by-code/:customercode", async (req, res) => {
+    const { customercode } = req.params;
 
+    try {
+        const customer = await Customer.findOne({ customercodeid: customercode });
+
+        if (!customer) {
+            return res.status(404).json({ message: "Customer not found" });
+        }
+
+        res.status(200).json(customer);
+    } catch (error) {
+        console.error("Error fetching customer:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+});
 // GET customer by ID
 router.get('/customer/:id', getCustomerById, (req, res) => {
     res.json(res.customer);
