@@ -6,11 +6,11 @@ const CountrySchema = new mongoose.Schema({
     required: true
   },
   geo: {
-    type: String 
+    type: String
   },
   status: {
     type: String,
-    required: true
+    default: "Active"
   },
   createdAt: {
     type: Date,

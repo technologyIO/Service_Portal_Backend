@@ -55,7 +55,9 @@ const UserSchema = new mongoose.Schema({
     },
     dealerInfo: {
         dealerName: { type: String },
-        dealerId: { type: String }
+        dealerId: { type: String },
+        dealerEmail: { type: String },
+        dealerCode: { type: String },
     },
 
     // Skills

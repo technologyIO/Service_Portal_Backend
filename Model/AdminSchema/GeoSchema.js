@@ -7,6 +7,10 @@ const geoSchema = new mongoose.Schema({
     unique: true,
     trim: true
   },
+  status: {
+    type: String,
+    default: "Active"
+  },
   createdAt: {
     type: Date,
     default: Date.now

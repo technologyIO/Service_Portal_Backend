@@ -7,7 +7,10 @@ const regionSchema = new mongoose.Schema({
     unique: true,
     trim: true
   },
-  states: [String],
+  country: {
+    type: String,
+    required: true
+  },
   createdAt: {
     type: Date,
     default: Date.now

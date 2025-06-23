@@ -13,9 +13,9 @@ const StateSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        required: true
+        default: "Active"
     },
-    country: {
+    region: {
         type: String,
         required: true
     },

@@ -21,11 +21,34 @@ router.get('/api/region', async (req, res) => {
     }
 });
 
+router.get('/api/allregion', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // ✅ Use different variable name here
+        const regions = await Region.find().skip(skip).limit(limit);
+        const totalRegion = await Region.countDocuments();
+        const totalPages = Math.ceil(totalRegion / limit);
+
+        res.json({
+            regions,
+            totalPages,
+            totalRegion
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+
+
 // Get single region by ID
 router.get('/api/region/:id', async (req, res) => {
     try {
         const region = await Region.findById(req.params.id);
-        
+
         if (!region) {
             return res.status(404).json({
                 status: 404,
@@ -51,7 +74,7 @@ router.get('/api/region/:id', async (req, res) => {
 // Create new region
 router.post('/api/region', async (req, res) => {
     try {
-        const { regionName, states } = req.body;
+        const { regionName, country } = req.body; // ✅ include country
 
         if (!regionName) {
             return res.status(400).json({
@@ -60,7 +83,14 @@ router.post('/api/region', async (req, res) => {
             });
         }
 
-        // Check if region already exists (due to unique constraint)
+        if (!country) {
+            return res.status(400).json({
+                status: 400,
+                message: 'country is required'
+            });
+        }
+
+        // Check for duplicate region
         const existingRegion = await Region.findOne({ regionName });
         if (existingRegion) {
             return res.status(409).json({
@@ -69,9 +99,9 @@ router.post('/api/region', async (req, res) => {
             });
         }
 
-        const newRegion = await Region.create({ 
-            regionName, 
-            states: states || []
+        const newRegion = await Region.create({
+            regionName,
+            country,
         });
 
         res.status(201).json({
@@ -90,10 +120,11 @@ router.post('/api/region', async (req, res) => {
     }
 });
 
+
 // Update region
 router.put('/api/region/:id', async (req, res) => {
     try {
-        const { regionName, states } = req.body;
+        const { regionName, country } = req.body;
 
         if (!regionName) {
             return res.status(400).json({
@@ -103,11 +134,11 @@ router.put('/api/region/:id', async (req, res) => {
         }
 
         // Check if another region with the same name exists (excluding current one)
-        const existingRegion = await Region.findOne({ 
-            regionName, 
-            _id: { $ne: req.params.id } 
+        const existingRegion = await Region.findOne({
+            regionName,
+            _id: { $ne: req.params.id }
         });
-        
+
         if (existingRegion) {
             return res.status(409).json({
                 status: 409,
@@ -117,9 +148,9 @@ router.put('/api/region/:id', async (req, res) => {
 
         const updatedRegion = await Region.findByIdAndUpdate(
             req.params.id,
-            { 
-                regionName, 
-                states: states || []
+            {
+                regionName,
+                country: country || []
             },
             { new: true, runValidators: true }
         );

@@ -73,7 +73,8 @@ router.get('/user', async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
-        const users = await User.find().skip(skip).limit(limit);
+
+        const users = await User.find({}, { password: 0 }).skip(skip).limit(limit);
         const totalUsers = await User.countDocuments();
         const totalPages = Math.ceil(totalUsers / limit);
         res.json({ users, totalPages, totalUsers });
@@ -165,7 +166,7 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
             manageremail: manageremail || '',
             profileimage: profileimage || '',
             deviceid: deviceid || '',
-            deviceregistereddate: new Date(),
+            // deviceregistereddate: new Date(),
             usertype: usertype || 'skanray',
             skills: skills || [],
             demographics: demographics || [],
@@ -173,18 +174,22 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
             createdAt: new Date()
         };
 
-        // Add role/dealer info based on user type
-        if (usertype === 'skanray') {
-            userData.role = {
-                roleName: role?.roleName || '',
-                roleId: role?.roleId || ''
-            };
-        } else if (usertype === 'dealer') {
+        // Always assign role if available
+        userData.role = {
+            roleName: role?.roleName || '',
+            roleId: role?.roleId || ''
+        };
+
+        // Only assign dealerInfo if user is a dealer
+        if (usertype === 'dealer') {
             userData.dealerInfo = {
                 dealerName: dealerInfo?.dealerName || '',
-                dealerId: dealerInfo?.dealerId || ''
+                dealerId: dealerInfo?.dealerId || '',
+                dealerEmail: dealerInfo?.dealerEmail || '',
+                dealerCode: dealerInfo?.dealerCode || '',
             };
         }
+
 
         // For backward compatibility
         const branchData = demographics?.find(d => d.type === 'branch');
@@ -394,27 +399,39 @@ router.delete('/user/:id', async (req, res) => {
     }
 });
 
-// SEARCH route
 router.get('/search', async (req, res) => {
     try {
         const { q } = req.query;
-        if (!q) return res.status(400).json({ message: 'Query parameter is required' });
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const regexQuery = { $regex: q, $options: 'i' };
 
         const query = {
             $or: [
-                { firstname: { $regex: q, $options: 'i' } },
-                { lastname: { $regex: q, $options: 'i' } },
-                { email: { $regex: q, $options: 'i' } },
-                { mobilenumber: { $regex: q, $options: 'i' } },
-                { status: { $regex: q, $options: 'i' } },
-                { branch: { $regex: q, $options: 'i' } },
-                { country: { $regex: q, $options: 'i' } },
-                { state: { $regex: q, $options: 'i' } },
-                { city: { $regex: q, $options: 'i' } },
-                { department: { $regex: q, $options: 'i' } },
-                { manageremail: { $regex: q, $options: 'i' } },
-                { skills: { $regex: q, $options: 'i' } },
-                { usertype: { $regex: q, $options: 'i' } }
+                { firstname: regexQuery },
+                { lastname: regexQuery },
+                { email: regexQuery },
+                { mobilenumber: regexQuery },
+                { status: regexQuery },
+                { department: regexQuery },
+                { manageremail: regexQuery },
+                { usertype: regexQuery },
+                { employeeid: regexQuery },
+                { 'role.roleName': regexQuery },
+                { 'role.roleId': regexQuery },
+                { 'dealerInfo.dealerName': regexQuery },
+                { 'dealerInfo.dealerId': regexQuery },
+                { 'dealerInfo.dealerEmail': regexQuery },
+                { 'dealerInfo.dealerCode': regexQuery },
+                { zipCode: regexQuery },
+                { branch: regexQuery },
+                { location: regexQuery },
+                { 'skills.productName': regexQuery },
+                { 'skills.productGroup': regexQuery },
+                { 'skills.partNumbers': regexQuery },
+                { 'demographics.values.name': regexQuery },
             ]
         };
 
@@ -424,5 +441,4 @@ router.get('/search', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
-
 module.exports = router;
