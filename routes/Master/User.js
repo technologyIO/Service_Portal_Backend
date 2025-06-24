@@ -20,25 +20,89 @@ async function getUserById(req, res, next) {
 // Middleware to get user by email
 async function getUserForLogin(req, res, next) {
     let user;
-
-
     try {
-
+        // Find user by employeeid or email
         if (req.body.employeeid) {
             user = await User.findOne({ employeeid: req.body.employeeid });
         } else if (req.body.email) {
             user = await User.findOne({ email: req.body.email });
         }
 
-        if (!user) return res.status(404).json({ message: 'User Not found' });
+        if (!user) {
+            return res.status(404).json({
+                message: 'User not found',
+                errorCode: 'USER_NOT_FOUND'
+            });
+        }
+
+        // Check if user is deactivated
+        if (user.status === 'Deactive') {
+            return res.status(403).json({
+                message: 'Your account has been deactivated. Please contact administrator.',
+                errorCode: 'ACCOUNT_DEACTIVATED',
+                userStatus: 'Deactive'
+            });
+        }
     } catch (err) {
-        return res.status(500).json({ message: err.message });
+        return res.status(500).json({
+            message: err.message,
+            errorCode: 'SERVER_ERROR'
+        });
     }
     res.user = user;
     next();
 }
+router.patch('/user/:id/status', getUserById, async (req, res) => {
+    try {
+        const { status } = req.body;
+        const user = res.user;
 
+        // Validate status
+        if (!status || !['Active', 'Deactive'].includes(status)) {
+            return res.status(400).json({
+                message: 'Status is required and must be either "Active" or "Deactive"',
+                errorCode: 'INVALID_STATUS'
+            });
+        }
 
+        // No change needed if status is same
+        if (user.status === status) {
+            return res.json({
+                message: `User is already ${status}`,
+                user,
+                warningCode: 'STATUS_UNCHANGED'
+            });
+        }
+
+        // Update status
+        user.status = status;
+        user.modifiedAt = new Date();
+
+        // If deactivating, clear device info to force logout
+        if (status === 'Deactive') {
+            user.deviceid = null;
+            user.deviceregistereddate = null;
+
+            // You might want to invalidate existing tokens here
+            // This would require maintaining a token blacklist
+        }
+
+        const updatedUser = await user.save();
+
+        res.json({
+            success: true,
+            message: `User ${status === 'Active' ? 'reactivated' : 'deactivated'} successfully`,
+            user: updatedUser,
+            statusChanged: true
+        });
+
+    } catch (err) {
+        res.status(500).json({
+            message: err.message,
+            errorCode: 'SERVER_ERROR'
+        });
+    }
+});
 
 // Middleware to get user by employeeid
 async function getUserByEmployeeId(req, res, next) {
@@ -213,17 +277,25 @@ router.post('/login/web', getUserForLogin, async (req, res) => {
     try {
         const user = res.user;
 
+        // Verify password
         const isMatch = await bcrypt.compare(req.body.password, user.password);
         if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid password' });
+            return res.status(400).json({
+                message: 'Invalid password',
+                errorCode: 'INVALID_CREDENTIALS'
+            });
         }
 
+        // Create token
         const token = jwt.sign(
             { id: user._id, email: user.email },
-            "myservice-secret"
+            "myservice-secret",
+            { expiresIn: '8h' }
         );
 
+        // Return success response
         res.json({
+            success: true,
             token,
             user: {
                 id: user._id,
@@ -250,38 +322,51 @@ router.post('/login/web', getUserForLogin, async (req, res) => {
         });
 
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({
+            message: err.message,
+            errorCode: 'SERVER_ERROR'
+        });
     }
 });
 
 // LOGIN route
 router.post('/login', getUserForLogin, async (req, res) => {
-
-
     try {
         const user = res.user;
-        const isMatch = await bcrypt.compare(req.body.password, user.password);
-        if (!isMatch) return res.status(400).json({ message: 'Invalid password' });
-        console.log("ismatch", isMatch)
         const currentDeviceId = req.body.deviceid;
 
+        // Verify password
+        const isMatch = await bcrypt.compare(req.body.password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({
+                message: 'Invalid password',
+                errorCode: 'INVALID_CREDENTIALS'
+            });
+        }
+
+        // Check device registration if deviceid is required
         if (user.deviceid && user.deviceid !== currentDeviceId) {
             return res.status(403).json({
                 message: 'User is already logged in on another device',
                 errorCode: 'DEVICE_MISMATCH'
             });
         }
+
         // Update device information
         user.deviceid = currentDeviceId;
         user.deviceregistereddate = new Date();
         await user.save();
 
+        // Create token
         const token = jwt.sign(
             { id: user._id, email: user.email },
-            "myservice-secret"
+            "myservice-secret",
+            { expiresIn: '8h' }
         );
 
+        // Return success response
         res.json({
+            success: true,
             token,
             user: {
                 id: res.user._id,
@@ -306,8 +391,12 @@ router.post('/login', getUserForLogin, async (req, res) => {
                 location: res.user.location
             }
         });
+
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({
+            message: err.message,
+            errorCode: 'SERVER_ERROR'
+        });
     }
 });
 router.post('/remove-device', async (req, res) => {
@@ -347,44 +436,76 @@ router.post('/remove-device', async (req, res) => {
 
 // UPDATE a user
 router.put('/user/:id', getUserById, checkDuplicateEmail, async (req, res) => {
-    if (req.body.firstname != null) res.user.firstname = req.body.firstname;
-    if (req.body.lastname != null) res.user.lastname = req.body.lastname;
-    if (req.body.email != null) res.user.email = req.body.email;
-    if (req.body.mobilenumber != null) res.user.mobilenumber = req.body.mobilenumber;
-    if (req.body.status != null) res.user.status = req.body.status;
-    if (req.body.branch != null) res.user.branch = req.body.branch; // expect an array
-    if (req.body.loginexpirydate != null) res.user.loginexpirydate = req.body.loginexpirydate;
-    if (req.body.employeeid != null) res.user.employeeid = req.body.employeeid;
-    if (req.body.country != null) res.user.country = req.body.country;
-    if (req.body.state != null) res.user.state = req.body.state;
-    if (req.body.city != null) res.user.city = req.body.city;
-    if (req.body.department != null) res.user.department = req.body.department;
-    if (req.body.manageremail != null) res.user.manageremail = req.body.manageremail;
-    if (req.body.skills != null) res.user.skills = req.body.skills;
-    if (req.body.profileimage != null) res.user.profileimage = req.body.profileimage;
-    if (req.body.deviceid != null) res.user.deviceid = req.body.deviceid;
-    if (req.body.usertype != null) res.user.usertype = req.body.usertype;
-    if (req.body.roleName != null) {
-        res.user.role = {
-            roleName: req.body.roleName,
-            roleId: req.body.roleId
-        };
-    }
-    if (req.body.dealerName != null) {
-        res.user.dealerInfo = {
-            dealerName: req.body.dealerName,
-            dealerId: req.body.dealerId
-        };
-    }
-    if (req.body.location != null) res.user.location = req.body.location; // expect an array
-
     try {
-        const updatedUser = await res.user.save();
+        const user = res.user;
+
+        // Basic fields
+        const fieldsToUpdate = [
+            'firstname', 'lastname', 'email', 'mobilenumber', 'address',
+            'city', 'state', 'country', 'zipCode', 'loginexpirydate',
+            'employeeid', 'department', 'manageremail', 'profileimage',
+            'deviceid', 'usertype'
+        ];
+
+        fieldsToUpdate.forEach(field => {
+            if (req.body[field] !== undefined) {
+                user[field] = req.body[field];
+            }
+        });
+
+        // Role update
+        if (req.body.role && (req.body.role.roleName || req.body.role.roleId)) {
+            user.role = {
+                roleName: req.body.role.roleName || user.role?.roleName || '',
+                roleId: req.body.role.roleId || user.role?.roleId || ''
+            };
+        }
+
+        // Dealer info update (if usertype is 'dealer')
+        if (req.body.usertype === 'dealer' && req.body.dealerInfo) {
+            user.dealerInfo = {
+                dealerName: req.body.dealerInfo.dealerName || user.dealerInfo?.dealerName || '',
+                dealerId: req.body.dealerInfo.dealerId || user.dealerInfo?.dealerId || '',
+                dealerEmail: req.body.dealerInfo.dealerEmail || user.dealerInfo?.dealerEmail || '',
+                dealerCode: req.body.dealerInfo.dealerCode || user.dealerInfo?.dealerCode || '',
+            };
+        }
+
+        // Skills update (Array of objects)
+        if (Array.isArray(req.body.skills)) {
+            user.skills = req.body.skills;
+        }
+
+        // Demographics update
+        if (Array.isArray(req.body.demographics)) {
+            user.demographics = req.body.demographics;
+
+            // For backward compatibility, extract branch names from demographics
+            const branchData = req.body.demographics.find(d => d.type === 'branch');
+            if (branchData && Array.isArray(branchData.values)) {
+                user.branch = branchData.values.map(v => v.name);
+            }
+        }
+
+        // Location array
+        if (Array.isArray(req.body.location)) {
+            user.location = req.body.location;
+        }
+
+        user.modifiedAt = new Date(); // always update modified date
+
+        const updatedUser = await user.save();
         res.json(updatedUser);
     } catch (err) {
-        res.status(400).json({ message: err.message });
+        console.error('User update failed:', err);
+        res.status(400).json({
+            message: 'User update failed',
+            errorDetails: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
     }
 });
+
+
 
 // DELETE a user
 router.delete('/user/:id', async (req, res) => {
