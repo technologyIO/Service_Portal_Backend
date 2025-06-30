@@ -89,7 +89,7 @@ router.get('/allbranch', async (req, res) => {
 });
 
 router.patch('/branch/:id', getBranch, async (req, res) => {
-    const { name, status, city, branchShortCode, state , region } = req.body;
+    const { name, status, city, branchShortCode, state } = req.body;
 
     // Update branch fields if they are provided
     if (name != null) {
@@ -106,9 +106,6 @@ router.patch('/branch/:id', getBranch, async (req, res) => {
     }
     if (state != null) {
         res.branch.state = state;
-    }
-    if (region != null) {
-        res.branch.region = region;
     }
 
     res.branch.modifiedAt = Date.now();

@@ -97,6 +97,9 @@ router.patch('/state/:id', getState, async (req, res) => {
     if (req.body.status != null) {
         res.state.status = req.body.status;
     }
+    if (req.body.stateId != null) {
+        res.state.stateId = req.body.stateId;
+    }
     if (req.body.country != null) {
         res.state.country = req.body.country;
     }

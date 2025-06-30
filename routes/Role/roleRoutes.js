@@ -43,18 +43,19 @@ router.get('/by-roleid/:roleId', async (req, res) => {
 // POST /api/roles
 router.post('/', async (req, res) => {
     try {
-        const { name, features, mobileComponents, reports, demographicSelections,  parentRole } = req.body;
+        const { name, features, mobileComponents, reports, demographicSelections, parentRole, roleType } = req.body;
 
         const roleId = await generateRoleId(name);
 
         const role = new Role({
             roleId,
-            name, 
+            name,
             features,
             mobileComponents,
             reports,
-            demographicSelections, 
-            parentRole
+            demographicSelections,
+            parentRole,
+            roleType
         });
 
         await role.save();

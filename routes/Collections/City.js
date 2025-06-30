@@ -19,11 +19,11 @@ async function getCity(req, res, next) {
 
 // Middleware: Check Duplicate City
 async function checkDuplicateCity(req, res, next) {
-    const { name, state, cityID } = req.body;
+    const { name, branch, cityID } = req.body;
     try {
-        const existingCity = await City.findOne({ $or: [{ name, state }, { cityID }] });
+        const existingCity = await City.findOne({ $or: [{ name, branch }, { cityID }] });
         if (existingCity) {
-            return res.status(400).json({ message: 'City with the same name/state or cityID already exists' });
+            return res.status(400).json({ message: 'City with the same name/branch or cityID already exists' });
         }
         next();
     } catch (err) {
@@ -58,7 +58,7 @@ router.get('/city', async (req, res) => {
                 totalpages,
                 totalcity
             }
-        ); // Return all states
+        ); // Return all branchs
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -83,10 +83,10 @@ router.get('/allcity', async (req, res) => {
 
 // Update City
 router.patch('/city/:id', getCity, async (req, res) => {
-    const { name, status, state, cityID } = req.body;
+    const { name, status, branch, cityID } = req.body;
     if (name != null) res.city.name = name;
     if (status != null) res.city.status = status;
-    if (state != null) res.city.state = state;
+    if (branch != null) res.city.branch = branch;
     if (cityID != null) res.city.cityID = cityID;
 
     res.city.modifiedAt = Date.now();
@@ -125,7 +125,7 @@ router.get('/searchCity', async (req, res) => {
             $or: [
                 { name: { $regex: q, $options: 'i' } },
                 { status: { $regex: q, $options: 'i' } },
-                { state: { $regex: q, $options: 'i' } },
+                { branch: { $regex: q, $options: 'i' } },
                 { cityID: { $regex: q, $options: 'i' } }
             ]
         };

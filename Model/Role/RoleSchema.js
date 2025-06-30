@@ -30,8 +30,8 @@ const reportSchema = new mongoose.Schema({
 const demographicSelectionSchema = new mongoose.Schema({
     name: { type: String, required: true }, // e.g., State, City, Region
     isEnabled: { type: Boolean, default: true },
-    selectionType: { 
-        type: String, 
+    selectionType: {
+        type: String,
         enum: ['single', 'multi'],
         default: 'single'
     }
@@ -40,6 +40,7 @@ const demographicSelectionSchema = new mongoose.Schema({
 const roleSchema = new mongoose.Schema({
     roleId: { type: String, unique: true, trim: true },
     name: { type: String, required: true, unique: true, trim: true },
+    roleType: { type: String, required: true, },
     features: { type: [featuresSchema], default: [] },
     mobileComponents: { type: [mobileComponentSchema], default: [] },
     reports: { type: [reportSchema], default: [] },

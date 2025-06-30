@@ -36,6 +36,12 @@ const CheckListSchema = new mongoose.Schema({
     resulttype: {
         type: String,
         required: true
+    },
+    startVoltage: {
+        type: String
+    },
+    endVoltage: {
+        type: String
     }
 });
 

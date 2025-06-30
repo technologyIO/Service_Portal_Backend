@@ -390,7 +390,6 @@ const generateSimplePdf = async (html) => {
 
 
 router.post("/equipment/bulk", async (req, res) => {
-    // Initialize response object with same structure as PM bulk upload
     const response = {
         status: 'processing',
         startTime: new Date(),
@@ -415,7 +414,6 @@ router.post("/equipment/bulk", async (req, res) => {
         res.setHeader('X-Accel-Buffering', 'no');
         res.flushHeaders();
 
-        // Helper function to send updates
         const sendUpdate = (data) => {
             res.write(`data: ${JSON.stringify(data)}\n\n`);
             if (typeof res.flush === 'function') {
@@ -486,7 +484,6 @@ router.post("/equipment/bulk", async (req, res) => {
                 };
 
                 try {
-                    // Process equipment
                     const serialNumber = equipment.serialnumber;
                     response.processedRecords++;
 
@@ -527,35 +524,58 @@ router.post("/equipment/bulk", async (req, res) => {
                         checklistBuffer = await generateSimplePdf(checklistHtml);
                     }
 
-                    // Send email to CIC
-                    const cicUser = await User.findOne({
-                        'role.roleName': 'CIC',
-                        'role.roleId': 'C1'
-                    });
+                    // Email attachments
+                    const attachments = [{
+                        filename: `InstallationReport_${reportNo}.pdf`,
+                        content: installationBuffer
+                    }];
 
-                    if (cicUser) {
-                        const cicAttachments = [{
-                            filename: `InstallationReport_${reportNo}.pdf`,
-                            content: installationBuffer
-                        }];
+                    if (checklistBuffer) {
+                        attachments.push({
+                            filename: `Checklist_${serialNumber}.pdf`,
+                            content: checklistBuffer
+                        });
+                    }
 
-                        if (checklistBuffer) {
-                            cicAttachments.push({
-                                filename: `Checklist_${serialNumber}.pdf`,
-                                content: checklistBuffer
-                            });
-                        }
-
+                    // 1. First send email to customer's email from pdfData
+                    if (pdfData.email) {
                         await transporter.sendMail({
-                            from: process.env.EMAIL_FROM || "webadmin@skanray-access.com",
-                            to: [cicUser.email, pdfData.email].filter(Boolean),
+                            from: 'webadmin@skanray-access.com',
+                            to: pdfData.email,
                             subject: `Installation Report ${reportNo} - ${serialNumber}`,
                             text: `Please find attached the installation report and checklist for equipment with serial number ${serialNumber}`,
-                            attachments: cicAttachments,
+                            attachments: attachments,
                             disableFileAccess: true,
                             disableUrlAccess: true
                         });
                     }
+                    console.log("Customer Email", pdfData.email)
+                    console.log("pdfData.userInfo?.dealerEmail", pdfData.userInfo?.dealerEmail)
+                    console.log("pdfData.userInfo?.email", pdfData.userInfo?.email)
+
+                    // 2. Then send email to dealer's email and user's email from userInfo
+                    if (pdfData.userInfo) {
+                        const toEmails = [
+                            pdfData.userInfo?.dealerEmail,
+                            pdfData.userInfo?.email,
+                            'ftshivamtiwari222@gmail.com'
+                        ].filter(Boolean);
+
+                        if (toEmails.length > 0) {
+                            await transporter.sendMail({
+                                from: 'webadmin@skanray-access.com',
+                                to: toEmails,
+                                subject: `Installation Report ${reportNo} - ${serialNumber}`,
+                                text: `Please find attached the installation report and checklist for equipment with serial number ${serialNumber}`,
+                                attachments: attachments,
+                                disableFileAccess: true,
+                                disableUrlAccess: true
+                            });
+                        }
+                    }
+
+
+
 
                     equipmentResult.status = 'Completed';
                     response.summary.totalCreated++;
@@ -570,7 +590,6 @@ router.post("/equipment/bulk", async (req, res) => {
                     ? Math.round((response.processedRecords / response.totalRecords) * 100)
                     : 100;
 
-                // Send progress update after each record
                 sendUpdate(response);
             }
         }

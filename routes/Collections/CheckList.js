@@ -141,6 +141,12 @@ router.put('/checklist/:id', getChecklistById, async (req, res) => {
     if (req.body.resulttype != null) {
         res.checklist.resulttype = req.body.resulttype;
     }
+    if (req.body.startVoltage != null) {
+        res.checklist.startVoltage = req.body.startVoltage;
+    }
+    if (req.body.endVoltage != null) {
+        res.checklist.endVoltage = req.body.endVoltage;
+    }
 
     try {
         const updatedChecklist = await res.checklist.save();

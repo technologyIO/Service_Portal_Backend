@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const PM = require('../../Model/UploadSchema/PMSchema'); // Adjust path based on your folder structure
 const Product = require('../../Model/MasterSchema/ProductSchema');
+const User = require('../../Model/MasterSchema/UserSchema');
 const CheckList = require('../../Model/CollectionSchema/ChecklistSchema');
+const Branch = require('../../Model/CollectionSchema/BranchSchema');
 const nodemailer = require('nodemailer');
 const Customer = require('../../Model/UploadSchema/CustomerSchema');
 const pdf = require('html-pdf');
@@ -48,6 +50,81 @@ async function checkDuplicatePMNumber(req, res, next) {
   }
   next();
 }
+router.get('/allpms/:employeeid?', async (req, res) => {
+  try {
+    const { employeeid } = req.params;
+
+    if (employeeid) {
+      // 1. Get User
+      const user = await User.findOne({ employeeid });
+      if (!user) return res.status(404).json({ message: 'User not found' });
+
+      // 2. Get partNumbers from skills
+      const partNumbers = user.skills.flatMap(skill =>
+        skill.partNumbers && skill.partNumbers.length > 0 ? skill.partNumbers : []
+      );
+
+      // 3. Get PMs matching partNumbers
+      const pms = partNumbers.length > 0
+        ? await PM.find({ partNumber: { $in: partNumbers } })
+        : [];
+
+      // 4. Extract unique customerCodes
+      const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
+
+      // 5. Get customers and their states
+      const customers = await Customer.find({ customercodeid: { $in: customerCodes } });
+
+      const customerStateMap = {};
+      customers.forEach(c => {
+        if (c.customercodeid && c.state) {
+          customerStateMap[c.customercodeid] = c.state;
+        }
+      });
+
+      // 6. Get user branch names from demographics
+      const branchDemographic = user.demographics.find(d => d.type === 'branch');
+      const userBranchNames = branchDemographic?.values.map(v => v.name) || [];
+
+      // 7. Get branches whose state matches any customer state
+      const customerStates = [...new Set(Object.values(customerStateMap))];
+
+      const branches = await Branch.find({ state: { $in: customerStates } });
+
+      // 8. Get branchShortCodes that match user branch demographic
+      const matchedBranchShortCodes = branches
+        .filter(branch => userBranchNames.includes(branch.branchShortCode))
+        .map(branch => branch.branchShortCode);
+
+      // 9. Filter PMs whose customerCode maps to customer with state in matched branches
+      const finalPMs = pms.filter(pm => {
+        const state = customerStateMap[pm.customerCode];
+        return branches.some(
+          b => b.state === state && matchedBranchShortCodes.includes(b.branchShortCode)
+        );
+      });
+
+      return res.json({
+        pms: finalPMs,
+        count: finalPMs.length,
+        filteredByEmployee: true
+      });
+    }
+
+    // Return all if no employeeid
+    const pms = await PM.find();
+    res.json({
+      pms,
+      count: pms.length,
+      filteredByEmployee: false
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 
 // GET all PM records with pagination
 router.get('/allpms', async (req, res) => {

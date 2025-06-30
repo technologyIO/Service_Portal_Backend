@@ -9,7 +9,7 @@ const PMSchema = new mongoose.Schema(
     pmNumber: {
       type: String,
       unique: true,
-      sparse: true, // Add this option so that missing or null values are not indexed.
+      sparse: true,  
     },
     materialDescription: {
       type: String,

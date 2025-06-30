@@ -181,7 +181,6 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
             loginexpirydate,
             employeeid,
             department,
-            password,
             manageremail,
             profileimage,
             deviceid,
@@ -192,26 +191,23 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
             demographics
         } = req.body;
 
-        // Validate required fields
-        if (!password || typeof password !== 'string') {
-            return res.status(400).json({ message: 'Password is required and must be a string' });
-        }
-
+        // Basic validation
         if (!email) {
             return res.status(400).json({ message: 'Email is required' });
         }
 
-        // Hash password with proper error handling
+        // Use default password and hash it
+        const defaultPassword = "Skanray@123";
         let hashedPassword;
         try {
             const salt = await bcrypt.genSalt(10);
-            hashedPassword = await bcrypt.hash(password, salt);
+            hashedPassword = await bcrypt.hash(defaultPassword, salt);
         } catch (hashError) {
             console.error('Password hashing failed:', hashError);
             return res.status(500).json({ message: 'Password processing failed' });
         }
 
-        // Prepare user data with null checks
+        // Prepare user object
         const userData = {
             firstname: firstname || '',
             lastname: lastname || '',
@@ -226,11 +222,10 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
             loginexpirydate: loginexpirydate ? new Date(loginexpirydate) : null,
             employeeid: employeeid || '',
             department: department || '',
-            password: hashedPassword,
+            password: hashedPassword, // using hardcoded password
             manageremail: manageremail || '',
             profileimage: profileimage || '',
             deviceid: deviceid || '',
-            // deviceregistereddate: new Date(),
             usertype: usertype || 'skanray',
             skills: skills || [],
             demographics: demographics || [],
@@ -238,13 +233,13 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
             createdAt: new Date()
         };
 
-        // Always assign role if available
+        // Add role info
         userData.role = {
             roleName: role?.roleName || '',
             roleId: role?.roleId || ''
         };
 
-        // Only assign dealerInfo if user is a dealer
+        // Dealer info if applicable
         if (usertype === 'dealer') {
             userData.dealerInfo = {
                 dealerName: dealerInfo?.dealerName || '',
@@ -254,8 +249,7 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
             };
         }
 
-
-        // For backward compatibility
+        // Backward compatibility for branch
         const branchData = demographics?.find(d => d.type === 'branch');
         if (branchData) {
             userData.branch = branchData.values.map(v => v.name) || [];
@@ -273,6 +267,7 @@ router.post('/user', checkDuplicateEmail, async (req, res) => {
         });
     }
 });
+
 router.post('/login/web', getUserForLogin, async (req, res) => {
     try {
         const user = res.user;
@@ -307,11 +302,13 @@ router.post('/login/web', getUserForLogin, async (req, res) => {
                 branch: user.branch,
                 loginexpirydate: user.loginexpirydate,
                 employeeid: user.employeeid,
+                manageremail: user.manageremail,
                 country: user.country,
                 state: user.state,
                 city: user.city,
                 department: user.department,
                 skills: user.skills,
+                demographics: user.demographics,
                 profileimage: user.profileimage,
                 deviceid: user.deviceid,
                 usertype: user.usertype,
@@ -378,11 +375,13 @@ router.post('/login', getUserForLogin, async (req, res) => {
                 branch: res.user.branch,
                 loginexpirydate: res.user.loginexpirydate,
                 employeeid: res.user.employeeid,
+                manageremail: user.manageremail,
                 country: res.user.country,
                 state: res.user.state,
                 city: res.user.city,
                 department: res.user.department,
                 skills: res.user.skills,
+                demographics: res.user.demographics,
                 profileimage: res.user.profileimage,
                 deviceid: res.user.deviceid,
                 usertype: res.user.usertype,

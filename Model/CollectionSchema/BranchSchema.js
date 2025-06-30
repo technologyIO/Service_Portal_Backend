@@ -7,7 +7,7 @@ const BranchSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        required: true
+        default: "Active"
     },
     createdAt: {
         type: Date,
@@ -21,7 +21,7 @@ const BranchSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    region: {
+    state: {
         type: String,
         required: true
     }

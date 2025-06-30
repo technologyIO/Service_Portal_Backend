@@ -478,7 +478,7 @@ router.get('/pendingcomplaints', async (req, res) => {
 });
 router.get('/allpendingcomplaints', async (req, res) => {
   try {
-  
+
 
     const pendingComplaints = await PendingComplaints.find();
     res.json({
@@ -607,6 +607,53 @@ router.put(
     }
   }
 );
+router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
+  try {
+    const { employeeid } = req.params;
+
+    if (employeeid) {
+      // 1. Get the user
+      const user = await User.findOne({ employeeid });
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // 2. Extract part numbers from skills
+      const partNumbers = [];
+      user.skills.forEach(skill => {
+        if (skill.partNumbers && skill.partNumbers.length > 0) {
+          partNumbers.push(...skill.partNumbers);
+        }
+      });
+
+      // 3. Extract branch names
+      const branchNames = user.branch || [];
+
+      // 4. Apply both filters: materialcode & salesoffice
+      const pendingComplaints = await PendingComplaints.find({
+        materialcode: { $in: partNumbers },
+        salesoffice: { $in: branchNames }
+      });
+
+      return res.json({
+        pendingComplaints,
+        count: pendingComplaints.length,
+        filteredByEmployee: true
+      });
+    }
+
+    // Default: Return all complaints if no employeeid provided
+    const pendingComplaints = await PendingComplaints.find();
+    res.json({
+      pendingComplaints,
+      count: pendingComplaints.length,
+      filteredByEmployee: false
+    });
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 
 // DELETE a PendingComplaint
@@ -1311,7 +1358,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
 
         const mailOptions = {
           from: "webadmin@skanray-access.com",
-          to: [ cicUser.email],
+          to: [cicUser.email],
           subject: "Final Complaint Details with Service Report",
           html: `
           <div style="font-family: Arial, sans-serif; margin: 10px; font-size:16px;">

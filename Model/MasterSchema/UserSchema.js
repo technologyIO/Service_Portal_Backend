@@ -41,7 +41,8 @@ const UserSchema = new mongoose.Schema({
     // Company Info
     employeeid: { type: String, unique: true },
     department: { type: String },
-    manageremail: { type: String },
+    manageremail: { type: [String] },
+
     profileimage: { type: String },
 
 

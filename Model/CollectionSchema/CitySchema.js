@@ -7,7 +7,6 @@ const CitySchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        required: true
     },
     cityID: {
         type: String,
@@ -22,13 +21,9 @@ const CitySchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     },
-    state: {
+    branch: {
         type: String,
-        required: true  
-    },
-    stateId: {
-        type: String,
-        required: true 
+        required: true
     }
 });
 

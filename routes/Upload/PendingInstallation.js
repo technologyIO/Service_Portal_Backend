@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const PendingInstallation = require('../../Model/UploadSchema/PendingInstallationSchema');
 const WarrantyCode = require('../../Model/MasterSchema/WarrantyCodeSchema');
+const User = require('../../Model/MasterSchema/UserSchema');
 const Aerb = require('../../Model/MasterSchema/AerbSchema');
 // Middleware to get a PendingInstallation by ID
 async function getPendingInstallationById(req, res, next) {
@@ -78,9 +79,49 @@ router.get('/pendinginstallations/serial/:serialnumber', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+// GET all serial numbers for installations matching user's skill part numbers
+// GET all serial numbers for installations matching user's skill part numbers (simplified version)
+router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, res) => {
+    try {
+        const employeeid = req.params.employeeid;
 
+        // 1. Find the user by employee ID
+        const user = await User.findOne({ employeeid: employeeid });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
 
- // DELETE PendingInstallation by Serial Number
+        // 2. Extract all part numbers from user's skills
+        const partNumbers = [];
+        user.skills.forEach(skill => {
+            if (skill.partNumbers && skill.partNumbers.length > 0) {
+                partNumbers.push(...skill.partNumbers);
+            }
+        });
+
+        if (partNumbers.length === 0) {
+            return res.status(404).json({ message: 'No part numbers found in user skills' });
+        }
+
+        // 3. Find pending installations where material matches any part number
+        const installations = await PendingInstallation.find({
+            material: { $in: partNumbers }
+        }, 'serialnumber'); // Only get serialnumber field
+
+        if (installations.length === 0) {
+            return res.status(404).json({ message: 'No installations found matching user skills' });
+        }
+
+        // 4. Extract just the serial numbers into an array
+        const serialNumbers = installations.map(inst => inst.serialnumber);
+
+        res.json(serialNumbers);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// DELETE PendingInstallation by Serial Number
 router.delete('/pendinginstallations/serial/:serialnumber', async (req, res) => {
     try {
         const serialnumber = req.params.serialnumber;
