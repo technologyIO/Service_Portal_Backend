@@ -1,0 +1,421 @@
+[
+  {
+    "role": {
+      "roleName": "Super Admin",
+      "roleId": "S1"
+    },
+    "_id": "684c09fd69746be7bce2232f",
+    "firstname": "Mohit",
+    "lastname": "K",
+    "email": "tomson.m@skanray.com",
+    "mobilenumber": "6394507918",
+    "status": "Active",
+    "createdAt": "2025-06-13T11:22:37.318Z",
+    "modifiedAt": "2025-07-01T05:18:21.949Z",
+    "loginexpirydate": "2028-11-22T00:00:00.000Z",
+    "deviceregistereddate": "2025-07-01T05:17:21.005Z",
+    "zipCode": "570002",
+    "employeeid": "EMP1",
+    "department": "",
+    "manageremail": [
+      "sony.ponnanna@skanray.com"
+    ],
+    "profileimage": "",
+    "deviceid": "device_254xktmfz",
+    "usertype": "skanray",
+    "skills": [],
+    "password": "$2a$10$KVRWKqy8RncSq6bYjTqMuuoD2/Qpl4rBriSriY9yNjNvCbkY2o.yq",
+    "demographics": [],
+    "branch": [
+      "undefined",
+      "undefined",
+      "undefined",
+      "undefined",
+      "undefined",
+      "undefined"
+    ],
+    "location": [
+      "2B, Shakti Khand III, Indirapuram,"
+    ],
+    "__v": 5
+  },
+  {
+    "role": {
+      "roleName": "Super Admin",
+      "roleId": "S1"
+    },
+    "_id": "684ff97a8445b6ef2a18ecc1",
+    "firstname": "Mohiyuddin ",
+    "lastname": "Shariff",
+    "email": "ftshivamtiwari222+1@gmail.com",
+    "mobilenumber": "9108544427",
+    "status": "Active",
+    "createdAt": "2025-06-16T11:01:14.357Z",
+    "modifiedAt": "2025-06-26T10:04:06.359Z",
+    "loginexpirydate": "1995-03-31T00:00:00.000Z",
+    "deviceregistereddate": null,
+    "zipCode": "570021",
+    "employeeid": "4145242",
+    "department": "",
+    "manageremail": [
+      "lkjh@gmail.com",
+      "fojila5330@niback.com",
+      "fojila533xc0@niback.com"
+    ],
+    "profileimage": "https://static.toiimg.com/thumb/msid-121314443,width-1280,height-720,resizemode-4/121314443.jpg",
+    "usertype": "skanray",
+    "skills": [],
+    "password": "$2a$10$3HB6rFC0rcYllGvCsrvxLeoiDQtN.gMnn/wwUCdaIWzVV3gDLiBV.",
+    "demographics": [],
+    "branch": [
+      "Lucknow Medical Care Hospital (UP-LU)"
+    ],
+    "location": [
+      "JP Nagar Bengaluru"
+    ],
+    "__v": 3,
+    "deviceid": ""
+  },
+  {
+    "role": {
+      "roleName": "Dealer Service Engineer",
+      "roleId": "D1"
+    },
+    "dealerInfo": {
+      "dealerName": "Bengal Auto Hub",
+      "dealerId": "6852a000422f8eabd4bdb928",
+      "dealerEmail": "bengal.auto@example.com",
+      "dealerCode": "DLR0002"
+    },
+    "_id": "68500156e94d1981de3de03d",
+    "firstname": "SAHIL",
+    "lastname": "GAGAN",
+    "email": "ftshivamtiwari222@gmail.com",
+    "mobilenumber": "08726490079",
+    "status": "Active",
+    "createdAt": "2025-06-16T11:34:46.436Z",
+    "modifiedAt": "2025-06-30T07:00:00.125Z",
+    "loginexpirydate": null,
+    "deviceid": "device_ywj42w9xc",
+    "deviceregistereddate": "2025-06-30T12:56:39.239Z",
+    "zipCode": "570002",
+    "employeeid": "EMP0",
+    "department": "",
+    "manageremail": [
+      "shivamt2023@gmail.com",
+      "fojila5330@niback.com"
+    ],
+    "profileimage": "",
+    "usertype": "dealer",
+    "skills": [],
+    "password": "$2a$10$asuX8vptVvfm9Ug/zHFuwudDd/GQ4zgbUoEcqqS3G8udrZi5Fim/6",
+    "demographics": [
+      {
+        "type": "geo",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "68481581090d77fbbd0bebbb",
+            "name": "Asia",
+            "_id": "686235f0bcb73d90f86ee524"
+          }
+        ],
+        "_id": "686235f0bcb73d90f86ee523"
+      },
+      {
+        "type": "region",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "68568f429d76cdd2053f3ed4",
+            "name": "North India",
+            "_id": "686235f0bcb73d90f86ee526"
+          }
+        ],
+        "_id": "686235f0bcb73d90f86ee525"
+      },
+      {
+        "type": "country",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "6763c319ee0382acac77b6da",
+            "name": "India",
+            "_id": "686235f0bcb73d90f86ee528"
+          }
+        ],
+        "_id": "686235f0bcb73d90f86ee527"
+      },
+      {
+        "type": "state",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "685694fa6c60fa51a8f53250",
+            "name": "Himachal Pradesh",
+            "_id": "686235f0bcb73d90f86ee52a"
+          },
+          {
+            "id": "685695086c60fa51a8f53256",
+            "name": "Uttarakhand",
+            "_id": "686235f0bcb73d90f86ee52b"
+          },
+          {
+            "id": "6856951c6c60fa51a8f5325f",
+            "name": "Uttar Pradesh",
+            "_id": "686235f0bcb73d90f86ee52c"
+          }
+        ],
+        "_id": "686235f0bcb73d90f86ee529"
+      },
+      {
+        "type": "city",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "682c3480af3b35605ddf04cc",
+            "name": "Lucknow",
+            "_id": "686235f0bcb73d90f86ee52e"
+          },
+          {
+            "id": "682c3488af3b35605ddf04cf",
+            "name": "Kanpur",
+            "_id": "686235f0bcb73d90f86ee52f"
+          }
+        ],
+        "_id": "686235f0bcb73d90f86ee52d"
+      },
+      {
+        "type": "branch",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "685bf0de4143f19a0b7284c9",
+            "name": "LKO",
+            "_id": "686235f0bcb73d90f86ee531"
+          },
+          {
+            "id": "685bf0f04143f19a0b7284ce",
+            "name": "KNP",
+            "_id": "686235f0bcb73d90f86ee532"
+          },
+          {
+            "id": "685bf1024143f19a0b7284d3",
+            "name": "NDA",
+            "_id": "686235f0bcb73d90f86ee533"
+          }
+        ],
+        "_id": "686235f0bcb73d90f86ee530"
+      }
+    ],
+    "branch": [
+      "LKO",
+      "KNP",
+      "NDA"
+    ],
+    "location": [
+      "InsideOut DGA | Desiadda , gokulam road , vani vilas mohalla , Mysuru , Karnataka 570002 India\nInsideOut DGA | Desiadda , gokulam road , vani vilas mohalla , Mysuru , Karnataka 570002 India"
+    ],
+    "__v": 7
+  },
+  {
+    "role": {
+      "roleName": "Dealer Service Engineer",
+      "roleId": "D1"
+    },
+    "dealerInfo": {
+      "dealerName": "Bengal Auto Hub",
+      "dealerId": "6852a000422f8eabd4bdb928",
+      "dealerEmail": "bengal.auto@example.com",
+      "dealerCode": "DLR0002"
+    },
+    "_id": "6852528190b4531d2fe56182",
+    "firstname": "Shivam",
+    "lastname": "Tiwari",
+    "email": "shivamt2023@gmail.com",
+    "mobilenumber": "06394507918",
+    "status": "Active",
+    "createdAt": "2025-06-18T05:45:37.221Z",
+    "modifiedAt": "2025-07-01T07:59:45.619Z",
+    "loginexpirydate": "2025-06-16T00:00:00.000Z",
+    "deviceid": "device_254xktmfz",
+    "deviceregistereddate": "2025-07-01T08:00:04.715Z",
+    "zipCode": "570002",
+    "employeeid": "EMP8",
+    "department": "dsdsdsd",
+    "manageremail": [
+      "shivamt2023@gmail.com"
+    ],
+    "profileimage": "",
+    "usertype": "dealer",
+    "skills": [],
+    "password": "$2a$10$3XNUV5.C2YWG4gSqW.3YEeX9mEi0arob3pm8/UDiefL3gz/1T3D8i",
+    "demographics": [],
+    "branch": [
+      "LKO"
+    ],
+    "location": [
+      "InsideOut DGA | Desiadda , gokulam road , vani vilas mohalla , Mysuru , Karnataka 570002 India\nInsideOut DGA | Desiadda , gokulam road , vani vilas mohalla , Mysuru , Karnataka 570002 India"
+    ],
+    "__v": 11
+  },
+  {
+    "role": {
+      "roleName": "Dealer Service Engineer",
+      "roleId": "D1"
+    },
+    "dealerInfo": {
+      "dealerName": "Rajasthan Motors",
+      "dealerId": "68529ff8422f8eabd4bdb924",
+      "dealerEmail": "rajasthan.motors@example.com",
+      "dealerCode": "DLR0001"
+    },
+    "_id": "685d18e51e47d19d873c4d75",
+    "firstname": "Shivam",
+    "lastname": "Tiwari",
+    "email": "shivamsdfght2023@gmail.com",
+    "mobilenumber": "06394507918",
+    "status": "Active",
+    "createdAt": "2025-06-26T09:54:45.313Z",
+    "modifiedAt": "2025-06-30T07:02:00.448Z",
+    "loginexpirydate": null,
+    "deviceid": "",
+    "zipCode": "110001",
+    "employeeid": "EMP5",
+    "department": "",
+    "manageremail": [
+      "shivamt2023@gmail.com"
+    ],
+    "profileimage": "",
+    "usertype": "dealer",
+    "skills": [],
+    "password": "$2a$10$SpIyVNiAeMpj53nZcg/DUe65kLjByGOn/UcRljTpCZkMncYVF.AnO",
+    "demographics": [
+      {
+        "type": "geo",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "6858fd5b54ca7c76b33de3bd",
+            "name": "Asia",
+            "_id": "68623668bcb73d90f86ef91b"
+          }
+        ],
+        "_id": "68623668bcb73d90f86ef91a"
+      },
+      {
+        "type": "region",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "68568f429d76cdd2053f3ed4",
+            "name": "North India",
+            "_id": "68623668bcb73d90f86ef91d"
+          }
+        ],
+        "_id": "68623668bcb73d90f86ef91c"
+      },
+      {
+        "type": "country",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "68568cc36fe425469d37dc5b",
+            "name": "India",
+            "_id": "68623668bcb73d90f86ef91f"
+          }
+        ],
+        "_id": "68623668bcb73d90f86ef91e"
+      },
+      {
+        "type": "state",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "6856951c6c60fa51a8f5325f",
+            "name": "Uttar Pradesh",
+            "_id": "68623668bcb73d90f86ef921"
+          },
+          {
+            "id": "685695156c60fa51a8f5325c",
+            "name": "Delhi",
+            "_id": "68623668bcb73d90f86ef922"
+          }
+        ],
+        "_id": "68623668bcb73d90f86ef920"
+      },
+      {
+        "type": "city",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "682c3480af3b35605ddf04cc",
+            "name": "Lucknow",
+            "_id": "68623668bcb73d90f86ef924"
+          },
+          {
+            "id": "682c3488af3b35605ddf04cf",
+            "name": "Kanpur",
+            "_id": "68623668bcb73d90f86ef925"
+          },
+          {
+            "id": "682c34f5af3b35605ddf04f6",
+            "name": "Naharlagun",
+            "_id": "68623668bcb73d90f86ef926"
+          }
+        ],
+        "_id": "68623668bcb73d90f86ef923"
+      },
+      {
+        "type": "branch",
+        "selectionType": "multiple",
+        "values": [
+          {
+            "id": "685bf1814143f19a0b7284f9",
+            "name": "DWK",
+            "_id": "68623668bcb73d90f86ef928"
+          },
+          {
+            "id": "685bf1714143f19a0b7284f4",
+            "name": "NPL",
+            "_id": "68623668bcb73d90f86ef929"
+          },
+          {
+            "id": "685bf1024143f19a0b7284d3",
+            "name": "NDA",
+            "_id": "68623668bcb73d90f86ef92a"
+          },
+          {
+            "id": "685bf1604143f19a0b7284ef",
+            "name": "DEL",
+            "_id": "68623668bcb73d90f86ef92b"
+          },
+          {
+            "id": "685bf0f04143f19a0b7284ce",
+            "name": "KNP",
+            "_id": "68623668bcb73d90f86ef92c"
+          },
+          {
+            "id": "685bf0de4143f19a0b7284c9",
+            "name": "LKO",
+            "_id": "68623668bcb73d90f86ef92d"
+          }
+        ],
+        "_id": "68623668bcb73d90f86ef927"
+      }
+    ],
+    "branch": [
+      "DWK",
+      "NPL",
+      "NDA",
+      "DEL",
+      "KNP",
+      "LKO"
+    ],
+    "location": [
+      "Ghaziabad, Uttar Pradesh"
+    ],
+    "__v": 3,
+    "deviceregistereddate": null
+  }
+]

@@ -32,6 +32,9 @@ const CustomerSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    region: {
+        type: String,
+    },
     country: {
         type: String,
         required: true

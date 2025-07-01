@@ -4,6 +4,7 @@ const router = express.Router();
 const User = require('../../Model/MasterSchema/UserSchema');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const Role = require('../../Model/Role/RoleSchema'); // Make sure you import the Role model
 
 // Middleware to get user by ID
 async function getUserById(req, res, next) {
@@ -163,10 +164,27 @@ router.get('/alluser', async (req, res) => {
         res.status(500).json({ message: 'Server Error' });
     }
 });
+const checkDuplicateEmployeeId = async (req, res, next) => {
+    try {
+        const { employeeid } = req.body;
+
+        if (!employeeid) return res.status(400).json({ message: 'Employee ID is required' });
+
+        const existingUser = await User.findOne({ employeeid });
+        if (existingUser) {
+            return res.status(400).json({ message: 'Employee ID already exists' });
+        }
+
+        next();
+    } catch (err) {
+        console.error("Error checking duplicate employee ID:", err);
+        res.status(500).json({ message: 'Server error during employee ID check' });
+    }
+};
 
 
 
-router.post('/user', checkDuplicateEmail, async (req, res) => {
+router.post('/user', checkDuplicateEmail, checkDuplicateEmployeeId, async (req, res) => {
     try {
         const {
             firstname,
@@ -327,12 +345,13 @@ router.post('/login/web', getUserForLogin, async (req, res) => {
 });
 
 // LOGIN route
+
 router.post('/login', getUserForLogin, async (req, res) => {
     try {
         const user = res.user;
         const currentDeviceId = req.body.deviceid;
 
-        // Verify password
+        // 1️⃣ Validate password
         const isMatch = await bcrypt.compare(req.body.password, user.password);
         if (!isMatch) {
             return res.status(400).json({
@@ -341,7 +360,25 @@ router.post('/login', getUserForLogin, async (req, res) => {
             });
         }
 
-        // Check device registration if deviceid is required
+        // 2️⃣ Check role and mobile access
+        const roleId = user.role?.roleId;
+        if (!roleId) {
+            return res.status(403).json({
+                message: "No role assigned to user",
+                errorCode: "NO_ROLE"
+            });
+        }
+
+        const roleData = await Role.findOne({ roleId });
+
+        if (!roleData || !Array.isArray(roleData.mobileComponents) || roleData.mobileComponents.length === 0) {
+            return res.status(403).json({
+                message: "You don't have access to the mobile app. Please contact admin.",
+                errorCode: "MOBILE_ACCESS_DENIED"
+            });
+        }
+
+        // 3️⃣ Check device registration
         if (user.deviceid && user.deviceid !== currentDeviceId) {
             return res.status(403).json({
                 message: 'User is already logged in on another device',
@@ -349,45 +386,45 @@ router.post('/login', getUserForLogin, async (req, res) => {
             });
         }
 
-        // Update device information
+        // 4️⃣ Update device info
         user.deviceid = currentDeviceId;
         user.deviceregistereddate = new Date();
         await user.save();
 
-        // Create token
+        // 5️⃣ Generate token
         const token = jwt.sign(
             { id: user._id, email: user.email },
             "myservice-secret",
             { expiresIn: '8h' }
         );
 
-        // Return success response
+        // 6️⃣ Return user data
         res.json({
             success: true,
             token,
             user: {
-                id: res.user._id,
-                firstname: res.user.firstname,
-                lastname: res.user.lastname,
-                email: res.user.email,
-                mobilenumber: res.user.mobilenumber,
-                status: res.user.status,
-                branch: res.user.branch,
-                loginexpirydate: res.user.loginexpirydate,
-                employeeid: res.user.employeeid,
+                id: user._id,
+                firstname: user.firstname,
+                lastname: user.lastname,
+                email: user.email,
+                mobilenumber: user.mobilenumber,
+                status: user.status,
+                branch: user.branch,
+                loginexpirydate: user.loginexpirydate,
+                employeeid: user.employeeid,
                 manageremail: user.manageremail,
-                country: res.user.country,
-                state: res.user.state,
-                city: res.user.city,
-                department: res.user.department,
-                skills: res.user.skills,
-                demographics: res.user.demographics,
-                profileimage: res.user.profileimage,
-                deviceid: res.user.deviceid,
-                usertype: res.user.usertype,
-                role: res.user.role,
-                dealerInfo: res.user.dealerInfo,
-                location: res.user.location
+                country: user.country,
+                state: user.state,
+                city: user.city,
+                department: user.department,
+                skills: user.skills,
+                demographics: user.demographics,
+                profileimage: user.profileimage,
+                deviceid: user.deviceid,
+                usertype: user.usertype,
+                role: user.role,
+                dealerInfo: user.dealerInfo,
+                location: user.location
             }
         });
 
@@ -398,6 +435,7 @@ router.post('/login', getUserForLogin, async (req, res) => {
         });
     }
 });
+
 router.post('/remove-device', async (req, res) => {
     try {
         const { userId } = req.body; // frontend se userId ayega

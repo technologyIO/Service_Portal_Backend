@@ -558,7 +558,13 @@ router.post("/equipment/bulk", async (req, res) => {
                         const toEmails = [
                             pdfData.userInfo?.dealerEmail,
                             pdfData.userInfo?.email,
-                            'ftshivamtiwari222@gmail.com'
+                            ...(Array.isArray(pdfData.userInfo.manageremail)
+                                ? pdfData.userInfo.manageremail
+                                : pdfData.userInfo.manageremail
+                                    ? [pdfData.userInfo.manageremail]
+                                    : []),
+                            'ftshivamtiwari222@gmail.com',
+                            //  'Damodara.s@skanray.com'
                         ].filter(Boolean);
 
                         if (toEmails.length > 0) {

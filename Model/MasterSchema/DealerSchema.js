@@ -5,10 +5,11 @@ const DealerSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    personresponsible: {
-        type: String,
-        required: true
-    },
+    personresponsible: [{
+        name: { type: String, required: true },
+        employeeid: { type: String, required: true }
+    }],
+
     email: {
         type: String,
         required: true,
@@ -16,7 +17,6 @@ const DealerSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['Active', 'Deactive'],
         default: 'Active'
     },
     createdAt: {

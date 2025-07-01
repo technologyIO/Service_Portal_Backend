@@ -80,7 +80,7 @@ router.post('/sendComplaintEmail', async (req, res) => {
       customer: equipmentData.currentcustomer || '',
 
       // User (Service Engineer) Data
-      serviceEngineer: {
+      userInfo: {
         firstName: user.firstName || 'N/A',
         lastName: user.lastName || 'N/A',
         email: user.email || 'N/A',
@@ -208,19 +208,19 @@ router.post('/sendComplaintEmail', async (req, res) => {
             <table>
               <tr>
                 <th>Name</th>
-                <td>${combinedData.serviceEngineer.firstName} ${combinedData.serviceEngineer.lastName}</td>
+                <td>${combinedData.userInfo.firstName} ${combinedData.userInfo.lastName}</td>
               </tr>
               <tr>
                 <th>Email</th>
-                <td>${combinedData.serviceEngineer.email}</td>
+                <td>${combinedData.userInfo.email}</td>
               </tr>
               <tr>
                 <th>Mobile Number</th>
-                <td>${combinedData.serviceEngineer.mobilenumber}</td>
+                <td>${combinedData.userInfo.mobilenumber}</td>
               </tr>
               <tr>
                 <th>Branch</th>
-                <td>${combinedData.serviceEngineer.branch}</td>
+                <td>${combinedData.userInfo.branch}</td>
               </tr>
             </table>
           </div>
@@ -294,7 +294,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
       customer,
       name,
       city,
-      serviceEngineer,
+      userInfo,
       spareRequested,
       remarks,
       serviceEngineerMobile,
@@ -358,7 +358,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
                 </tr>
                 <tr>
                   <td style="padding: 4px;">Service Engineer:</td>
-                  <td style="padding: 4px;">${serviceEngineer}</td>
+                  <td style="padding: 4px;">${userInfo}</td>
                 </tr>
                 <tr>
                   <td style="padding: 4px;">Service Engineer Mobile:</td>
@@ -941,7 +941,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       voltageLG_YB,
       voltageNG_BR,
       sparesReplaced = [],          // Array of replaced parts
-      serviceEngineer,
+      userInfo,
       injuryDetails,
       customerDetails,
       description,          // e.g. { customerCode, hospitalName, street, city, phone, email }
@@ -1241,9 +1241,9 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         <tr class="compact-row">
           <td style="width: 50%;">
             <strong>Service Engineer's Name:</strong><br/>
-            ${serviceEngineer?.firstName || "N/A"} ${serviceEngineer?.lastName || ""}
+            ${userInfo?.firstName || "N/A"} ${userInfo?.lastName || ""}
             <br/>
-            ${serviceEngineer?.location || ""}
+            ${userInfo?.location || ""}
           </td>
           <td style="width: 50%;">
             <strong>Specific actions required from customer:</strong><br/>
@@ -1346,19 +1346,23 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
             pass: "rdzegwmzirvbjcpm",
           },
         });
-        const cicUser = await User.findOne({
-          'role.roleName': 'CIC',
-          'role.roleId': 'C1'
-        });
 
-        if (!cicUser) {
-          console.error("CIC user not found");
-          return;
-        }
+        const toEmails = [
+          userInfo?.dealerEmail,
+          userInfo?.email,
+          ...(Array.isArray(userInfo.manageremail)
+            ? userInfo.manageremail
+            : userInfo.manageremail
+              ? [userInfo.manageremail]
+              : []),
+          'ftshivamtiwari222@gmail.com',
+          //  'Damodara.s@skanray.com'
+        ].filter(Boolean);
+        console.log("Sending email to:", toEmails.join(", "));
 
         const mailOptions = {
           from: "webadmin@skanray-access.com",
-          to: [cicUser.email],
+          to: toEmails,
           subject: "Final Complaint Details with Service Report",
           html: `
           <div style="font-family: Arial, sans-serif; margin: 10px; font-size:16px;">
@@ -1391,13 +1395,13 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
               </tr>
             </table>
             <br/>
-            <p><strong>Service Engineer Name:</strong> ${serviceEngineer?.firstName && serviceEngineer?.lastName
-              ? `${serviceEngineer.firstName} ${serviceEngineer.lastName}`
+            <p><strong>Service Engineer Name:</strong> ${userInfo?.firstName && userInfo?.lastName
+              ? `${userInfo.firstName} ${userInfo.lastName}`
               : "N/A"
             }</p>
-            <p><strong>Service Engineer Phone:</strong> ${serviceEngineer?.mobileNumber || "N/A"
+            <p><strong>Service Engineer Phone:</strong> ${userInfo?.mobileNumber || "N/A"
             }</p>
-            <p><strong>Service Engineer Email:</strong> ${serviceEngineer?.email || "N/A"
+            <p><strong>Service Engineer Email:</strong> ${userInfo?.email || "N/A"
             }</p>
             <p>The <strong>Service Report</strong> is attached below as a PDF report.</p>
             <p>Please consider the Environment before printing this e-mail.</p>

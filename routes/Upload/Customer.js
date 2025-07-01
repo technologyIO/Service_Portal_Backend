@@ -58,6 +58,7 @@ router.post('/customer/send-email', async (req, res) => {
         postalcode,
         district,
         state,
+        region,
         country,
         telephone,
         taxnumber1,
@@ -107,8 +108,8 @@ router.post('/customer/send-email', async (req, res) => {
           <td style="padding: 4px; vertical-align: top;">${city || ''}</td>
         </tr>
         <tr>
-          <td style="padding: 4px; vertical-align: top;"><strong>State :</strong></td>
-          <td style="padding: 4px; vertical-align: top;">${state || ''}</td>
+          <td style="padding: 4px; vertical-align: top;"><strong>Region :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${region || ''}</td>
         </tr>
         <tr>
           <td style="padding: 4px; vertical-align: top;"><strong>Country :</strong></td>
@@ -233,6 +234,7 @@ router.post('/customer', checkDuplicateCustomer, async (req, res) => {
         postalcode: req.body.postalcode,
         district: req.body.district,
         state: req.body.state,
+        region: req.body.region,
         country: req.body.country,
         telephone: req.body.telephone,
         taxnumber1: req.body.taxnumber1,
@@ -276,6 +278,9 @@ router.put('/customer/:id', getCustomerById, async (req, res) => {
     }
     if (req.body.state != null) {
         res.customer.state = req.body.state;
+    }
+    if (req.body.region != null) {
+        res.customer.region = req.body.region;
     }
     if (req.body.country != null) {
         res.customer.country = req.body.country;
@@ -338,6 +343,7 @@ router.get('/searchcustomer', async (req, res) => {
                 { postalcode: { $regex: q, $options: 'i' } },
                 { district: { $regex: q, $options: 'i' } },
                 { state: { $regex: q, $options: 'i' } },
+                { region: { $regex: q, $options: 'i' } },
                 { country: { $regex: q, $options: 'i' } },
                 { telephone: { $regex: q, $options: 'i' } },
                 { taxnumber1: { $regex: q, $options: 'i' } },

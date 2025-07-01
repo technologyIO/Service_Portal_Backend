@@ -70,7 +70,7 @@ router.get('/dealer/:id', getDealerById, (req, res) => {
 router.post('/dealer', checkDuplicateFields, async (req, res) => {
     const dealer = new Dealer({
         name: req.body.name,
-        personresponsible: req.body.personresponsible,
+        personresponsible: req.body.personresponsible || [],
         email: req.body.email,
         status: req.body.status, // will default to 'active' if not passed
         dealercode: req.body.dealercode,
