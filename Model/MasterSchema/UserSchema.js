@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const demographicSchema = new mongoose.Schema({
-    type: { type: String, enum: ['geo', 'region', 'country', 'state', 'city', 'branch'], required: true },
+    type: { type: String, enum: ['geo', 'country', 'region', 'state', 'city', 'branch'], required: true },
     selectionType: { type: String, enum: ['single', 'multiple'], required: true },
     values: [{
         id: { type: String },
