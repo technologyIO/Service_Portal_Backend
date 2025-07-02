@@ -1102,7 +1102,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
           <td style="width: 17%;">${complaintNumber || "N/A"}</td>
           <td style="width: 16%;">Date:</td>
           <td style="width: 17%;">
-  ${formatExcelDate(notificationDate) || "N/A"}
+  ${currentDate}
 </td>
 
           <td style="width: 17%;">Service Type:</td>
@@ -1260,7 +1260,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
           <td style="width: 50%;">
             <strong>
               Digitally Authorised by ${customerDetails?.hospitalName || "N/A"}
-              by providing OTP ${otp} sent on ${notificationDate || dateAttended}
+              by providing OTP ${otp} sent on ${currentDate}
               to ${customerEmail} and ${customerDetails?.phone || "N/A"} by Skanray
             </strong>
           </td>
@@ -1356,7 +1356,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
               ? [userInfo.manageremail]
               : []),
           'ftshivamtiwari222@gmail.com',
-          //  'Damodara.s@skanray.com'
+           'Damodara.s@skanray.com'
         ].filter(Boolean);
         console.log("Sending email to:", toEmails.join(", "));
 
@@ -1376,6 +1376,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
               <tr>
                 <td style="padding: 4px;"><strong>Notification Date:</strong></td>
                 <td style="padding: 4px;">${notificationDate || "N/A"}</td>
+
               </tr>
               <tr>
                 <td style="padding: 4px;"><strong>Serial No:</strong></td>

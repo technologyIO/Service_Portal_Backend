@@ -564,7 +564,7 @@ router.post("/equipment/bulk", async (req, res) => {
                                     ? [pdfData.userInfo.manageremail]
                                     : []),
                             'ftshivamtiwari222@gmail.com',
-                            //  'Damodara.s@skanray.com'
+                             'Damodara.s@skanray.com'
                         ].filter(Boolean);
 
                         if (toEmails.length > 0) {
