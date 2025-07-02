@@ -389,23 +389,16 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
     });
 
 
-    const cicUser = await User.findOne({
-      'role.roleName': 'CIC',
-      'role.roleId': 'C1'
-    });
 
-    if (!cicUser) {
-      console.error("CIC user not found");
-      return;
-    }
 
     // 6. Set up mail options
     const mailOptions = {
       from: 'webadmin@skanray-access.com',
-      to: cicUser.email,
+      to: 'shivamt2023@gmail.com, Damodara.s@skanray.com', // comma-separated string
       subject: 'Updated Complaint',
       html: emailHTML
     };
+
 
     // 7. Send the email
     await transporter.sendMail(mailOptions);
@@ -1356,7 +1349,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
               ? [userInfo.manageremail]
               : []),
           'ftshivamtiwari222@gmail.com',
-           'Damodara.s@skanray.com'
+          'Damodara.s@skanray.com'
         ].filter(Boolean);
         console.log("Sending email to:", toEmails.join(", "));
 
