@@ -62,7 +62,8 @@ const componentRoutes = require('./routes/Role/componentRoutes');
 const roleRoutes = require('./routes/Role/roleRoutes');
 const reportRoutes = require('./routes/Role/reportRoutes');
 const mobilecomponentRoutes = require('./routes/Role/MobileComponent');
-
+const path = require('path');
+const fs = require('fs');
 
 
 
@@ -79,19 +80,25 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('Created uploads directory at:', uploadsDir);
+}
 
+// Serve static files from uploads directory
+app.use('/uploads', express.static(uploadsDir));
+console.log(`Serving static files from: ${uploadsDir}`);
 app.use(cors(corsOptions));
 
 // app.use(compression());
 // Handle preflight for all routes
 app.options('*', cors(corsOptions));
 
-
 // Middleware
 app.use(bodyParser.json());
 app.use(express.json({ limit: '50mb' })); // Increase JSON body parser limit
 app.use(express.urlencoded({ limit: '50mb', extended: true })); // Increase URL-encoded body parser limit
-
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,

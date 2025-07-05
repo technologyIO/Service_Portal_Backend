@@ -30,6 +30,7 @@
     "nodemailer": "^6.10.1",
     "puppeteer": "^24.10.2",
     "socket.io": "^4.8.1",
+    "uuid": "^11.1.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

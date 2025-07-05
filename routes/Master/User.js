@@ -5,6 +5,61 @@ const User = require('../../Model/MasterSchema/UserSchema');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Role = require('../../Model/Role/RoleSchema'); // Make sure you import the Role model
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+
+const multer = require('multer');
+const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+const fs = require('fs');
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        // Use absolute path from project root
+        const uploadDir = path.join(__dirname, '../../uploads');
+
+        console.log(`Upload directory: ${uploadDir}`); // Debugging
+
+        // Ensure directory exists
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+            console.log('Created uploads directory');
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname);
+        const uniqueName = `${uuidv4()}${ext}`;
+        console.log(`Generated filename: ${uniqueName}`); // Debugging
+        cb(null, uniqueName);
+    }
+});
+
+
+// File filter to accept only images
+const fileFilter = (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+    } else {
+        cb(new Error('Only image files are allowed!'), false);
+    }
+};
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+});
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'webadmin@skanray-access.com',
+        pass: 'rdzegwmzirvbjcpm'
+    }
+});
+
+
+// In-memory storage for OTPs (in production, use Redis or database)
+const otpStore = new Map();
 
 // Middleware to get user by ID
 async function getUserById(req, res, next) {
@@ -53,6 +108,327 @@ async function getUserForLogin(req, res, next) {
     res.user = user;
     next();
 }
+
+// Generate OTP
+function generateOTP() {
+    return crypto.randomInt(1000, 9999).toString();
+}
+
+// 1. Send OTP to email
+router.post('/forgot-password', async (req, res) => {
+    try {
+        const { employeeid } = req.body;
+
+        if (!employeeid) {
+            return res.status(400).json({
+                message: 'Employee ID is required',
+                errorCode: 'MISSING_EMPLOYEE_ID'
+            });
+        }
+
+        // Find user by employee ID
+        const user = await User.findOne({ employeeid });
+        if (!user) {
+            return res.status(404).json({
+                message: 'No account found with this Employee ID',
+                errorCode: 'USER_NOT_FOUND'
+            });
+        }
+
+        // Check if user has an email
+        if (!user.email) {
+            return res.status(400).json({
+                message: 'No email registered with this account',
+                errorCode: 'NO_EMAIL_REGISTERED'
+            });
+        }
+
+        // Generate OTP
+        const otp = generateOTP();
+        const otpExpiry = Date.now() + 5 * 60 * 1000; // 5 minutes expiry
+
+        // Store OTP temporarily
+        otpStore.set(employeeid, {
+            otp,
+            expiry: otpExpiry,
+            email: user.email
+        });
+
+        // Send email with OTP
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: user.email,
+            subject: 'Password Reset OTP',
+            text: `Your OTP for password reset is: ${otp}. This OTP is valid for 5 minutes.`
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.json({
+            success: true,
+            message: 'OTP sent to registered email',
+            email: user.email.replace(/(.{2}).+@/, "$1****@") // mask email for display
+        });
+
+    } catch (err) {
+        console.error('Forgot password error:', err);
+        res.status(500).json({
+            message: 'Error sending OTP',
+            errorCode: 'SERVER_ERROR'
+        });
+    }
+});
+router.post('/reset-password-otp', async (req, res) => {
+    try {
+        const { resetToken, newPassword, confirmPassword } = req.body;
+
+        if (!resetToken || !newPassword || !confirmPassword) {
+            return res.status(400).json({
+                message: 'Reset token and passwords are required',
+                errorCode: 'MISSING_FIELDS'
+            });
+        }
+
+        // Verify passwords match
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({
+                message: 'Passwords do not match',
+                errorCode: 'PASSWORD_MISMATCH'
+            });
+        }
+
+
+        // Verify reset token
+        let decoded;
+        try {
+            decoded = jwt.verify(resetToken, "myservice-secret");
+        } catch (err) {
+            return res.status(401).json({
+                message: 'Invalid or expired token',
+                errorCode: 'INVALID_TOKEN'
+            });
+        }
+
+        // Check token purpose
+        if (decoded.purpose !== 'password_reset') {
+            return res.status(401).json({
+                message: 'Invalid token purpose',
+                errorCode: 'INVALID_TOKEN_PURPOSE'
+            });
+        }
+
+        // Find user by employee ID
+        const user = await User.findOne({ employeeid: decoded.employeeid });
+        if (!user) {
+            return res.status(404).json({
+                message: 'User not found',
+                errorCode: 'USER_NOT_FOUND'
+            });
+        }
+
+        // Hash new password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        // Update password
+        user.password = hashedPassword;
+        user.modifiedAt = new Date();
+        await user.save();
+
+        res.json({
+            success: true,
+            message: 'Password reset successfully'
+        });
+
+    } catch (err) {
+        console.error('Password reset error:', err);
+        res.status(500).json({
+            message: 'Error resetting password',
+            errorCode: 'SERVER_ERROR'
+        });
+    }
+});
+router.post('/verify-otp-pass', async (req, res) => {
+    try {
+        const { employeeid, otp } = req.body; // Changed from email to employeeid
+
+        if (!employeeid || !otp) { // Changed validation
+            return res.status(400).json({
+                message: 'Employee ID and OTP are required',
+                errorCode: 'MISSING_FIELDS'
+            });
+        }
+
+        // Get stored OTP data using employeeid instead of email
+        const otpData = otpStore.get(employeeid);
+
+        if (!otpData) {
+            return res.status(400).json({
+                message: 'OTP not found or expired. Please request a new one.',
+                errorCode: 'OTP_NOT_FOUND'
+            });
+        }
+
+        // Rest of your verification logic remains the same...
+        if (Date.now() > otpData.expiry) {
+            otpStore.delete(employeeid);
+            return res.status(400).json({
+                message: 'OTP expired. Please request a new one.',
+                errorCode: 'OTP_EXPIRED'
+            });
+        }
+
+        if (otp !== otpData.otp) {
+            return res.status(400).json({
+                message: 'Invalid OTP',
+                errorCode: 'INVALID_OTP'
+            });
+        }
+
+        const resetToken = jwt.sign(
+            { employeeid, purpose: 'password_reset' },
+            "myservice-secret",
+            { expiresIn: '10m' }
+        );
+
+        otpStore.delete(employeeid);
+
+        res.json({
+            success: true,
+            message: 'OTP verified successfully',
+            resetToken
+        });
+
+    } catch (err) {
+        console.error('OTP verification error:', err);
+        res.status(500).json({
+            message: 'Error verifying OTP',
+            errorCode: 'SERVER_ERROR'
+        });
+    }
+});
+// 4. Resend OTP
+router.post('/resend-otp', async (req, res) => {
+    try {
+        const { employeeid } = req.body;
+
+        if (!employeeid) {
+            return res.status(400).json({
+                message: 'Employee ID is required',
+                errorCode: 'MISSING_EMPLOYEE_ID'
+            });
+        }
+
+        // Find user by employee ID
+        const user = await User.findOne({ employeeid });
+        if (!user) {
+            return res.status(404).json({
+                message: 'No account found with this Employee ID',
+                errorCode: 'USER_NOT_FOUND'
+            });
+        }
+
+        // Generate new OTP
+        const otp = generateOTP();
+        const otpExpiry = Date.now() + 5 * 60 * 1000; // 5 minutes expiry
+
+        // Store OTP temporarily
+        otpStore.set(employeeid, {
+            otp,
+            expiry: otpExpiry,
+            email: user.email
+        });
+
+        // Send email with new OTP
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: user.email,
+            subject: 'New Password Reset OTP',
+            text: `Your new OTP for password reset is: ${otp}. This OTP is valid for 5 minutes.`
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.json({
+            success: true,
+            message: 'New OTP sent to registered email',
+            email: user.email.replace(/(.{2}).+@/, "$1****@") // mask email for display
+        });
+
+    } catch (err) {
+        console.error('Resend OTP error:', err);
+        res.status(500).json({
+            message: 'Error resending OTP',
+            errorCode: 'SERVER_ERROR'
+        });
+    }
+});
+// Password reset API
+router.post('/reset-password', async (req, res) => {
+    try {
+        const { employeeid, oldPassword, newPassword } = req.body;
+
+        // Validate required fields
+        if (!employeeid || !oldPassword || !newPassword) {
+            return res.status(400).json({
+                message: 'Employee ID, old password and new password are required',
+                errorCode: 'MISSING_FIELDS'
+            });
+        }
+
+        // Find user by employee ID
+        const user = await User.findOne({ employeeid });
+        if (!user) {
+            return res.status(404).json({
+                message: 'User not found with this employee ID',
+                errorCode: 'USER_NOT_FOUND'
+            });
+        }
+
+        // Check if user is active
+        if (user.status !== 'Active') {
+            return res.status(403).json({
+                message: 'Your account is deactivated. Please contact administrator.',
+                errorCode: 'ACCOUNT_DEACTIVATED'
+            });
+        }
+
+        // Verify old password
+        const isMatch = await bcrypt.compare(oldPassword, user.password);
+        if (!isMatch) {
+            return res.status(400).json({
+                message: 'Old password is incorrect',
+                errorCode: 'INVALID_OLD_PASSWORD'
+            });
+        }
+
+
+
+        // Hash the new password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        // Update password and modified date
+        user.password = hashedPassword;
+        user.modifiedAt = new Date();
+
+        // Save the updated user
+        await user.save();
+
+        res.json({
+            success: true,
+            message: 'Password reset successfully'
+        });
+
+    } catch (err) {
+        console.error('Password reset error:', err);
+        res.status(500).json({
+            message: 'Error resetting password',
+            errorCode: 'SERVER_ERROR',
+            errorDetails: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    }
+});
 router.patch('/user/:id/status', getUserById, async (req, res) => {
     try {
         const { status } = req.body;
@@ -184,8 +560,17 @@ const checkDuplicateEmployeeId = async (req, res, next) => {
 
 
 
-router.post('/user', checkDuplicateEmail, checkDuplicateEmployeeId, async (req, res) => {
+router.post('/user', upload.single('profileimage'), async (req, res) => {
     try {
+        // Parse JSON fields that were stringified in the frontend
+        const parseField = (field) => {
+            try {
+                return field ? JSON.parse(field) : (Array.isArray(field) ? field : []);
+            } catch (e) {
+                return [];
+            }
+        };
+
         const {
             firstname,
             lastname,
@@ -200,7 +585,6 @@ router.post('/user', checkDuplicateEmail, checkDuplicateEmployeeId, async (req, 
             employeeid,
             department,
             manageremail,
-            profileimage,
             deviceid,
             usertype,
             role,
@@ -211,7 +595,22 @@ router.post('/user', checkDuplicateEmail, checkDuplicateEmployeeId, async (req, 
 
         // Basic validation
         if (!email) {
-            return res.status(400).json({ message: 'Email is required' });
+            // Clean up uploaded file if validation fails
+            if (req.file) fs.unlinkSync(req.file.path);
+            return res.status(400).json({
+                message: 'Email is required',
+                field: 'email'
+            });
+        }
+
+        // Check for duplicate email
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            if (req.file) fs.unlinkSync(req.file.path);
+            return res.status(400).json({
+                message: 'Email already exists',
+                field: 'email'
+            });
         }
 
         // Use default password and hash it
@@ -222,66 +621,108 @@ router.post('/user', checkDuplicateEmail, checkDuplicateEmployeeId, async (req, 
             hashedPassword = await bcrypt.hash(defaultPassword, salt);
         } catch (hashError) {
             console.error('Password hashing failed:', hashError);
-            return res.status(500).json({ message: 'Password processing failed' });
+            if (req.file) fs.unlinkSync(req.file.path);
+            return res.status(500).json({
+                message: 'Password processing failed',
+                error: hashError.message
+            });
         }
 
-        // Prepare user object
+        // Handle profile image
+        let profileImageUrl = '';
+        if (req.file) {
+            profileImageUrl = `/uploads/${req.file.filename}`;
+        }
+
+
+        // Prepare user object with proper data types
         const userData = {
-            firstname: firstname || '',
-            lastname: lastname || '',
-            email: email || '',
-            mobilenumber: mobilenumber || '',
+            firstname: firstname?.trim() || '',
+            lastname: lastname?.trim() || '',
+            email: email.toLowerCase().trim(),
+            mobilenumber: mobilenumber?.trim() || '',
             status: "Active",
-            location: address || '',
-            city: city || '',
-            state: state || '',
-            country: country || '',
-            zipCode: zipCode || '',
+            location: address?.trim() || '',
+            city: city?.trim() || '',
+            state: state?.trim() || '',
+            country: country?.trim() || '',
+            zipCode: zipCode?.trim() || '',
             loginexpirydate: loginexpirydate ? new Date(loginexpirydate) : null,
-            employeeid: employeeid || '',
-            department: department || '',
-            password: hashedPassword, // using hardcoded password
-            manageremail: manageremail || '',
-            profileimage: profileimage || '',
-            deviceid: deviceid || '',
-            usertype: usertype || 'skanray',
-            skills: skills || [],
-            demographics: demographics || [],
+            employeeid: employeeid?.trim() || '',
+            department: department?.trim() || '',
+            password: hashedPassword,
+            manageremail: parseField(manageremail),
+            profileimage: profileImageUrl,
+            deviceid: deviceid?.trim() || '',
+            usertype: usertype?.toLowerCase() || 'skanray',
+            skills: parseField(skills),
+            demographics: parseField(demographics),
             modifiedAt: new Date(),
             createdAt: new Date()
         };
 
-        // Add role info
-        userData.role = {
-            roleName: role?.roleName || '',
-            roleId: role?.roleId || ''
-        };
+        // Add role info with validation
+        if (role) {
+            userData.role = {
+                roleName: role.roleName?.trim() || '',
+                roleId: role.roleId?.trim() || ''
+            };
+        }
 
-        // Dealer info if applicable
-        if (usertype === 'dealer') {
+        // Dealer info validation if applicable
+        if (usertype?.toLowerCase() === 'dealer' && dealerInfo) {
             userData.dealerInfo = {
-                dealerName: dealerInfo?.dealerName || '',
-                dealerId: dealerInfo?.dealerId || '',
-                dealerEmail: dealerInfo?.dealerEmail || '',
-                dealerCode: dealerInfo?.dealerCode || '',
+                dealerName: dealerInfo.dealerName?.trim() || '',
+                dealerId: dealerInfo.dealerId?.trim() || '',
+                dealerEmail: dealerInfo.dealerEmail?.trim() || '',
+                dealerCode: dealerInfo.dealerCode?.trim() || '',
             };
         }
 
         // Backward compatibility for branch
-        const branchData = demographics?.find(d => d.type === 'branch');
+        const branchData = userData.demographics?.find(d => d.type === 'branch');
         if (branchData) {
-            userData.branch = branchData.values.map(v => v.name) || [];
+            userData.branch = branchData.values?.map(v => v.name?.trim()).filter(Boolean) || [];
         }
 
+        // Create and save user
         const newUser = new User(userData);
         const savedUser = await newUser.save();
 
-        res.status(201).json(savedUser);
+        // Send response without sensitive data
+        const userResponse = savedUser.toObject();
+        delete userResponse.password;
+        delete userResponse.__v;
+
+        res.status(201).json({
+            success: true,
+            message: 'User created successfully',
+            user: userResponse
+        });
+
     } catch (err) {
         console.error("Error creating user:", err);
-        res.status(400).json({
-            message: err.message,
-            errorDetails: process.env.NODE_ENV === 'development' ? err.stack : undefined
+
+        // Clean up uploaded file if error occurs
+        if (req.file) {
+            try {
+                fs.unlinkSync(req.file.path);
+            } catch (cleanupError) {
+                console.error('Error cleaning up uploaded file:', cleanupError);
+            }
+        }
+
+        // Determine appropriate status code
+        const statusCode = err.name === 'ValidationError' ? 400 : 500;
+
+        res.status(statusCode).json({
+            success: false,
+            message: err.message || 'Failed to create user',
+            error: process.env.NODE_ENV === 'development' ? {
+                name: err.name,
+                stack: err.stack,
+                ...err
+            } : undefined
         });
     }
 });
@@ -472,76 +913,147 @@ router.post('/remove-device', async (req, res) => {
 
 
 // UPDATE a user
-router.put('/user/:id', getUserById, checkDuplicateEmail, async (req, res) => {
+router.put('/user/:id', upload.single('profileimage'), getUserById, checkDuplicateEmail, async (req, res) => {
     try {
         const user = res.user;
+        const oldProfileImage = user.profileimage; // Store old image path for cleanup
 
-        // Basic fields
+        // Parse JSON fields that might be stringified
+        const parseField = (field) => {
+            try {
+                return field ? JSON.parse(field) : (Array.isArray(field) ? field : []);
+            } catch (e) {
+                return [];
+            }
+        };
+
+        if (req.file) {
+            // Delete old image if it exists
+            if (oldProfileImage) {
+                const oldImagePath = path.join(__dirname, '../../../', oldProfileImage.replace('/uploads/', ''));
+                if (fs.existsSync(oldImagePath)) {
+                    fs.unlinkSync(oldImagePath);
+                }
+            }
+            user.profileimage = `/uploads/${req.file.filename}`; // Updated path
+        } else if (req.body.removeProfileImage === 'true') {
+            // Handle explicit profile image removal
+            if (oldProfileImage) {
+                const oldImagePath = path.join(__dirname, '../../../', oldProfileImage);
+                if (fs.existsSync(oldImagePath)) {
+                    fs.unlinkSync(oldImagePath);
+                }
+            }
+            user.profileimage = '';
+        }
+
+
+        // Basic fields update with validation
         const fieldsToUpdate = [
             'firstname', 'lastname', 'email', 'mobilenumber', 'address',
             'city', 'state', 'country', 'zipCode', 'loginexpirydate',
-            'employeeid', 'department', 'manageremail', 'profileimage',
-            'deviceid', 'usertype'
+            'employeeid', 'department', 'deviceid', 'usertype'
         ];
 
         fieldsToUpdate.forEach(field => {
             if (req.body[field] !== undefined) {
-                user[field] = req.body[field];
+                user[field] = typeof req.body[field] === 'string' ? req.body[field].trim() : req.body[field];
             }
         });
 
+        // Email case normalization
+        if (req.body.email) {
+            user.email = req.body.email.toLowerCase().trim();
+        }
+
+        // Manager email update (could be string or array)
+        if (req.body.manageremail !== undefined) {
+            user.manageremail = parseField(req.body.manageremail);
+        }
+
         // Role update
-        if (req.body.role && (req.body.role.roleName || req.body.role.roleId)) {
+        if (req.body.role) {
             user.role = {
-                roleName: req.body.role.roleName || user.role?.roleName || '',
-                roleId: req.body.role.roleId || user.role?.roleId || ''
+                roleName: req.body.role.roleName?.trim() || user.role?.roleName || '',
+                roleId: req.body.role.roleId?.trim() || user.role?.roleId || ''
             };
         }
 
-        // Dealer info update (if usertype is 'dealer')
-        if (req.body.usertype === 'dealer' && req.body.dealerInfo) {
+        // Dealer info update
+        if (req.body.usertype === 'dealer') {
             user.dealerInfo = {
-                dealerName: req.body.dealerInfo.dealerName || user.dealerInfo?.dealerName || '',
-                dealerId: req.body.dealerInfo.dealerId || user.dealerInfo?.dealerId || '',
-                dealerEmail: req.body.dealerInfo.dealerEmail || user.dealerInfo?.dealerEmail || '',
-                dealerCode: req.body.dealerInfo.dealerCode || user.dealerInfo?.dealerCode || '',
+                dealerName: req.body.dealerInfo?.dealerName?.trim() || user.dealerInfo?.dealerName || '',
+                dealerId: req.body.dealerInfo?.dealerId?.trim() || user.dealerInfo?.dealerId || '',
+                dealerEmail: req.body.dealerInfo?.dealerEmail?.trim() || user.dealerInfo?.dealerEmail || '',
+                dealerCode: req.body.dealerInfo?.dealerCode?.trim() || user.dealerInfo?.dealerCode || ''
             };
+        } else {
+            // Clear dealer info if user type changed from dealer
+            user.dealerInfo = undefined;
         }
 
-        // Skills update (Array of objects)
-        if (Array.isArray(req.body.skills)) {
-            user.skills = req.body.skills;
+        // Skills update
+        if (req.body.skills !== undefined) {
+            user.skills = parseField(req.body.skills);
         }
 
         // Demographics update
-        if (Array.isArray(req.body.demographics)) {
-            user.demographics = req.body.demographics;
+        if (req.body.demographics !== undefined) {
+            user.demographics = parseField(req.body.demographics);
 
-            // For backward compatibility, extract branch names from demographics
-            const branchData = req.body.demographics.find(d => d.type === 'branch');
-            if (branchData && Array.isArray(branchData.values)) {
-                user.branch = branchData.values.map(v => v.name);
+            // Backward compatibility for branch
+            const branchData = user.demographics.find(d => d.type === 'branch');
+            if (branchData) {
+                user.branch = branchData.values?.map(v => v.name?.trim()).filter(Boolean) || [];
             }
         }
 
-        // Location array
-        if (Array.isArray(req.body.location)) {
-            user.location = req.body.location;
+        // Location update
+        if (req.body.location !== undefined) {
+            user.location = Array.isArray(req.body.location)
+                ? req.body.location.map(loc => loc?.trim()).filter(Boolean)
+                : [req.body.location?.trim()].filter(Boolean);
         }
 
-        user.modifiedAt = new Date(); // always update modified date
+        user.modifiedAt = new Date();
 
         const updatedUser = await user.save();
-        res.json(updatedUser);
+
+        // Prepare response without sensitive data
+        const userResponse = updatedUser.toObject();
+        delete userResponse.password;
+        delete userResponse.__v;
+
+        res.json({
+            success: true,
+            message: 'User updated successfully',
+            user: userResponse
+        });
+
     } catch (err) {
         console.error('User update failed:', err);
-        res.status(400).json({
-            message: 'User update failed',
-            errorDetails: process.env.NODE_ENV === 'development' ? err.stack : undefined
+
+        // Clean up uploaded file if error occurs
+        if (req.file) {
+            try {
+                fs.unlinkSync(req.file.path);
+            } catch (cleanupError) {
+                console.error('Error cleaning up uploaded file:', cleanupError);
+            }
+        }
+
+        const statusCode = err.name === 'ValidationError' ? 400 : 500;
+        res.status(statusCode).json({
+            success: false,
+            message: err.message || 'User update failed',
+            error: process.env.NODE_ENV === 'development' ? {
+                name: err.name,
+                stack: err.stack,
+                ...err
+            } : undefined
         });
     }
 });
-
 
 
 // DELETE a user
