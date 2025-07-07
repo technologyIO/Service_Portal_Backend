@@ -38,6 +38,10 @@ const getChecklistHTML = ({
 
   const checklistRows = itemRows + blankRows;
 
+  // Get equipment used serial number and calibration date from the first checklist item
+  const equipmentUsedSerial = checklistItems[0]?.equipmentUsedSerial || "";
+  const calibrationDueDate = checklistItems[0]?.calibrationDueDate || "";
+
   return `
   <!DOCTYPE html>
   <html>
@@ -113,6 +117,39 @@ const getChecklistHTML = ({
           font-size: 16px;
           padding: 5px;
         }
+
+        .equipment-used-table {
+          border: 1px solid #000; 
+          width: 100%; 
+          font-family: Arial, sans-serif; 
+          font-size: 14px;
+          margin-bottom: 10px;
+        }
+        
+        .equipment-used-header {
+          padding: 4px; 
+          font-weight: bold; 
+          border-bottom: 1px solid #000;
+        }
+        
+        .equipment-used-row {
+          display: flex;
+        }
+        
+        .equipment-used-cell {
+          padding: 6px;
+        }
+        
+        .equipment-used-label {
+          flex: 1; 
+          border-right: 1px solid #000;
+        }
+        
+        .cal-due-label {
+          width: 150px; 
+          border-right: 1px solid #000; 
+          font-weight: bold;
+        }
       </style>
     </head>
     <body>
@@ -183,6 +220,24 @@ const getChecklistHTML = ({
             <td class="cell">${machine?.serialNumber || ""}</td>
           </tr>
         </table>
+
+        <!-- Equipment Used Section -->
+        <div class="equipment-used-table">
+          <div class="equipment-used-header">
+            EQUIPMENT USED:
+          </div>
+          <div class="equipment-used-row">
+            <div class="equipment-used-cell equipment-used-label">
+              Digital Multi meter S/L# --> ${equipmentUsedSerial || "(If used)"}
+            </div>
+            <div class="equipment-used-cell cal-due-label">
+              Cal Due Date:
+            </div>
+            <div class="equipment-used-cell">
+              ${calibrationDueDate || ""}
+            </div>
+          </div>
+        </div>
 
         <!-- Checklist Table -->
         <table>

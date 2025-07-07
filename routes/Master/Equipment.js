@@ -455,7 +455,10 @@ router.post("/equipment/bulk", async (req, res) => {
             ...pdfData,
             installationreportno: reportNo,
             abnormalCondition: req.body.abnormalCondition || "",
-            voltageData: req.body.voltageData || {}
+            voltageData: req.body.voltageData || {},
+            // Include equipment used and calibration date in the PDF
+            equipmentUsedSerial: equipmentPayloads[0]?.equipmentUsedSerial || "",
+            calibrationDueDate: equipmentPayloads[0]?.calibrationDueDate || ""
         });
 
         const installationBuffer = await generateSimplePdf(installationHtml);
@@ -487,14 +490,31 @@ router.post("/equipment/bulk", async (req, res) => {
                     const serialNumber = equipment.serialnumber;
                     response.processedRecords++;
 
-                    // Find matching checklist
+                    // Find matching checklist and enhance it with equipment data
                     const checklist = checklistPayloads.find(cp => cp.serialNumber === serialNumber);
+                    
+                    // Create enhanced checklist data
+                    const enhancedChecklist = checklist ? {
+                        ...checklist,
+                        // Add equipment used and calibration date to the checklist
+                        equipmentUsedSerial: equipment.equipmentUsedSerial || "",
+                        calibrationDueDate: equipment.calibrationDueDate || "",
+                        // Ensure these fields are included in the first checklist item
+                        checklistResults: checklist.checklistResults?.map((item, index) => ({
+                            ...item,
+                            // Only include in first item to avoid duplication
+                            ...(index === 0 ? {
+                                equipmentUsedSerial: equipment.equipmentUsedSerial || "",
+                                calibrationDueDate: equipment.calibrationDueDate || ""
+                            } : {})
+                        })) || []
+                    } : null;
 
                     // Generate checklist PDF if exists
                     let checklistBuffer = null;
-                    if (checklist?.checklistResults?.length > 0) {
-                        const formatDetails = checklist.prodGroup ?
-                            await FormatMaster.findOne({ productGroup: checklist.prodGroup }) :
+                    if (enhancedChecklist?.checklistResults?.length > 0) {
+                        const formatDetails = enhancedChecklist.prodGroup ?
+                            await FormatMaster.findOne({ productGroup: enhancedChecklist.prodGroup }) :
                             null;
 
                         const checklistHtml = getChecklistHTML({
@@ -513,9 +533,12 @@ router.post("/equipment/bulk", async (req, res) => {
                                 modelDescription: equipment.materialdescription,
                                 serialNumber,
                                 machineId: "",
+                                // Include equipment used and calibration date in the checklist PDF
+                                equipmentUsed: equipment.equipmentUsedSerial || "",
+                                calibrationDueDate: equipment.calibrationDueDate || ""
                             },
-                            remarkglobal: checklist.globalRemark || "",
-                            checklistItems: checklist.checklistResults,
+                            remarkglobal: enhancedChecklist.globalRemark || "",
+                            checklistItems: enhancedChecklist.checklistResults,
                             serviceEngineer: `${pdfData.userInfo?.firstName || ""} ${pdfData.userInfo?.lastName || ""}`,
                             formatChlNo: formatDetails?.chlNo || "",
                             formatRevNo: formatDetails?.revNo || "",
@@ -549,9 +572,6 @@ router.post("/equipment/bulk", async (req, res) => {
                             disableUrlAccess: true
                         });
                     }
-                    console.log("Customer Email", pdfData.email)
-                    console.log("pdfData.userInfo?.dealerEmail", pdfData.userInfo?.dealerEmail)
-                    console.log("pdfData.userInfo?.email", pdfData.userInfo?.email)
 
                     // 2. Then send email to dealer's email and user's email from userInfo
                     if (pdfData.userInfo) {
@@ -564,7 +584,7 @@ router.post("/equipment/bulk", async (req, res) => {
                                     ? [pdfData.userInfo.manageremail]
                                     : []),
                             'ftshivamtiwari222@gmail.com',
-                             'Damodara.s@skanray.com'
+                            // 'Damodara.s@skanray.com'
                         ].filter(Boolean);
 
                         if (toEmails.length > 0) {
@@ -580,8 +600,17 @@ router.post("/equipment/bulk", async (req, res) => {
                         }
                     }
 
-
-
+                    // Update equipment in database with the calibration and equipment info
+                    await Equipment.findOneAndUpdate(
+                        { serialnumber: serialNumber },
+                        { 
+                            $set: { 
+                                equipmentUsedSerial: equipment.equipmentUsedSerial || "",
+                                calibrationDueDate: equipment.calibrationDueDate || ""
+                            } 
+                        },
+                        { new: true }
+                    );
 
                     equipmentResult.status = 'Completed';
                     response.summary.totalCreated++;

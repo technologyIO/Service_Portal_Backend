@@ -10,7 +10,6 @@ const CitySchema = new mongoose.Schema({
     },
     cityID: {
         type: String,
-        required: true,
         unique: true
     },
     createdAt: {

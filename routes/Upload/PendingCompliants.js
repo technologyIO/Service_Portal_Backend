@@ -289,8 +289,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
       serial_no,
       description,
       part_no,
-      // 'customer' here is the customer code we receive from frontend
-      // which we'll use to look up the actual hospital name & city
+      serviceEngineer,
       customer,
       name,
       city,
@@ -358,7 +357,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
                 </tr>
                 <tr>
                   <td style="padding: 4px;">Service Engineer:</td>
-                  <td style="padding: 4px;">${userInfo}</td>
+                  <td style="padding: 4px;">${serviceEngineer}</td>
                 </tr>
                 <tr>
                   <td style="padding: 4px;">Service Engineer Mobile:</td>
@@ -1349,7 +1348,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
               ? [userInfo.manageremail]
               : []),
           'ftshivamtiwari222@gmail.com',
-          'Damodara.s@skanray.com'
+          // 'Damodara.s@skanray.com'
         ].filter(Boolean);
         console.log("Sending email to:", toEmails.join(", "));
 
