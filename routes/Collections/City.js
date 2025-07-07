@@ -18,21 +18,21 @@ async function getCity(req, res, next) {
 }
 
 // Middleware: Check Duplicate City
-async function checkDuplicateCity(req, res, next) {
-    const { name, branch, cityID } = req.body;
-    try {
-        const existingCity = await City.findOne({ $or: [{ name, branch }, { cityID }] });
-        if (existingCity) {
-            return res.status(400).json({ message: 'City with the same name/branch or cityID already exists' });
-        }
-        next();
-    } catch (err) {
-        return res.status(500).json({ message: err.message });
-    }
-}
+// async function checkDuplicateCity(req, res, next) {
+//     const { name, branch, cityID } = req.body;
+//     try {
+//         const existingCity = await City.findOne({ $or: [{ name, branch }, { cityID }] });
+//         if (existingCity) {
+//             return res.status(400).json({ message: 'City with the same name/branch or cityID already exists' });
+//         }
+//         next();
+//     } catch (err) {
+//         return res.status(500).json({ message: err.message });
+//     }
+// }
 
 // Create City
-router.post('/city', checkDuplicateCity, async (req, res) => {
+router.post('/city', async (req, res) => {
     try {
         const newCity = new City(req.body);
         const savedCity = await newCity.save();
