@@ -1,9 +1,9 @@
 const mongoose = require('mongoose');
-
 const CitySchema = new mongoose.Schema({
     name: {
         type: String,
-        required: true
+        required: true,
+        unique: true  // This ensures city names are unique globally
     },
     status: {
         type: String,
@@ -11,7 +11,7 @@ const CitySchema = new mongoose.Schema({
     cityID: {
         type: String,
         unique: true,
-        sparse: true  // This is the key change
+        sparse: true
     },
     createdAt: {
         type: Date,

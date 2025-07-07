@@ -34,13 +34,23 @@ async function getCity(req, res, next) {
 // Create City
 router.post('/city', async (req, res) => {
     try {
-        const { cityID } = req.body;
+        const { name } = req.body;
+
+        // Check for duplicate city name
+        const existingCity = await City.findOne({ name });
+        if (existingCity) {
+            return res.status(400).json({
+                message: 'City with this name already exists'
+            });
+        }
 
         // Check for duplicate cityID if provided
-        if (cityID) {
-            const existingCity = await City.findOne({ cityID });
-            if (existingCity) {
-                return res.status(400).json({ message: 'cityID must be unique' });
+        if (req.body.cityID) {
+            const cityWithSameID = await City.findOne({ cityID: req.body.cityID });
+            if (cityWithSameID) {
+                return res.status(400).json({
+                    message: 'cityID must be unique'
+                });
             }
         }
 
@@ -48,6 +58,19 @@ router.post('/city', async (req, res) => {
         const savedCity = await newCity.save();
         res.status(201).json(savedCity);
     } catch (err) {
+        if (err.code === 11000) {
+            // Handle duplicate key errors
+            if (err.keyPattern.name) {
+                return res.status(400).json({
+                    message: 'City name must be unique'
+                });
+            }
+            if (err.keyPattern.cityID) {
+                return res.status(400).json({
+                    message: 'cityID must be unique'
+                });
+            }
+        }
         res.status(400).json({ message: err.message });
     }
 });
@@ -94,17 +117,50 @@ router.get('/allcity', async (req, res) => {
 // Update City
 router.patch('/city/:id', getCity, async (req, res) => {
     const { name, status, branch, cityID } = req.body;
+
+    // Check if name is being changed to an existing one
+    if (name && name !== res.city.name) {
+        const existingCity = await City.findOne({ name });
+        if (existingCity) {
+            return res.status(400).json({
+                message: 'City with this name already exists'
+            });
+        }
+    }
+
+    // Check for duplicate cityID if changing
+    if (cityID && cityID !== res.city.cityID) {
+        const cityWithSameID = await City.findOne({ cityID });
+        if (cityWithSameID) {
+            return res.status(400).json({
+                message: 'cityID must be unique'
+            });
+        }
+    }
+
+    // Update fields
     if (name != null) res.city.name = name;
     if (status != null) res.city.status = status;
     if (branch != null) res.city.branch = branch;
     if (cityID != null) res.city.cityID = cityID;
-
     res.city.modifiedAt = Date.now();
 
     try {
         const updatedCity = await res.city.save();
         res.json(updatedCity);
     } catch (err) {
+        if (err.code === 11000) {
+            if (err.keyPattern.name) {
+                return res.status(400).json({
+                    message: 'City name must be unique'
+                });
+            }
+            if (err.keyPattern.cityID) {
+                return res.status(400).json({
+                    message: 'cityID must be unique'
+                });
+            }
+        }
         res.status(400).json({ message: err.message });
     }
 });
