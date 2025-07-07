@@ -4,7 +4,11 @@ const BranchSchema = new mongoose.Schema({
     name: {
         type: String,
         required: true,
-        unique: true,
+        unique: true, // Only name must be unique
+    },
+    state: {
+        type: String,
+        required: true,
     },
     status: {
         type: String,
@@ -19,10 +23,6 @@ const BranchSchema = new mongoose.Schema({
         default: Date.now
     },
     branchShortCode: {
-        type: String,
-        required: true
-    },
-    state: {
         type: String,
         required: true
     }

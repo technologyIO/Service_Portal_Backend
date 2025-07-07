@@ -17,11 +17,11 @@ async function getBranch(req, res, next) {
 }
 
 async function checkDuplicateBranch(req, res, next) {
-    const { name, city, state } = req.body;
+    const { name } = req.body;
     try {
-        const existingBranch = await Branch.findOne({ name, city, state });
+        const existingBranch = await Branch.findOne({ name });
         if (existingBranch) {
-            return res.status(400).json({ message: 'Branch Already Exist' })
+            return res.status(400).json({ message: 'Branch with this name already exists' });
         }
         next();
     } catch (err) {
@@ -30,15 +30,20 @@ async function checkDuplicateBranch(req, res, next) {
 }
 
 
+
 router.post('/branch', checkDuplicateBranch, async (req, res) => {
     try {
         const newBranch = new Branch(req.body);
         const savedBranch = await newBranch.save();
         res.status(201).json(savedBranch);
     } catch (err) {
-        res.status(400).json({ message: err.message })
+        if (err.code === 11000) {
+            return res.status(400).json({ message: 'Duplicate branch name not allowed' });
+        }
+        res.status(400).json({ message: err.message });
     }
-})
+});
+
 
 
 router.get('/branch', async (req, res) => {
