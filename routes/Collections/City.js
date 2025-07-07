@@ -34,6 +34,16 @@ async function getCity(req, res, next) {
 // Create City
 router.post('/city', async (req, res) => {
     try {
+        const { cityID } = req.body;
+
+        // Check for duplicate cityID if provided
+        if (cityID) {
+            const existingCity = await City.findOne({ cityID });
+            if (existingCity) {
+                return res.status(400).json({ message: 'cityID must be unique' });
+            }
+        }
+
         const newCity = new City(req.body);
         const savedCity = await newCity.save();
         res.status(201).json(savedCity);

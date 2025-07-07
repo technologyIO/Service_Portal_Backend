@@ -10,7 +10,8 @@ const CitySchema = new mongoose.Schema({
     },
     cityID: {
         type: String,
-        unique: true
+        unique: true,
+        sparse: true  // This is the key change
     },
     createdAt: {
         type: Date,
