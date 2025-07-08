@@ -206,4 +206,37 @@ router.delete('/api/region/:id', async (req, res) => {
     }
 });
 
+router.get('/searchregion', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        // Check if the query parameter is missing
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter "q" is required' });
+        }
+
+        const query = {
+            $or: [
+                { regionName: { $regex: q, $options: 'i' } },  
+                { country: { $regex: q, $options: 'i' } } 
+            ]
+        };
+
+        // Fetch the results from the database
+        const region = await Region.find(query);
+
+        // If no results found, send a 404 response
+        if (!region || region.length === 0) {
+            return res.status(404).json({ message: 'No results found' });
+        }
+
+        // Return the found data
+        res.json(region);
+
+    } catch (err) {
+        // Handle unexpected errors and send a detailed message
+        res.status(500).json({ message: 'Server error: ' + err.message });
+    }
+});
+
 module.exports = router;

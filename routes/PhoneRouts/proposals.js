@@ -246,20 +246,20 @@ router.put('/:id/revision', async (req, res) => {
             { new: true }
         );
 
-         const cicUser = await User.findOne({
-                    'role.roleName': 'CIC',
-                    'role.roleId': 'C1'
-                });
-        
-                if (!cicUser) {
-                    console.error("CIC user not found");
-                    return;
-                }
+        const cicUser = await User.findOne({
+            'role.roleName': 'CIC',
+            'role.roleId': 'C1'
+        });
+
+        if (!cicUser) {
+            console.error("CIC user not found");
+            return;
+        }
         // Email setup
         const proposalLink = `https://service-portal-admin.vercel.app/proposal/${req.params.id}`;
         const mailOptions = {
             from: 'webadmin@skanray-access.com',
-            to: cicUser.email,
+            to: 'ftshivamtiwari222@gmail.com',
             subject: `Proposal Revision #${newRevisionNumber} - Approval Needed`,
             html: `
                 <p>Dear CIC,</p>

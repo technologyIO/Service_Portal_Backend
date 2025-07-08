@@ -217,7 +217,7 @@ router.get('/dealerstocksearch', async (req, res) => {
                 { materialcode: { $regex: q, $options: 'i' } },
                 { materialdescription: { $regex: q, $options: 'i' } },
                 { plant: { $regex: q, $options: 'i' } },
-                ...(numericQuery !== null ? [{ unrestrictedquantity: numericQuery }] : []), // Add numeric query conditionally
+                ...(numericQuery !== null ? [{ unrestrictedquantity: numericQuery }] : []),  
                 { status: { $regex: q, $options: 'i' } },
             ]
         };

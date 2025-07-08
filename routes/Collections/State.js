@@ -139,7 +139,8 @@ router.get('/searchState', async (req, res) => {
             $or: [
                 { name: { $regex: q, $options: 'i' } },
                 { status: { $regex: q, $options: 'i' } },
-                { country: { $regex: q, $options: 'i' } },
+                { region: { $regex: q, $options: 'i' } },
+                { stateId: { $regex: q, $options: 'i' } },
 
             ]
         };

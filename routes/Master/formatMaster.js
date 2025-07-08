@@ -83,5 +83,35 @@ router.delete("/format/:id", async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 });
+router.get('/searchformat', async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { productGroup: { $regex: q, $options: 'i' } },
+                { chlNo: { $regex: q, $options: 'i' } },
+                { type: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
+            ]
+        };
+
+        // If q is a number, also search by revNo
+        if (!isNaN(q)) {
+            query.$or.push({ revNo: Number(q) });
+        }
+
+        const users = await FormatMaster.find(query);
+        res.json(users);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+
 
 module.exports = router;

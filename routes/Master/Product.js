@@ -65,6 +65,7 @@ router.get('/productbypage', async (req, res) => {
 
 
 
+
 router.get('/skillbyproductgroup', async (req, res) => {
   try {
     const groupedProducts = await Product.aggregate([

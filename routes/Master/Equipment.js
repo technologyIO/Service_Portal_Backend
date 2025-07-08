@@ -492,7 +492,7 @@ router.post("/equipment/bulk", async (req, res) => {
 
                     // Find matching checklist and enhance it with equipment data
                     const checklist = checklistPayloads.find(cp => cp.serialNumber === serialNumber);
-                    
+
                     // Create enhanced checklist data
                     const enhancedChecklist = checklist ? {
                         ...checklist,
@@ -603,11 +603,11 @@ router.post("/equipment/bulk", async (req, res) => {
                     // Update equipment in database with the calibration and equipment info
                     await Equipment.findOneAndUpdate(
                         { serialnumber: serialNumber },
-                        { 
-                            $set: { 
+                        {
+                            $set: {
                                 equipmentUsedSerial: equipment.equipmentUsedSerial || "",
                                 calibrationDueDate: equipment.calibrationDueDate || ""
-                            } 
+                            }
                         },
                         { new: true }
                     );
@@ -732,7 +732,8 @@ router.get('/searchequipment', async (req, res) => {
                 { currentcustomer: { $regex: q, $options: 'i' } },
                 { dealer: { $regex: q, $options: 'i' } },
                 { palnumber: { $regex: q, $options: 'i' } },
-                { equipmentid: { $regex: q, $options: 'i' } }
+                { equipmentid: { $regex: q, $options: 'i' } },
+                { installationreportno: { $regex: q, $options: 'i' } }
             ]
         };
 

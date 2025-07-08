@@ -380,7 +380,7 @@ router.post("/otp/verify", async (req, res) => {
 //
 router.post("/reportAndUpdate", async (req, res) => {
   try {
-    const { pmData, checklistData, customerCode, globalRemark } = req.body;
+    const { pmData, checklistData, customerCode, globalRemark, userInfo } = req.body;
 
     if (!pmData || !customerCode) {
       return res.status(400).json({ message: "PM data and customer code are required" });
@@ -528,36 +528,52 @@ router.post("/reportAndUpdate", async (req, res) => {
 //
 router.post("/sendAllPdfs", async (req, res) => {
   try {
-    const { customerCode } = req.body;
+    const {
+      customerCode,
+      email,            // Service engineer email
+      manageremail,     // Array of manager emails
+      dealerEmail       // Optional dealer email
+    } = req.body;
+
     if (!customerCode) {
       return res
         .status(400)
         .json({ message: "Customer code is required to send PDFs" });
     }
+
     const customer = await Customer.findOne({ customercodeid: customerCode });
     if (!customer || !customer.email) {
       return res
         .status(404)
         .json({ message: "Customer or customer email not found" });
     }
+
     if (!pdfStore[customerCode] || pdfStore[customerCode].length === 0) {
       return res
         .status(400)
         .json({ message: "No PDFs available for this customer" });
     }
+
     const attachments = pdfStore[customerCode].map((f) => ({
       filename: f.filename,
       content: f.buffer,
       contentType: "application/pdf"
     }));
 
+    // Build recipient list:
+    const recipients = [customer.email]; // always send to customer
+    if (email) recipients.push(email); // service engineer
+    if (Array.isArray(manageremail)) recipients.push(...manageremail); // all managers
+    if (dealerEmail) recipients.push(dealerEmail); // optional dealer
+
     const mailOptions = {
       from: "webadmin@skanray-access.com",
-      to: customer.email,
+      to: recipients, // will include all valid emails
       subject: "Skanray - Your Checklist PDFs",
       text: "Please find attached the completed checklist PDFs for your PMs.",
       attachments
     };
+
     transporter.sendMail(mailOptions, (error, info) => {
       if (error) {
         console.error("Error sending final email:", error);
@@ -565,12 +581,10 @@ router.post("/sendAllPdfs", async (req, res) => {
           .status(500)
           .json({ message: "Failed to send final email" });
       }
-      // Clear the pdfStore for this customer, so we don’t re-send the same PDFs
-      delete pdfStore[customerCode];
-      return res.json({
-        message: "All PDF attachments sent successfully"
-      });
+      delete pdfStore[customerCode]; // Clear the stored PDFs
+      return res.json({ message: "All PDF attachments sent successfully" });
     });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

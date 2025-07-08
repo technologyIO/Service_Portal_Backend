@@ -148,20 +148,12 @@ router.post('/customer/send-email', async (req, res) => {
       </p>
     `;
 
-    const cicUser = await User.findOne({
-        'role.roleName': 'CIC',
-        'role.roleId': 'C1'
-    });
 
-    if (!cicUser) {
-        console.error("CIC user not found");
-        return;
-    }
 
     // Email options
     const mailOptions = {
         from: 'webadmin@skanray-access.com',
-        to: cicUser.email,
+        to: 'ftshivamtiwari222@gmail.com',
         subject: 'New Customer Creation',
         html: emailContent
     };

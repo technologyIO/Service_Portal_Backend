@@ -366,7 +366,7 @@ const generateAndSendPdf = async (cnoteData, res) => {
 
         const mailOptions = {
             from: 'webadmin@skanray-access.com',
-            to: cicUser.email,
+            to: 'ftshivamtiwari222@gmail.com',
             subject: `CNote Generated - ${cnoteData.cnoteNumber}`,
             text: `CNote ${cnoteData.cnoteNumber} for ${cnoteData.customer.customername}`,
             attachments: [

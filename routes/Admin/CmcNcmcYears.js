@@ -56,23 +56,59 @@ router.get('/:id', getCmcNcmcYearById, (req, res) => {
 });
 
 // SEARCH by year or status
-router.get('/search', async (req, res) => {
+router.get('/cmcncmyears', async (req, res) => {
     const { q } = req.query;
-    if (!q) return res.status(400).json({ message: 'Query is required' });
+
+    if (!q) {
+        return res.status(400).json({ message: 'Query parameter "q" is required' });
+    }
 
     try {
-        const result = await CmcNcmcYear.find({
-            $or: [
-                { year: { $regex: q, $options: 'i' } },
-                { status: { $regex: q, $options: 'i' } }
-            ]
-        });
+        const query = { $or: [] };
 
-        res.json(result);
+        // Search by year (if numeric)
+        if (!isNaN(q)) {
+            query.$or.push({ year: Number(q) });
+        }
+
+        // Search by status (case-insensitive)
+        query.$or.push({ status: { $regex: q, $options: 'i' } });
+
+        const results = await CmcNcmcYear.find(query);
+        res.json(results);
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        console.error('Search error:', err);
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
+router.get('/search', async (req, res) => {
+  try {
+    const { query } = req.query;
+
+    if (!query) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    // Build search query
+    const searchQuery = {
+      $or: [
+        { status: { $regex: query, $options: 'i' } } // Case-insensitive status search
+      ]
+    };
+
+    // Add year search if query is a number
+    if (!isNaN(query)) {
+      searchQuery.$or.push({ year: parseInt(query) });
+    }
+
+    const results = await CmcNcmcYear.find(searchQuery);
+    res.json(results);
+  } catch (error) {
+    console.error('Search error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 
 // CREATE
 router.post('/', checkDuplicateYear, async (req, res) => {

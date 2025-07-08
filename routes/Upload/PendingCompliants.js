@@ -257,7 +257,7 @@ router.post('/sendComplaintEmail', async (req, res) => {
     // 7. Set up mail options with the HTML body
     const mailOptions = {
       from: 'webadmin@skanray-access.com',
-      to: cicUser.email,
+      to: 'ftshivamtiwari222@gmail.com',
       subject: 'New Complaint',
       html: emailBodyHtml,
     };
@@ -661,7 +661,7 @@ router.delete('/pendingcomplaints/:id', getPendingComplaintById, async (req, res
   }
 });
 
-router.get('/pendinginstallationsearch', async (req, res) => {
+router.get('/pendingcomplaintsearch', async (req, res) => {
   try {
     const { q } = req.query;
 

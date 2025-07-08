@@ -125,12 +125,15 @@ router.delete('/dealer/:id', async (req, res) => {
 router.get('/searchdealer', async (req, res) => {
     try {
         const { q } = req.query;
-        if (!q) return res.status(400).json({ message: 'Query parameter is required' });
+
+        if (!q || typeof q !== 'string') {
+            return res.status(400).json({ message: 'Query parameter is required and must be a string' });
+        }
 
         const query = {
             $or: [
                 { name: { $regex: q, $options: 'i' } },
-                { personresponsible: { $regex: q, $options: 'i' } },
+                { 'personresponsible.name': { $regex: q, $options: 'i' } }, // ✅ fixed
                 { email: { $regex: q, $options: 'i' } },
                 { dealercode: { $regex: q, $options: 'i' } },
                 { city: { $regex: q, $options: 'i' } },
@@ -143,8 +146,11 @@ router.get('/searchdealer', async (req, res) => {
         const dealers = await Dealer.find(query);
         res.json(dealers);
     } catch (err) {
+        console.error(err);
         res.status(500).json({ message: err.message });
     }
 });
+
+
 
 module.exports = router;
