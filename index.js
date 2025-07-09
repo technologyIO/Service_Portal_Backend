@@ -61,6 +61,7 @@ const CNoteRoutes = require('./routes/PhoneRouts/cnoteController');
 const componentRoutes = require('./routes/Role/componentRoutes');
 const roleRoutes = require('./routes/Role/roleRoutes');
 const reportRoutes = require('./routes/Role/reportRoutes');
+const CustomerBulk = require('./BulkUpload/Upload/CustomerBulk');
 const mobilecomponentRoutes = require('./routes/Role/MobileComponent');
 const path = require('path');
 const fs = require('fs');
@@ -176,6 +177,7 @@ app.use('/bulk/hubstock', HubStockBulk);
 app.use('/bulk/pendingcomplaints', PendingComplaintsBulk);
 app.use('/bulk/sparemaster', SpareMasterBulk);
 app.use('/bulk/pendinginstallation', pendingInstallationBulk);
+app.use('/bulk/customer', CustomerBulk);
 
 
 // Routes

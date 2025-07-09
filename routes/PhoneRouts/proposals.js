@@ -11,17 +11,77 @@ const transporter = nodemailer.createTransport({
         pass: 'rdzegwmzirvbjcpm'
     }
 });
+
+// Verify transporter connection on startup
+transporter.verify((error) => {
+    if (error) {
+        console.error('Mail transporter error:', error);
+    } else {
+        console.log('Mail transporter is ready');
+    }
+});
 // Create a new proposal
 router.post('/', async (req, res) => {
     try {
         const proposalData = req.body;
-        const proposal = new Proposal(proposalData);
-        await proposal.save();
+        let proposal;
+        let retries = 3;
+        let lastError;
+
+        while (retries > 0) {
+            try {
+                proposal = new Proposal(proposalData);
+                await proposal.save();
+                break;
+            } catch (error) {
+                lastError = error;
+                retries--;
+
+                // Only retry on duplicate key errors
+                if (error.code !== 11000) {
+                    break;
+                }
+
+                // Small delay before retry
+                if (retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
+        }
+
+        if (!proposal) {
+            // Handle the error after all retries failed
+            if (lastError.code === 11000) {
+                return res.status(409).json({
+                    message: "Failed to generate unique proposal number after multiple attempts",
+                    error: "Duplicate key error"
+                });
+            }
+            throw lastError;
+        }
+
         res.status(201).json(proposal);
     } catch (error) {
-        res.status(400).json({ message: error.message });
+        // Handle other errors
+        if (error.name === 'ValidationError') {
+            const errors = Object.keys(error.errors).map(key => ({
+                field: key,
+                message: error.errors[key].message
+            }));
+            return res.status(400).json({
+                message: "Validation failed",
+                errors: errors
+            });
+        }
+
+        res.status(500).json({
+            message: "Internal server error",
+            error: error.message
+        });
     }
 });
+
+
 
 // Get all proposals
 router.get('/', async (req, res) => {
@@ -246,20 +306,11 @@ router.put('/:id/revision', async (req, res) => {
             { new: true }
         );
 
-        const cicUser = await User.findOne({
-            'role.roleName': 'CIC',
-            'role.roleId': 'C1'
-        });
-
-        if (!cicUser) {
-            console.error("CIC user not found");
-            return;
-        }
         // Email setup
         const proposalLink = `https://service-portal-admin.vercel.app/proposal/${req.params.id}`;
         const mailOptions = {
             from: 'webadmin@skanray-access.com',
-            to: 'ftshivamtiwari222@gmail.com',
+            to: 'ftshivamtiwari222@gmail.com', // Replace with actual recipient
             subject: `Proposal Revision #${newRevisionNumber} - Approval Needed`,
             html: `
                 <p>Dear CIC,</p>
@@ -273,19 +324,31 @@ router.put('/:id/revision', async (req, res) => {
             `
         };
 
-        // Send email
-        await transporter.sendMail(mailOptions);
+        let emailSent = false;
+        try {
+            await transporter.sendMail(mailOptions);
+            emailSent = true;
+            console.log('Revision email sent successfully');
+        } catch (emailError) {
+            console.error('Failed to send revision email:', emailError);
+            // Continue with the response even if email fails
+        }
 
-        // Final response
         res.status(200).json({
-            message: `Proposal revised successfully and email sent to CIC.`,
-            updatedProposal
+            message: `Proposal revised successfully${emailSent ? ' and email sent to CIC' : ' but email failed to send'}.`,
+            updatedProposal,
+            emailSent
         });
+
     } catch (error) {
-        console.error("Error:", error);
-        res.status(500).json({ message: 'An error occurred', error: error.message });
+        console.error("Error in revision endpoint:", error);
+        res.status(500).json({
+            message: 'An error occurred while processing revision',
+            error: error.message
+        });
     }
 });
+
 
 // Get all revisions for a proposal
 router.get('/:id/revisions', async (req, res) => {

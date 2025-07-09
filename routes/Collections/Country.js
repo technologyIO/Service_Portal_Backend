@@ -21,11 +21,28 @@ router.post('/country', async (req, res) => {
     try {
         const newCountry = new Country(req.body);
         const savedCountry = await newCountry.save();
-        res.status(201).json(savedCountry); // Return newly created country
+
+        res.status(201).json({
+            status: 201,
+            message: 'Country created successfully',
+            data: savedCountry
+        });
     } catch (err) {
-        res.status(400).json({ message: err.message });
+        if (err.code === 11000) {
+            return res.status(409).json({
+                status: 409,
+                message: 'Country name already exists'
+            });
+        }
+
+        res.status(400).json({
+            status: 400,
+            message: 'Error creating country',
+            error: err.message
+        });
     }
 });
+
 
 // Get all countries
 router.get('/country', async (req, res) => {
@@ -81,27 +98,37 @@ router.get('/allCountries', async (req, res) => {
 
 // Update a country
 router.patch('/country/:id', getCountry, async (req, res) => {
-    if (req.body.name) {
-        res.country.name = req.body.name;
-    }
+    const { name, status, geo } = req.body;
 
-    if (req.body.status) {
-        res.country.status = req.body.status;
-    }
+    if (name) res.country.name = name;
+    if (status) res.country.status = status;
+    if (geo) res.country.geo = geo;
 
-    if (req.body.geo) {
-        res.country.geo = req.body.geo;
-    }
-
-    res.country.modifiedAt = Date.now(); // Update modifiedAt timestamp
+    res.country.modifiedAt = Date.now();
 
     try {
         const updatedCountry = await res.country.save();
-        res.json(updatedCountry); // Return updated country
+        res.status(200).json({
+            status: 200,
+            message: 'Country updated successfully',
+            data: updatedCountry
+        });
     } catch (err) {
-        res.status(400).json({ message: err.message });
+        if (err.code === 11000) {
+            return res.status(409).json({
+                status: 409,
+                message: 'Country name already exists'
+            });
+        }
+
+        res.status(400).json({
+            status: 400,
+            message: 'Error updating country',
+            error: err.message
+        });
     }
 });
+
 
 
 // Delete a country

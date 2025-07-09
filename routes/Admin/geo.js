@@ -58,20 +58,29 @@ router.post('/api/geo', async (req, res) => {
 
         const newGeo = await Geo.create({ geoName });
 
-        res.status(201).json({
+        return res.status(201).json({
             status: 201,
             data: {
                 geoDropdown: [newGeo]
             }
         });
     } catch (err) {
-        res.status(400).json({
-            status: 400,
+        if (err.code === 11000) {
+            // Duplicate key error
+            return res.status(409).json({
+                status: 409,
+                message: 'geoName already exists'
+            });
+        }
+
+        return res.status(500).json({
+            status: 500,
             message: 'Error creating geo entry',
             error: err.message
         });
     }
 });
+
 // Update geo entry
 router.put('/api/geo/:id', async (req, res) => {
     try {
@@ -84,19 +93,13 @@ router.put('/api/geo/:id', async (req, res) => {
             });
         }
 
-        const updateFields = {
-            geoName,
-        };
-
-        // Only update status if it's provided
-        if (status) {
-            updateFields.status = status;
-        }
+        const updateFields = { geoName };
+        if (status) updateFields.status = status;
 
         const updatedGeo = await Geo.findByIdAndUpdate(
             req.params.id,
             updateFields,
-            { new: true }
+            { new: true, runValidators: true }
         );
 
         if (!updatedGeo) {
@@ -106,7 +109,7 @@ router.put('/api/geo/:id', async (req, res) => {
             });
         }
 
-        res.status(200).json({
+        return res.status(200).json({
             status: 200,
             message: 'Geo entry updated successfully',
             data: {
@@ -114,13 +117,22 @@ router.put('/api/geo/:id', async (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({
+        // Check for duplicate geoName error
+        if (err.code === 11000) {
+            return res.status(409).json({
+                status: 409,
+                message: 'geoName already exists'
+            });
+        }
+
+        return res.status(500).json({
             status: 500,
             message: 'Server error',
             error: err.message
         });
     }
 });
+
 
 // Search geo entries by geoName
 router.get('/api/searchgeo', async (req, res) => {

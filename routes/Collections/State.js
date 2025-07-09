@@ -17,29 +17,46 @@ async function getState(req, res, next) {
 }
 
 // Middleware function to check duplicate state by name and country
-async function checkDuplicateState(req, res, next) {
-    const { name, country } = req.body;
-    try {
-        const existingState = await State.findOne({ name, country });
-        if (existingState) {
-            return res.status(400).json({ message: 'State with the same name and country already exists' });
-        }
-        next();
-    } catch (err) {
-        return res.status(500).json({ message: err.message });
+
+const checkDuplicateState = async (req, res, next) => {
+    const existing = await State.findOne({ name: req.body.name });
+    if (existing) {
+        return res.status(409).json({
+            status: 409,
+            message: 'State name already exists'
+        });
     }
-}
+    next();
+};
 
 // Create a new state
 router.post('/state', checkDuplicateState, async (req, res) => {
     try {
         const newState = new State(req.body);
         const savedState = await newState.save();
-        res.status(201).json(savedState);
+
+        res.status(201).json({
+            status: 201,
+            message: 'State created successfully',
+            data: savedState
+        });
     } catch (err) {
-        res.status(400).json({ message: err.message });
+        // MongoDB duplicate key error (in case middleware missed it)
+        if (err.code === 11000) {
+            return res.status(409).json({
+                status: 409,
+                message: 'State name already exists'
+            });
+        }
+
+        res.status(400).json({
+            status: 400,
+            message: 'Error creating state',
+            error: err.message
+        });
     }
 });
+
 router.get('/allstate', async (req, res) => {
     try {
         const state = await State.find();
@@ -103,14 +120,32 @@ router.patch('/state/:id', getState, async (req, res) => {
     if (req.body.country != null) {
         res.state.country = req.body.country;
     }
+
     res.state.modifiedAt = Date.now(); // Update modifiedAt field
+
     try {
         const updatedState = await res.state.save();
-        res.json(updatedState);
+        res.status(200).json({
+            status: 200,
+            message: 'State updated successfully',
+            data: updatedState
+        });
     } catch (err) {
-        res.status(400).json({ message: err.message });
+        if (err.code === 11000) {
+            return res.status(409).json({
+                status: 409,
+                message: 'State name already exists'
+            });
+        }
+
+        res.status(400).json({
+            status: 400,
+            message: 'Error updating state',
+            error: err.message
+        });
     }
 });
+
 
 
 

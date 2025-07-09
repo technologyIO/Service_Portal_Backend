@@ -4,12 +4,13 @@ const StateSchema = new mongoose.Schema({
     stateId: {
         type: String,
         required: true,
-        unique: true  
+        unique: true
     },
     name: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        trim: true
     },
     status: {
         type: String,

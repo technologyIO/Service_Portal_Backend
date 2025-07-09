@@ -354,15 +354,7 @@ const generateAndSendPdf = async (cnoteData, res) => {
             throw new Error('PDF generation failed');
         }
 
-        const cicUser = await User.findOne({
-            'role.roleName': 'CIC',
-            'role.roleId': 'C1'
-        });
 
-        if (!cicUser) {
-            console.error("CIC user not found");
-            return;
-        }
 
         const mailOptions = {
             from: 'webadmin@skanray-access.com',

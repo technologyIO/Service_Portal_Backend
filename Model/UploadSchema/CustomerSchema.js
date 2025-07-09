@@ -3,66 +3,55 @@ const mongoose = require("mongoose");
 const CustomerSchema = new mongoose.Schema({
     customercodeid: {
         type: String,
-        // required: true,
-        unique: true
+        required: true,
+        unique: true  // Only customercodeid is unique
     },
     customername: {
         type: String,
-        required: true
     },
     hospitalname: {
         type: String,
-        // required: true
+        required: true
     },
     street: {
         type: String,
     },
     city: {
         type: String,
-        required: true
     },
     postalcode: {
         type: String,
-        required: true
     },
     district: {
         type: String,
     },
     state: {
         type: String,
-        required: true
     },
     region: {
         type: String,
     },
     country: {
         type: String,
-        required: true
     },
     telephone: {
         type: String,
-        required: true
     },
     taxnumber1: {
         type: String,
-        // required: true
     },
     taxnumber2: {
         type: String,
-        // required: true
     },
     email: {
         type: String,
         required: true,
-        unique: true
     },
     status: {
         type: String,
-        // required: true
     },
     customertype: {
         type: String,
-        required: true
     },
     createdAt: {
         type: Date,
