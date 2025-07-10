@@ -17,7 +17,7 @@ transporter.verify((error) => {
     if (error) {
         console.error('Mail transporter error:', error);
     } else {
-        console.log('Mail transporter is ready');
+        // console.log('Mail transporter is ready');
     }
 });
 // Create a new proposal

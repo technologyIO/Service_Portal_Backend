@@ -5,6 +5,7 @@ const Product = require('../../Model/MasterSchema/ProductSchema');
 const User = require('../../Model/MasterSchema/UserSchema');
 const CheckList = require('../../Model/CollectionSchema/ChecklistSchema');
 const Branch = require('../../Model/CollectionSchema/BranchSchema');
+const State = require('../../Model/CollectionSchema/StateSchema');
 const nodemailer = require('nodemailer');
 const Customer = require('../../Model/UploadSchema/CustomerSchema');
 const pdf = require('html-pdf');
@@ -50,58 +51,98 @@ async function checkDuplicatePMNumber(req, res, next) {
   }
   next();
 }
+
+
+
+
 router.get('/allpms/:employeeid?', async (req, res) => {
   try {
     const { employeeid } = req.params;
 
     if (employeeid) {
-      // 1. Get User
       const user = await User.findOne({ employeeid });
-      if (!user) return res.status(404).json({ message: 'User not found' });
 
-      // 2. Get partNumbers from skills
-      const partNumbers = user.skills.flatMap(skill =>
-        skill.partNumbers && skill.partNumbers.length > 0 ? skill.partNumbers : []
-      );
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
 
-      // 3. Get PMs matching partNumbers
-      const pms = partNumbers.length > 0
-        ? await PM.find({ partNumber: { $in: partNumbers } })
-        : [];
+      // Get user's branch codes
+      const branchDemographic = user.demographics.find(d => d.type === 'branch');
+      let userBranchShortCodes = [];
 
-      // 4. Extract unique customerCodes
-      const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
-
-      // 5. Get customers and their states
-      const customers = await Customer.find({ customercodeid: { $in: customerCodes } });
-
-      const customerStateMap = {};
-      customers.forEach(c => {
-        if (c.customercodeid && c.state) {
-          customerStateMap[c.customercodeid] = c.state;
+      if (branchDemographic) {
+        if (branchDemographic.values.some(v => v.branchShortCode)) {
+          userBranchShortCodes = branchDemographic.values
+            .map(v => v.branchShortCode)
+            .filter(Boolean);
         }
+        else if (branchDemographic.values.some(v => v.id)) {
+          const branchIds = branchDemographic.values
+            .map(v => v.id)
+            .filter(Boolean);
+
+          const branches = await Branch.find({ _id: { $in: branchIds } })
+            .select('branchShortCode -_id');
+
+          userBranchShortCodes = branches.map(b => b.branchShortCode);
+        }
+        else if (branchDemographic.values.some(v => v.name)) {
+          const branchNames = branchDemographic.values
+            .map(v => v.name)
+            .filter(Boolean);
+
+          const branches = await Branch.find({ name: { $in: branchNames } })
+            .select('branchShortCode -_id');
+
+          userBranchShortCodes = branches.map(b => b.branchShortCode);
+        }
+      }
+
+      if (userBranchShortCodes.length === 0) {
+        return res.json({ pms: [], count: 0, filteredByEmployee: true });
+      }
+
+      // Get user's part numbers
+      const partNumbers = user.skills.flatMap(skill =>
+        skill.partNumbers || []
+      ).filter(pn => pn);
+
+      if (partNumbers.length === 0) {
+        return res.json({ pms: [], count: 0, filteredByEmployee: true });
+      }
+
+      // Modified PM query to only include Due or Overdue status
+      const pms = await PM.find({
+        partNumber: { $in: partNumbers },
+        pmStatus: { $in: ["Due", "Overdue"] } // Only these statuses
       });
 
-      // 6. Get user branch names from demographics
-      const branchDemographic = user.demographics.find(d => d.type === 'branch');
-      const userBranchNames = branchDemographic?.values.map(v => v.name) || [];
+      if (pms.length === 0) {
+        return res.json({ pms: [], count: 0, filteredByEmployee: true });
+      }
 
-      // 7. Get branches whose state matches any customer state
-      const customerStates = [...new Set(Object.values(customerStateMap))];
+      // Rest of the processing
+      const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
+      const customers = await Customer.find({ customercodeid: { $in: customerCodes } });
+      const customerRegions = [...new Set(customers.map(c => c.region).filter(Boolean))];
+      const states = await State.find({ stateId: { $in: customerRegions } });
+      const stateNames = states.map(s => s.name);
+      const branches = await Branch.find({ state: { $in: stateNames } });
 
-      const branches = await Branch.find({ state: { $in: customerStates } });
+      // Filter branches by user's branch codes
+      const allowedBranches = branches.filter(b =>
+        userBranchShortCodes.includes(b.branchShortCode)
+      );
 
-      // 8. Get branchShortCodes that match user branch demographic
-      const matchedBranchShortCodes = branches
-        .filter(branch => userBranchNames.includes(branch.branchShortCode))
-        .map(branch => branch.branchShortCode);
-
-      // 9. Filter PMs whose customerCode maps to customer with state in matched branches
+      // Final PM filtering
       const finalPMs = pms.filter(pm => {
-        const state = customerStateMap[pm.customerCode];
-        return branches.some(
-          b => b.state === state && matchedBranchShortCodes.includes(b.branchShortCode)
-        );
+        const customer = customers.find(c => c.customercodeid === pm.customerCode);
+        if (!customer) return false;
+
+        const state = states.find(s => s.stateId === customer.region);
+        if (!state) return false;
+
+        return allowedBranches.some(b => b.state === state.name);
       });
 
       return res.json({
@@ -111,11 +152,14 @@ router.get('/allpms/:employeeid?', async (req, res) => {
       });
     }
 
-    // Return all if no employeeid
-    const pms = await PM.find();
-    res.json({
-      pms,
-      count: pms.length,
+    // If no employeeid provided, return all PMs with Due/Overdue status
+    const allPMs = await PM.find({
+      pmStatus: { $in: ["Due", "Overdue"] } // Only these statuses
+    });
+
+    return res.json({
+      pms: allPMs,
+      count: allPMs.length,
       filteredByEmployee: false
     });
 
@@ -124,8 +168,6 @@ router.get('/allpms/:employeeid?', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
-
-
 // GET all PM records with pagination
 router.get('/allpms', async (req, res) => {
   try {
@@ -451,7 +493,7 @@ router.post("/reportAndUpdate", async (req, res) => {
 
     // Update necessary fields
     existingPm.pmDoneDate = pmData.pmDoneDate || existingPm.pmDoneDate;
-    existingPm.pmEngineerCode = pmData.pmEngineerCode || existingPm.pmEngineerCode;
+    existingPm.pmEngineerCode = userInfo.employeeId || existingPm.pmEngineerCode;
     existingPm.pmStatus = pmData.pmStatus || existingPm.pmStatus;
 
     await existingPm.save();
