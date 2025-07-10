@@ -233,74 +233,88 @@ router.post('/customer', checkDuplicateCustomer, async (req, res) => {
         taxnumber2: req.body.taxnumber2,
         email: req.body.email,
         status: req.body.status,
-        customertype: req.body.customertype
+        customertype: req.body.customertype,
+        createdAt: new Date(),
+        modifiedAt: new Date()
     });
 
     try {
         const newCustomer = await customer.save();
-        res.status(201).json(newCustomer);
+        res.status(201).json({
+            message: 'Customer created successfully',
+            data: newCustomer
+        });
     } catch (err) {
-        res.status(400).json({ message: err.message });
+        // Duplicate key error
+        if (err.code === 11000) {
+            const field = Object.keys(err.keyValue)[0];
+            return res.status(400).json({
+                message: `Duplicate value for "${field}": "${err.keyValue[field]}" already exists.`,
+                error: err.message
+            });
+        }
+
+        // Validation error
+        if (err.name === 'ValidationError') {
+            return res.status(400).json({
+                message: 'Validation failed',
+                error: Object.values(err.errors).map(e => e.message).join(', ')
+            });
+        }
+
+        // Unknown error
+        res.status(500).json({
+            message: 'Failed to create customer',
+            error: err.message
+        });
     }
 });
 
 
 // UPDATE a customer
 router.put('/customer/:id', getCustomerById, async (req, res) => {
-    if (req.body.customercodeid != null) {
-        res.customer.customercodeid = req.body.customercodeid;
-    }
-    if (req.body.customername != null) {
-        res.customer.customername = req.body.customername;
-    }
-    if (req.body.hospitalname != null) {
-        res.customer.hospitalname = req.body.hospitalname;
-    }
-    if (req.body.street != null) {
-        res.customer.street = req.body.street;
-    }
-    if (req.body.city != null) {
-        res.customer.city = req.body.city;
-    }
-    if (req.body.postalcode != null) {
-        res.customer.postalcode = req.body.postalcode;
-    }
-    if (req.body.district != null) {
-        res.customer.district = req.body.district;
-    }
-    if (req.body.state != null) {
-        res.customer.state = req.body.state;
-    }
-    if (req.body.region != null) {
-        res.customer.region = req.body.region;
-    }
-    if (req.body.country != null) {
-        res.customer.country = req.body.country;
-    }
-    if (req.body.telephone != null) {
-        res.customer.telephone = req.body.telephone;
-    }
-    if (req.body.taxnumber1 != null) {
-        res.customer.taxnumber1 = req.body.taxnumber1;
-    }
-    if (req.body.taxnumber2 != null) {
-        res.customer.taxnumber2 = req.body.taxnumber2;
-    }
-    if (req.body.email != null) {
-        res.customer.email = req.body.email;
-    }
-    if (req.body.status != null) {
-        res.customer.status = req.body.status;
-    }
-    if (req.body.customertype != null) {
-        res.customer.customertype = req.body.customertype;
-    }
+    const fields = [
+        'customercodeid', 'customername', 'hospitalname', 'street', 'city', 'postalcode',
+        'district', 'state', 'region', 'country', 'telephone', 'taxnumber1', 'taxnumber2',
+        'email', 'status', 'customertype'
+    ];
+
+    // Dynamically update only non-null fields
+    fields.forEach(field => {
+        if (req.body[field] != null) {
+            res.customer[field] = req.body[field];
+        }
+    });
+
+    // Update modifiedAt
+    res.customer.modifiedAt = new Date();
 
     try {
         const updatedCustomer = await res.customer.save();
-        res.json(updatedCustomer);
+        res.json({ message: 'Customer updated successfully', data: updatedCustomer });
     } catch (err) {
-        res.status(400).json({ message: err.message });
+        // Check for duplicate key error (MongoDB error code 11000)
+        if (err.code === 11000) {
+            const duplicateKey = Object.keys(err.keyValue)[0];
+            return res.status(400).json({
+                message: `Duplicate value for "${duplicateKey}": "${err.keyValue[duplicateKey]}" already exists.`,
+                error: err.message
+            });
+        }
+
+        // Validation error handling
+        if (err.name === 'ValidationError') {
+            return res.status(400).json({
+                message: 'Validation failed',
+                error: Object.values(err.errors).map(e => e.message).join(', ')
+            });
+        }
+
+        // Other unknown errors
+        res.status(500).json({
+            message: 'Failed to update customer',
+            error: err.message
+        });
     }
 });
 
