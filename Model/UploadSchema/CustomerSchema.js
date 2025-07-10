@@ -8,10 +8,11 @@ const CustomerSchema = new mongoose.Schema({
     },
     customername: {
         type: String,
+        required: true
     },
     hospitalname: {
         type: String,
-        required: true
+
     },
     street: {
         type: String,
@@ -45,10 +46,10 @@ const CustomerSchema = new mongoose.Schema({
     },
     email: {
         type: String,
-        required: true,
     },
     status: {
         type: String,
+        default: "Active"
     },
     customertype: {
         type: String,
