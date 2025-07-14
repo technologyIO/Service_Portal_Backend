@@ -3,6 +3,51 @@ const router = express.Router();
 const SpareMaster = require("../../Model/MasterSchema/SpareMasterSchema");
 const Product = require("../../Model/MasterSchema/ProductSchema");
 
+
+router.get("/spare-by-partno/:partno", async (req, res) => {
+  try {
+    const { partno } = req.params;
+
+    // Step 1: Find product using partnoid
+    const product = await Product.findOne({ partnoid: partno });
+
+    if (!product) {
+      return res.status(404).json({ message: "Product not found with this part number" });
+    }
+
+    const subgrp = product.subgrp;
+
+    // Step 2: Find SpareMasters with matching Sub_grp
+    const spares = await SpareMaster.find({ Sub_grp: subgrp });
+
+    if (spares.length === 0) {
+      return res.status(404).json({ message: `No spares found for subgroup: ${subgrp}` });
+    }
+
+    // Step 3: Return required fields
+    const result = spares.map(spare => ({
+      PartNumber: spare.PartNumber,
+      Description: spare.Description,
+      Type: spare.Type,
+      Rate: spare.Rate,
+      DP: spare.DP,
+      Charges: spare.Charges,
+      Image: spare.spareiamegUrl
+    }));
+
+    res.status(200).json({
+      productPartNo: partno,
+      subgroup: subgrp,
+      totalSpares: result.length,
+      spares: result
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+
 // Endpoint 1: Get SpareMaster data based on product part number
 router.get("/search/:partno", async (req, res) => {
   try {

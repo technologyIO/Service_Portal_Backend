@@ -40,6 +40,38 @@ async function checkDuplicateComplaintId(req, res, next) {
   }
   next();
 }
+
+
+router.post("/revise/:notificationId", async (req, res) => {
+  const { notificationId } = req.params;
+
+  try {
+    // Find the complaint by notification_complaintid
+    const complaint = await PendingComplaints.findOne({
+      notification_complaintid: notificationId,
+    });
+
+    if (!complaint) {
+      return res.status(404).json({ message: "Complaint not found" });
+    }
+
+    // Increment rev and update modifiedAt
+    complaint.rev = (complaint.rev || 0) + 1;
+    complaint.modifiedAt = Date.now();
+
+    await complaint.save();
+
+    res.status(200).json({
+      message: "Revision count updated",
+      rev: complaint.rev,
+    });
+  } catch (error) {
+    console.error("Error updating revision count:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 router.post('/sendComplaintEmail', async (req, res) => {
   try {
     // 1. Destructure data coming from the frontend
