@@ -55,6 +55,7 @@ const CmcNcmcPrice = require('./routes/Admin/cmcNcmcPriceRoutes');
 const CmcNcmcTds = require('./routes/Admin/CmcNcmcTds');
 const Region = require('./routes/Admin/region');
 const gstRoutes = require('./routes/Admin/GstRoutes');
+const OnCallRoutes = require('./routes/PhoneRouts/oncall');
 const discountRoutes = require('./routes/Admin/DiscountRoutes');
 const proposalRoutes = require('./routes/PhoneRouts/proposals');
 const CNoteRoutes = require('./routes/PhoneRouts/cnoteController');
@@ -164,6 +165,7 @@ app.use('/admin/gst', gstRoutes);
 app.use('/admin/discount', discountRoutes);
 app.use('/phone/proposal', proposalRoutes);
 app.use('/phone/cnote', CNoteRoutes);
+app.use('/phone/oncall', OnCallRoutes);
 
 
 // Bulk Upload 

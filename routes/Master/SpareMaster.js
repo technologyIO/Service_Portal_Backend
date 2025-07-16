@@ -15,6 +15,15 @@ router.get("/spare-by-partno/:partno", async (req, res) => {
       return res.status(404).json({ message: "Product not found with this part number" });
     }
 
+    // 🔒 Step 1.5: Check if the product is beyond end of support
+    const today = new Date();
+    if (product.endofsupportdate && product.endofsupportdate < today) {
+      return res.status(410).json({
+        message: `This product has reached end of support on ${product.endofsupportdate.toDateString()}`,
+        endofsupport: true
+      });
+    }
+
     const subgrp = product.subgrp;
 
     // Step 2: Find SpareMasters with matching Sub_grp

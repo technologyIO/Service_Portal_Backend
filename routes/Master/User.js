@@ -569,7 +569,7 @@ router.post('/user', upload.single('profileimage'), async (req, res) => {
             } catch (e) {
                 return [];
             }
-        };
+        }
 
         const {
             firstname,
@@ -634,7 +634,6 @@ router.post('/user', upload.single('profileimage'), async (req, res) => {
             profileImageUrl = `/uploads/${req.file.filename}`;
         }
 
-
         // Prepare user object with proper data types
         const userData = {
             firstname: firstname?.trim() || '',
@@ -694,6 +693,33 @@ router.post('/user', upload.single('profileimage'), async (req, res) => {
         delete userResponse.password;
         delete userResponse.__v;
 
+        // Send email with credentials
+        const mailOptions = {
+            from: 'webadmin@skanray-access.com',
+            to: email,
+            subject: 'Your Account Credentials',
+            text: `Dear ${firstname || 'User'},
+
+Your account has been successfully created. Here are your login details:
+
+Employee ID: ${employeeid || 'Not provided'}
+Password: ${defaultPassword}
+
+Please use these credentials to log in to the system. We recommend changing your password after first login.
+
+Best regards,
+Skanray Team`
+        };
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                console.error('Error sending email:', error);
+                // Don't fail the request if email fails, just log it
+            } else {
+                console.log('Email sent:', info.response);
+            }
+        });
+
         res.status(201).json({
             success: true,
             message: 'User created successfully',
@@ -726,6 +752,8 @@ router.post('/user', upload.single('profileimage'), async (req, res) => {
         });
     }
 });
+
+
 
 router.post('/login/web', getUserForLogin, async (req, res) => {
     try {
