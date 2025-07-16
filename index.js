@@ -21,6 +21,7 @@ const installationChecklistRoutes = require('./routes/Master/InstallationCheckli
 const SpareMaster = require('./routes/Master/SpareMaster');
 const equipmentChecklistRoutes = require('./routes/Collections/EquipmentChecklist');
 const Geo = require('./routes/Admin/geo');
+const pmDocMasterRoutes = require('./routes/Master/pmDocMaster');
 const Product = require('./routes/Master/Product');
 const ReportedProblemSchema = require('./routes/Master/ReportedProblem');
 const WarrantyCode = require('./routes/Master/WarrantyCode');
@@ -166,7 +167,7 @@ app.use('/admin/discount', discountRoutes);
 app.use('/phone/proposal', proposalRoutes);
 app.use('/phone/cnote', CNoteRoutes);
 app.use('/phone/oncall', OnCallRoutes);
-
+app.use('/master/pm-doc-master', pmDocMasterRoutes);
 
 // Bulk Upload 
 
