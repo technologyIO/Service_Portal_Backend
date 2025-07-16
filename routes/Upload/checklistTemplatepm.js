@@ -1,25 +1,25 @@
 const getChecklistHTMLPM = ({
-    reportNo,
-    date,
-    customer,
-    city,
-    machine,          // e.g. { partNumber, modelDescription, serialNumber, machineId, etc. }
-    checklistItems,   // array of { checkpoint, result, remark }
-    serviceEngineer,
-    remarkglobal,
-    formatChlNo,
-    pmType,  
-    formatRevNo,
-  }) => {
-    // 1) Decide how many total rows we want on one page
-    const maxRows = 14;
-  
-    // 2) Take up to 'maxRows' items from the array
-    const displayedItems = checklistItems.slice(0, maxRows);
-  
-    // 3) Build table rows for each checklist item
-    const itemRows = displayedItems.map((item, index) => {
-      return `
+  reportNo,
+  date,
+  customer,
+  city,
+  machine,          // e.g. { partNumber, modelDescription, serialNumber, machineId, etc. }
+  checklistItems,   // array of { checkpoint, result, remark }
+  serviceEngineer,
+  remarkglobal,
+  formatChlNo,
+  pmType,
+  formatRevNo,
+}) => {
+  // 1) Decide how many total rows we want on one page
+  const maxRows = 14;
+
+  // 2) Take up to 'maxRows' items from the array
+  const displayedItems = checklistItems.slice(0, maxRows);
+
+  // 3) Build table rows for each checklist item
+  const itemRows = displayedItems.map((item, index) => {
+    return `
           <tr>
             <td style="border: 1px solid black; padding: 5px; text-align:center">${index + 1}</td>
             <td style="border: 1px solid black; padding: 5px;">${item.checkpoint}</td>
@@ -27,13 +27,13 @@ const getChecklistHTMLPM = ({
             <td style="border: 1px solid black; padding: 5px;">${item.remark || ""}</td>
           </tr>
         `;
-    });
-  
-    // 4) If we have fewer than maxRows items, fill the rest with blank rows
-    const blankRowsNeeded = maxRows - displayedItems.length;
-    const blankRows = [];
-    for (let i = 0; i < blankRowsNeeded; i++) {
-      blankRows.push(`
+  });
+
+  // 4) If we have fewer than maxRows items, fill the rest with blank rows
+  const blankRowsNeeded = maxRows - displayedItems.length;
+  const blankRows = [];
+  for (let i = 0; i < blankRowsNeeded; i++) {
+    blankRows.push(`
           <tr>
             <td style="border: 1px solid black; padding: 5px; height: 15px; text-align:center"></td>
             <td style="border: 1px solid black; padding: 5px;"></td>
@@ -41,13 +41,13 @@ const getChecklistHTMLPM = ({
             <td style="border: 1px solid black; padding: 5px;"></td>
           </tr>
         `);
-    }
-  
-    // 5) Combine data rows + blank rows
-    const checklistRows = itemRows.join("") + blankRows.join("");
-  
-    // 6) Return the final HTML
-    return `
+  }
+
+  // 5) Combine data rows + blank rows
+  const checklistRows = itemRows.join("") + blankRows.join("");
+
+  // 6) Return the final HTML
+  return `
     <!DOCTYPE html>
     <html>
       <head>
@@ -96,14 +96,14 @@ const getChecklistHTMLPM = ({
                 <table style="width: 100%; height: 100px; border-collapse: collapse;">
                   <tr>
                     <td style="border-bottom: 1px solid black; font-weight: bold; height: 40px; font-size: 8px;">
-                      Format No &amp; Revision:${formatChlNo}-${formatRevNo}
+                      Format No &amp; Revision:${formatChlNo}
                     </td>
                   </tr>
                   <tr>
                     <td style="font-weight: bold; font-size: 8px;">
                       Document reference no <br/>
-                      &amp; Revision:
-                    </td>
+                      &amp; Revision: ${formatRevNo}
+                    </td> 
                   </tr>
                 </table>
               </td>
@@ -293,7 +293,6 @@ const getChecklistHTMLPM = ({
       </body>
     </html>
       `;
-  };
-  
-  module.exports = { getChecklistHTMLPM };
-  
+};
+
+module.exports = { getChecklistHTMLPM };

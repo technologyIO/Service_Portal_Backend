@@ -8,6 +8,7 @@ const Branch = require('../../Model/CollectionSchema/BranchSchema');
 const State = require('../../Model/CollectionSchema/StateSchema');
 const nodemailer = require('nodemailer');
 const Customer = require('../../Model/UploadSchema/CustomerSchema');
+const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
 const pdf = require('html-pdf');
 const { getChecklistHTMLPM } = require("./checklistTemplatepm"); // DO NOT change its design
 
@@ -339,7 +340,33 @@ router.get('/checklist/by-part/:partnoid', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+router.get('/pmdoc/by-part/:partnoid', async (req, res) => {
+  try {
+    const partnoid = req.params.partnoid;
 
+    // Step 1: Find the product using partnoid
+    const product = await Product.findOne({ partnoid });
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found for the provided part number' });
+    }
+
+    // Step 2: Extract product group
+    const productGroup = product.productgroup;
+
+    // Step 3: Find PM Doc Master entries matching product group and type "PM"
+    const pmDocs = await PMDocMaster.find({
+      productGroup: productGroup,
+      type: 'PM'
+    }).select('chlNo revNo type status createdAt modifiedAt');
+
+    res.json({
+      productGroup,
+      pmDocs
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 router.post("/otp/send", async (req, res) => {
   try {
     const { customerCode } = req.body;
@@ -524,8 +551,8 @@ router.post("/reportAndUpdate", async (req, res) => {
       })),
       serviceEngineer: existingPm.pmEngineerCode,
       remarkglobal: globalRemark || "N/A",
-      formatChlNo: "3-75-028-0036-85",
-      formatRevNo: "0",
+      formatChlNo: pmData.chlNo,
+      formatRevNo: pmData.revNo,
     });
 
     // Generate PDF from HTML
