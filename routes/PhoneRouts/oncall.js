@@ -12,6 +12,7 @@ const errorResponse = (res, statusCode, message, errorDetails = null) => {
     return res.status(statusCode).json(response);
 };
 
+
 // Middleware: Validate OnCall Request
 const validateOnCallRequest = (req, res, next) => {
     const { customer, complaint, complaintDetails } = req.body;
@@ -71,33 +72,72 @@ router.post('/', validateOnCallRequest, async (req, res) => {
         });
     }
 });
-
-
-router.post('/', validateOnCallRequest, async (req, res) => {
+// Update OnCall
+router.put('/:id', async (req, res) => {
     try {
-        const onCallData = {
+        const { id } = req.params;
+
+        // Check for valid MongoDB ObjectId
+        if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+            return errorResponse(res, 400, 'Invalid ID format', {
+                received: id
+            });
+        }
+
+        const updateData = {
             ...req.body,
-            complaint: req.body.complaintDetails // map correctly
+            modifiedAt: new Date()
         };
 
-        const onCall = new OnCall(onCallData);
-        await onCall.save();
+        const updatedOnCall = await OnCall.findByIdAndUpdate(id, updateData, {
+            new: true,
+            runValidators: true
+        });
 
-        return res.status(201).json({
+        if (!updatedOnCall) {
+            return errorResponse(res, 404, 'OnCall not found', {
+                resourceId: id
+            });
+        }
+
+        return res.json({
             success: true,
-            message: 'OnCall created successfully',
-            data: onCall,
-            resourceId: onCall._id
+            message: 'OnCall updated successfully',
+            data: updatedOnCall
         });
     } catch (err) {
-        console.error('[OnCall Creation Error]', err);
+        console.error('[OnCall] Update Error:', err.message);
 
-        return errorResponse(res, 500, 'Failed to create OnCall', {
-            errorType: err.name,
-            message: err.message
+        if (err.name === 'ValidationError') {
+            const errors = Object.values(err.errors).map(val => ({
+                field: val.path,
+                message: val.message,
+                value: val.value
+            }));
+
+            return errorResponse(res, 400, 'Validation failed', {
+                validationErrors: errors
+            });
+        }
+
+        return errorResponse(res, 500, 'Failed to update OnCall', {
+            errorType: err.name
         });
     }
 });
+
+router.get('/:id', async (req, res) => {
+    try {
+        const proposal = await OnCall.findById(req.params.id);
+        if (!proposal) {
+            return res.status(404).json({ message: 'Proposal not found' });
+        }
+        res.json(proposal);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
 router.get('/', async (req, res) => {
     try {
         const filters = { ...req.query };

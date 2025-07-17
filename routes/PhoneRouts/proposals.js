@@ -39,7 +39,7 @@ router.post('/', async (req, res) => {
 
                 // Only retry on duplicate key errors
                 if (error.code !== 11000) {
-                    break;
+                    break; 
                 }
 
                 // Small delay before retry
