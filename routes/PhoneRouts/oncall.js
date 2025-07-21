@@ -33,6 +33,145 @@ const validateOnCallRequest = (req, res, next) => {
     req.body.complaint = complaintDetails || complaint;
     next();
 };
+// Pagecall route - MUST be before any '/:id' route!
+router.get('/pagecall', async (req, res) => {
+    try {
+        const filters = { ...req.query };
+
+        // Pagination parameters
+        const page = parseInt(filters.page) || 1;
+        const limit = parseInt(filters.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Filtering logic
+        const query = {};
+
+        // Exclude completed status
+        query.status = { $ne: "completed" };
+
+        if (filters.createdBy) {
+            query.createdBy = filters.createdBy;
+        }
+
+        if (filters.status) {
+            // If status filter is provided, combine it with the exclusion
+            if (filters.status !== "completed") {
+                query.status = filters.status;
+            } else {
+                // If someone tries to filter by "completed", return empty result
+                return res.json({
+                    success: true,
+                    message: "0 OnCall(s) fetched",
+                    data: [],
+                    totalPages: 0,
+                    totalOnCalls: 0,
+                    currentPage: page
+                });
+            }
+        }
+
+        // Fetch data with pagination
+        const onCalls = await OnCall.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const totalOnCalls = await OnCall.countDocuments(query);
+        const totalPages = Math.ceil(totalOnCalls / limit);
+
+        return res.json({
+            success: true,
+            message: `${onCalls.length} OnCall(s) fetched`,
+            data: onCalls,
+            totalPages,
+            totalOnCalls,
+            currentPage: page
+        });
+    } catch (err) {
+        console.error('[OnCall] Fetch Error:', err.message);
+        return res.status(500).json({
+            message: 'Failed to fetch OnCalls',
+            error: err.message
+        });
+    }
+});
+router.get('/pagecallcompleted', async (req, res) => {
+    try {
+        const filters = { ...req.query };
+
+        // Pagination parameters
+        const page = parseInt(filters.page) || 1;
+        const limit = parseInt(filters.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Filtering logic
+        const query = {};
+
+        // Only fetch completed status
+        query.status = "completed";
+
+        if (filters.createdBy) {
+            query.createdBy = filters.createdBy;
+        }
+
+        // Remove the status filter logic since we only want completed
+        // The query.status is already set to "completed" above
+
+        // Fetch data with pagination
+        const onCalls = await OnCall.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const totalOnCalls = await OnCall.countDocuments(query);
+        const totalPages = Math.ceil(totalOnCalls / limit);
+
+        return res.json({
+            success: true,
+            message: `${onCalls.length} OnCall(s) fetched`,
+            data: onCalls,
+            totalPages,
+            totalOnCalls,
+            currentPage: page
+        });
+    } catch (err) {
+        console.error('[OnCall] Fetch Error:', err.message);
+        return res.status(500).json({
+            message: 'Failed to fetch OnCalls',
+            error: err.message
+        });
+    }
+});
+
+router.get('/', async (req, res) => {
+    try {
+        const filters = { ...req.query };
+
+        // Optional filtering logic, e.g. by createdBy or status
+        const query = {};
+
+        if (filters.createdBy) {
+            query.createdBy = filters.createdBy;
+        }
+
+        if (filters.status) {
+            query.status = filters.status;
+        }
+
+        const onCalls = await OnCall.find(query).sort({ createdAt: -1 });
+
+        return res.json({
+            success: true,
+            message: `${onCalls.length} OnCall(s) fetched`,
+            data: onCalls
+        });
+    } catch (err) {
+        console.error('[OnCall] Fetch Error:', err.message);
+        return errorResponse(res, 500, 'Failed to fetch OnCalls', {
+            errorType: err.name
+        });
+    }
+});
 
 // Route: Create OnCall
 router.post('/', validateOnCallRequest, async (req, res) => {
@@ -72,6 +211,277 @@ router.post('/', validateOnCallRequest, async (req, res) => {
         });
     }
 });
+
+router.put('/:id/revision', async (req, res) => {
+    try {
+        const oncall = await OnCall.findById(req.params.id);
+        if (!oncall) {
+            return res.status(404).json({ message: 'OnCall not found' });
+        }
+
+        // main fields aapne front se bheje hain
+        const {
+            discountPercentage,
+            discountAmount,
+            afterDiscount,
+            tdsAmount,
+            afterTds,
+            gstAmount,
+            finalAmount,
+            pricingMode,
+            remark,
+            additionalServiceCharge // OPTIONAL from frontend if exists
+        } = req.body;
+
+        // new revisionNumber
+        const newRevisionNumber = (oncall.currentRevision || 0) + 1;
+
+        // revisionData for revision history
+        const revisionData = {
+            revisionNumber: newRevisionNumber,
+            changes: {
+                discountPercentage,
+                discountAmount,
+                afterDiscount,
+                tdsAmount,
+                afterTds,
+                gstAmount,
+                finalAmount,
+                remark: remark || `OnCall revised, Revision ${newRevisionNumber}`,
+                pricingMode
+            }
+        };
+
+        // Reset approvals RSH/NSH
+        const resetApproval = { approved: false, approvedBy: null, approvedAt: null };
+        oncall.RSHApproval = { ...resetApproval };
+        oncall.NSHApproval = { ...resetApproval };
+
+        // update summary fields
+        oncall.discountPercentage = discountPercentage;
+        oncall.discountAmount = discountAmount;
+        oncall.afterDiscount = afterDiscount;
+        oncall.tdsAmount = tdsAmount;
+        oncall.afterTds = afterTds;
+        oncall.gstAmount = gstAmount;
+        oncall.finalAmount = finalAmount;
+        oncall.status = 'revised';
+        oncall.remark = remark || `OnCall revised, Revision ${newRevisionNumber}`;
+        oncall.currentRevision = newRevisionNumber;
+        oncall.updatedAt = new Date();
+
+        // optional additionalServiceCharge
+        if (additionalServiceCharge) {
+            oncall.additionalServiceCharge = additionalServiceCharge;
+        }
+
+        // status history update
+        oncall.statusHistory = [
+            ...(oncall.statusHistory || []),
+            {
+                status: 'revised',
+                changedAt: new Date(),
+            }
+        ];
+
+        // Push to revisions array
+        oncall.revisions.push(revisionData);
+
+        await oncall.save();
+
+        // You can send Email notification here if required
+
+        res.json({
+            message: `OnCall revised successfully.`,
+            updatedOnCall: oncall
+        });
+
+    } catch (err) {
+        console.error("OnCall revision error:", err);
+        res.status(500).json({ message: 'Failed to process revision', error: err.message });
+    }
+});
+// Approve by RSH (OnCall)
+router.put('/:id/approve-rsh', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        if (!userId) return res.status(400).json({ success: false, message: 'User ID is required' });
+
+        const oncall = await OnCall.findById(req.params.id);
+        if (!oncall) return res.status(404).json({ success: false, message: 'OnCall not found' });
+
+        // Mark RSHApproval
+        oncall.RSHApproval = {
+            approved: true,
+            approvedBy: userId,
+            approvedAt: new Date(),
+        };
+
+        // Current revision audit
+        const rev = oncall.revisions.find(
+            (r) => r.revisionNumber === oncall.currentRevision
+        );
+        if (rev) {
+            rev.approvalHistory = rev.approvalHistory || [];
+            rev.approvalHistory.push({
+                status: 'approved',
+                changedAt: new Date(),
+                changedBy: userId,
+                approvalType: 'RSH',
+            });
+
+            // Should revision status become approved?
+            const needNSH = (oncall.discountPercentage || 0) > 10;
+            if (!needNSH) {
+                rev.status = 'approved';
+                oncall.status = 'approved';
+            } else if (oncall.NSHApproval?.approved) {
+                rev.status = 'approved';
+                oncall.status = 'approved';
+            }
+        }
+
+        await oncall.save();
+        res.json({ success: true, data: oncall });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Server error during approval', error: error.message });
+    }
+});
+
+// Approve by NSH (OnCall)
+router.put('/:id/approve-nsh', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        if (!userId) return res.status(400).json({ success: false, message: 'User ID is required' });
+
+        const oncall = await OnCall.findById(req.params.id);
+        if (!oncall) return res.status(404).json({ success: false, message: 'OnCall not found' });
+
+        // Mark NSHApproval
+        oncall.NSHApproval = {
+            approved: true,
+            approvedBy: userId,
+            approvedAt: new Date(),
+        };
+
+        // Current revision audit
+        const rev = oncall.revisions.find(
+            (r) => r.revisionNumber === oncall.currentRevision
+        );
+        if (rev) {
+            rev.approvalHistory = rev.approvalHistory || [];
+            rev.approvalHistory.push({
+                status: 'approved',
+                changedAt: new Date(),
+                changedBy: userId,
+                approvalType: 'NSH',
+            });
+
+            // For >10% discount, both must be approved to finish revision
+            const needNSH = (oncall.discountPercentage || 0) > 10;
+            if (!needNSH) {
+                if (oncall.RSHApproval?.approved) {
+                    rev.status = 'approved';
+                    oncall.status = 'approved';
+                }
+            } else if (oncall.RSHApproval?.approved) {
+                rev.status = 'approved';
+                oncall.status = 'approved';
+            }
+        }
+        await oncall.save();
+        res.json({ success: true, data: oncall });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Server error during approval', error: error.message });
+    }
+});
+// Reject current revision (OnCall)
+router.put('/:id/reject-revision', async (req, res) => {
+    try {
+        const { userId, reason, approvalType } = req.body;
+        if (!userId || !reason || !approvalType)
+            return res.status(400).json({
+                success: false,
+                message: 'User ID, rejection reason, and approvalType are required'
+            });
+
+        const oncall = await OnCall.findById(req.params.id);
+        if (!oncall) return res.status(404).json({ success: false, message: 'OnCall not found' });
+
+        // Current revision
+        const rev = oncall.revisions.find(
+            (r) => r.revisionNumber === oncall.currentRevision
+        );
+        if (!rev)
+            return res.status(404).json({
+                success: false,
+                message: 'Current revision not found'
+            });
+
+        rev.approvalHistory = rev.approvalHistory || [];
+        rev.approvalHistory.push({
+            approvalType: approvalType,
+            status: 'rejected',
+            changedAt: new Date(),
+            changedBy: userId,
+            remark: reason
+        });
+
+        // Set approval status (oncall.RSHApproval or NSHApproval)
+        if (approvalType === "RSH") {
+            oncall.RSHApproval = {
+                approved: false,
+                rejected: true,
+                approvedBy: userId,
+                approvedAt: new Date(),
+                rejectReason: reason,
+            };
+        } else if (approvalType === "NSH") {
+            oncall.NSHApproval = {
+                approved: false,
+                rejected: true,
+                approvedBy: userId,
+                approvedAt: new Date(),
+                rejectReason: reason,
+            };
+        }
+
+        // Set revision and oncall status as rejected
+        rev.status = 'rejected';
+        oncall.status = 'rejected';
+        oncall.updatedAt = new Date();
+
+        await oncall.save();
+        res.json({ success: true, data: oncall });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Server error during rejection',
+            error: error.message
+        });
+    }
+});
+
+// Get a specific revision (OnCall)
+router.get('/:id/revisions/:revisionNumber', async (req, res) => {
+    try {
+        const oncall = await OnCall.findOne({
+            _id: req.params.id,
+            'revisions.revisionNumber': parseInt(req.params.revisionNumber)
+        }, {
+            'revisions.$': 1
+        });
+
+        if (!oncall || !oncall.revisions || oncall.revisions.length === 0) {
+            return res.status(404).json({ message: 'Revision not found' });
+        }
+
+        res.json(oncall.revisions[0]);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
 // Update OnCall
 router.put('/:id', async (req, res) => {
     try {
@@ -138,34 +548,65 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-router.get('/', async (req, res) => {
+// OnCall के लिए CO Number update API
+router.put('/:id/update-conumber', async (req, res) => {
     try {
-        const filters = { ...req.query };
+        const { CoNumber } = req.body;
 
-        // Optional filtering logic, e.g. by createdBy or status
-        const query = {};
-
-        if (filters.createdBy) {
-            query.createdBy = filters.createdBy;
+        if (!CoNumber) {
+            return res.status(400).json({
+                success: false,
+                message: 'CoNumber is required'
+            });
         }
 
-        if (filters.status) {
-            query.status = filters.status;
+        const onCall = await OnCall.findByIdAndUpdate(
+            req.params.id,
+            {
+                $set: {
+                    CoNumber: CoNumber,
+                    status: 'completed',
+                    updatedAt: Date.now()
+                },
+                $push: {
+                    statusHistory: {
+                        status: 'completed',
+                        changedAt: Date.now(),
+                        changedBy: req.user ? req.user._id : null // Assuming you have user info in req.user
+                    }
+                }
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!onCall) {
+            return res.status(404).json({
+                success: false,
+                message: 'OnCall not found'
+            });
         }
 
-        const onCalls = await OnCall.find(query).sort({ createdAt: -1 });
-
-        return res.json({
+        res.json({
             success: true,
-            message: `${onCalls.length} OnCall(s) fetched`,
-            data: onCalls
+            message: 'CoNumber updated and OnCall status set to completed',
+            data: onCall
         });
-    } catch (err) {
-        console.error('[OnCall] Fetch Error:', err.message);
-        return errorResponse(res, 500, 'Failed to fetch OnCalls', {
-            errorType: err.name
+    } catch (error) {
+        console.error('OnCall update error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error during OnCall update',
+            error: error.message
         });
     }
+});
+
+
+
+
+// Now keep /:id at the END
+router.get('/:id', async (req, res) => {
+    // your single oncall fetch logic
 });
 
 
@@ -211,3 +652,4 @@ router.delete('/:id', async (req, res) => {
 
 
 module.exports = router;
+

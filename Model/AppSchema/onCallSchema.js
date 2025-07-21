@@ -1,5 +1,14 @@
 const mongoose = require('mongoose');
 
+
+const additionalServiceChargeSchema = new mongoose.Schema({
+    totalAmount: { type: Number },
+    location: { type: String, enum: ["withinCity", "outsideCity"] },
+    gstAmount: { type: Number },
+    enteredCharge: { type: Number }
+}, { _id: false });
+
+
 // Spare Part Schema
 const sparePartSchema = new mongoose.Schema({
     PartNumber: String,
@@ -94,6 +103,7 @@ const onCallSchema = new mongoose.Schema({
     gstPercentage: Number,
     remark: String,
     CoNumber: String,
+    additionalServiceCharge: additionalServiceChargeSchema,
     complaint: complaintSchema,
     grandSubTotal: { type: Number, min: [0, 'Subtotal cannot be negative'] },
     discountAmount: { type: Number, min: [0, 'Discount cannot be negative'] },

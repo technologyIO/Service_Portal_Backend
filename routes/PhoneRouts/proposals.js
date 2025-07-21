@@ -39,7 +39,7 @@ router.post('/', async (req, res) => {
 
                 // Only retry on duplicate key errors
                 if (error.code !== 11000) {
-                    break; 
+                    break;
                 }
 
                 // Small delay before retry
@@ -81,7 +81,70 @@ router.post('/', async (req, res) => {
     }
 });
 
+router.get('/all', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
+        // Base query to exclude completed proposals
+        const query = { status: { $ne: "completed" } };
+
+        // Add additional filters if needed
+        if (req.query.createdBy) {
+            query.createdBy = req.query.createdBy;
+        }
+
+        if (req.query.status && req.query.status !== "completed") {
+            query.status = req.query.status;
+        }
+
+        const proposals = await Proposal.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const total = await Proposal.countDocuments(query);
+        const totalPages = Math.ceil(total / limit);
+
+        res.json({
+            records: proposals,
+            totalPages,
+            total,
+            currentPage: page
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+router.get('/allcompleted', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Only fetch completed proposals
+        const query = { status: "completed" };
+
+        const proposals = await Proposal.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const total = await Proposal.countDocuments(query);
+        const totalPages = Math.ceil(total / limit);
+
+        res.json({
+            records: proposals,
+            totalPages,
+            total,
+            currentPage: page
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
 
 // Get all proposals
 router.get('/', async (req, res) => {
