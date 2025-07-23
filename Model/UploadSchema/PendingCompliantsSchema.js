@@ -41,7 +41,7 @@ const PendingComplaintsSchema = new mongoose.Schema({
     type: String
   },
   breakdown: {
-    type: Boolean
+    type: String
   },
   status: {
     type: String

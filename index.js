@@ -42,6 +42,7 @@ const ProblemType = require('./routes/Complaints/ProblemType');
 const ProblemName = require('./routes/Complaints/ProblemName');
 const PreventiveMaintenance = require('./routes/Upload/PreventiveMaintenance');
 const EquipmentBulk = require('./BulkUpload/Master/EquipmentBulk');
+const AerbBulk = require('./BulkUpload/Master/AerbBulk');
 const ProductBulk = require('./BulkUpload/Master/ProductBulk');
 const ChecklistBulk = require('./BulkUpload/Master/CheckListBulk');
 const AmcContractBulk = require('./BulkUpload/Upload/AmcContractBulk');
@@ -176,6 +177,7 @@ app.use('/master/pm-doc-master', pmDocMasterRoutes);
 // Bulk Upload 
 
 app.use('/bulk/equipment', EquipmentBulk);
+app.use('/bulk/aerb', AerbBulk);
 app.use('/bulk/product', ProductBulk);
 app.use('/bulk/checklist', ChecklistBulk);
 app.use('/bulk/amccontract', AmcContractBulk);

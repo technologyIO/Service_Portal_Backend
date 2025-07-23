@@ -6,7 +6,7 @@ const csv = require('csv-parser');
 const { Readable } = require('stream');
 
 // Import Mongoose model
-const DealerStock = require('../../Model/UploadSchema/DealerStockSchema');
+const Aerb = require('../../Model/MasterSchema/AerbSchema');
 
 // Multer memory storage for file uploads
 const storage = multer.memoryStorage();
@@ -49,72 +49,27 @@ function normalizeFieldName(fieldName) {
 
 /**
  * Map Excel/CSV headers to schema fields
- * Focused on DealerStock fields
+ * Primary focus on "Material Code" and "Material Description" from frontend
  */
 function mapHeaders(headers) {
     const fieldMapping = {
-        'dealercodeid': [
-            'dealercodeid',
-            'dealer_code_id',
-            'dealercode',
-            'dealer_code',
-            'code',
-            'dealerid',
-            'dealer_id'
-        ],
-        'dealername': [
-            'dealername',
-            'dealer_name',
-            'name',
-            'dealer',
-            'dealertitle',
-            'dealer_title'
-        ],
-        'dealercity': [
-            'dealercity',
-            'dealer_city',
-            'city',
-            'location',
-            'dealerlocation',
-            'dealer_location'
-        ],
         'materialcode': [
-            'materialcode',
-            'material_code',
-            'partno',
+            'materialcode',           // Direct match
+            'material_code',          // With underscore
+            'partno',                 // Alternative names
             'part_no',
-            'productcode',
-            'product_code',
-            'itemcode',
-            'item_code'
+            'code',
+            'item_code',
+            'product_code'
         ],
         'materialdescription': [
-            'materialdescription',
-            'material_description',
-            'description',
+            'materialdescription',    // Direct match
+            'material_description',   // With underscore
+            'description',            // Common alternatives
             'desc',
             'product_description',
             'item_description',
             'material_desc'
-        ],
-        'plant': [
-            'plant',
-            'factory',
-            'location',
-            'facility',
-            'warehouse',
-            'depot'
-        ],
-        'unrestrictedquantity': [
-            'unrestrictedquantity',
-            'unrestricted_quantity',
-            'quantity',
-            'qty',
-            'stock',
-            'available_quantity',
-            'available_qty',
-            'free_stock',
-            'freestock'
         ]
     };
     
@@ -124,7 +79,7 @@ function mapHeaders(headers) {
         const originalHeader = header;
         const normalizedHeader = normalizeFieldName(header);
         
-        // Check for exact matches first
+        // Check for exact matches first (for "Material Code" and "Material Description")
         for (const [schemaField, variations] of Object.entries(fieldMapping)) {
             const found = variations.some(variation => {
                 const normalizedVariation = normalizeFieldName(variation);
@@ -192,19 +147,6 @@ function validateRecord(record, headerMapping) {
     // Validation
     const errors = [];
     
-    // Required field validations
-    if (!cleanedRecord.dealercodeid || cleanedRecord.dealercodeid === '') {
-        errors.push('Dealer Code is required');
-    }
-    
-    if (!cleanedRecord.dealername || cleanedRecord.dealername === '') {
-        errors.push('Dealer Name is required');
-    }
-    
-    if (!cleanedRecord.dealercity || cleanedRecord.dealercity === '') {
-        errors.push('Dealer City is required');
-    }
-    
     if (!cleanedRecord.materialcode || cleanedRecord.materialcode === '') {
         errors.push('Material Code is required');
     }
@@ -213,40 +155,12 @@ function validateRecord(record, headerMapping) {
         errors.push('Material Description is required');
     }
     
-    if (!cleanedRecord.plant || cleanedRecord.plant === '') {
-        errors.push('Plant is required');
-    }
-    
-    if (!cleanedRecord.unrestrictedquantity || cleanedRecord.unrestrictedquantity === '') {
-        errors.push('Unrestricted Quantity is required');
-    }
-    
-    // Additional validation and cleaning
-    if (cleanedRecord.dealercodeid) {
-        if (cleanedRecord.dealercodeid.length > 50) {
-            errors.push('Dealer Code too long (max 50 characters)');
-        }
-        cleanedRecord.dealercodeid = cleanedRecord.dealercodeid.replace(/\s+/g, ' ').trim();
-    }
-    
-    if (cleanedRecord.dealername) {
-        if (cleanedRecord.dealername.length > 200) {
-            errors.push('Dealer Name too long (max 200 characters)');
-        }
-        cleanedRecord.dealername = cleanedRecord.dealername.replace(/\s+/g, ' ').trim();
-    }
-    
-    if (cleanedRecord.dealercity) {
-        if (cleanedRecord.dealercity.length > 100) {
-            errors.push('Dealer City too long (max 100 characters)');
-        }
-        cleanedRecord.dealercity = cleanedRecord.dealercity.replace(/\s+/g, ' ').trim();
-    }
-    
+    // Additional validation
     if (cleanedRecord.materialcode) {
         if (cleanedRecord.materialcode.length > 50) {
             errors.push('Material Code too long (max 50 characters)');
         }
+        // Remove any extra spaces
         cleanedRecord.materialcode = cleanedRecord.materialcode.replace(/\s+/g, ' ').trim();
     }
     
@@ -254,35 +168,14 @@ function validateRecord(record, headerMapping) {
         if (cleanedRecord.materialdescription.length > 500) {
             errors.push('Material Description too long (max 500 characters)');
         }
+        // Clean up description
         cleanedRecord.materialdescription = cleanedRecord.materialdescription.replace(/\s+/g, ' ').trim();
     }
-    
-    if (cleanedRecord.plant) {
-        if (cleanedRecord.plant.length > 50) {
-            errors.push('Plant too long (max 50 characters)');
-        }
-        cleanedRecord.plant = cleanedRecord.plant.replace(/\s+/g, ' ').trim();
-    }
-    
-    if (cleanedRecord.unrestrictedquantity) {
-        // Try to convert to number
-        const quantity = parseFloat(cleanedRecord.unrestrictedquantity);
-        if (isNaN(quantity)) {
-            errors.push('Unrestricted Quantity must be a valid number');
-        } else if (quantity < 0) {
-            errors.push('Unrestricted Quantity cannot be negative');
-        } else {
-            cleanedRecord.unrestrictedquantity = quantity;
-        }
-    }
-    
-    // Set default status
-    cleanedRecord.status = cleanedRecord.status || 'Active';
     
     return { cleanedRecord, errors };
 }
 
-// Bulk upload route for DealerStock with delete and replace functionality
+// Bulk upload route for Aerb
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     // Initialize response object with detailed tracking
     const response = {
@@ -294,21 +187,16 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         failedRecords: 0,
         results: [],
         summary: {
-            deletedExisting: 0,
             created: 0,
+            updated: 0,
             failed: 0,
-            duplicatesInFile: 0,
-            skippedTotal: 0
+            duplicatesInFile: 0,          // Duplicates within the uploaded file
+            existingRecords: 0,           // Records that already exist with same data
+            skippedTotal: 0               // Total skipped (duplicatesInFile + existingRecords)
         },
         headerMapping: {},
         errors: [],
-        warnings: [],
-        deletionPhase: {
-            status: 'pending',
-            totalExisting: 0,
-            deleted: 0,
-            progress: 0
-        }
+        warnings: []
     };
 
     try {
@@ -359,30 +247,19 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         response.headerMapping = headerMapping;
         
         // Validate that we found the required headers
-        const requiredFields = ['dealercodeid', 'dealername', 'dealercity', 'materialcode', 'materialdescription', 'plant', 'unrestrictedquantity'];
-        const missingFields = [];
+        const hasCodeField = Object.values(headerMapping).includes('materialcode');
+        const hasDescField = Object.values(headerMapping).includes('materialdescription');
         
-        requiredFields.forEach(field => {
-            if (!Object.values(headerMapping).includes(field)) {
-                const fieldDisplayNames = {
-                    'dealercodeid': 'Dealer Code',
-                    'dealername': 'Dealer Name',
-                    'dealercity': 'Dealer City',
-                    'materialcode': 'Material Code',
-                    'materialdescription': 'Material Description',
-                    'plant': 'Plant',
-                    'unrestrictedquantity': 'Unrestricted Quantity'
-                };
-                missingFields.push(fieldDisplayNames[field]);
-            }
-        });
-        
-        if (missingFields.length > 0) {
+        if (!hasCodeField || !hasDescField) {
             response.status = 'failed';
+            const missingFields = [];
+            if (!hasCodeField) missingFields.push('Material Code');
+            if (!hasDescField) missingFields.push('Material Description');
+            
             response.errors.push(
                 `Required headers not found: ${missingFields.join(', ')}. ` +
                 `Available headers: ${headers.join(', ')}. ` +
-                `Please ensure your file contains all required columns.`
+                `Please ensure your file contains "Material Code" and "Material Description" columns.`
             );
             return res.status(400).json(response);
         }
@@ -390,36 +267,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Send initial response
         res.write(JSON.stringify(response) + '\n');
 
-        // Phase 1: Delete existing records
-        response.deletionPhase.status = 'processing';
-        const totalExisting = await DealerStock.countDocuments();
-        response.deletionPhase.totalExisting = totalExisting;
-        
-        if (totalExisting > 0) {
-            // Send deletion start update
-            res.write(JSON.stringify({
-                ...response,
-                deletionPhase: { ...response.deletionPhase, status: 'deleting' }
-            }) + '\n');
-            
-            // Delete all existing records
-            await DealerStock.deleteMany({});
-            response.deletionPhase.deleted = totalExisting;
-            response.summary.deletedExisting = totalExisting;
-        }
-        
-        response.deletionPhase.status = 'completed';
-        response.deletionPhase.progress = 100;
-        
-        // Send deletion completion update
-        res.write(JSON.stringify({
-            ...response,
-            deletionPhase: response.deletionPhase
-        }) + '\n');
-
-        // Phase 2: Process and insert new records
+        // Process records in batches
         const BATCH_SIZE = 50;
-        const processedKeys = new Set(); // To track duplicates within file
+        const processedMaterialCodes = new Set();
 
         for (let i = 0; i < jsonData.length; i += BATCH_SIZE) {
             const batch = jsonData.slice(i, i + BATCH_SIZE);
@@ -428,9 +278,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             for (const [index, record] of batch.entries()) {
                 const recordResult = {
                     row: i + index + 2, // +2 because Excel rows start from 1 and we skip header
-                    dealercodeid: '',
-                    dealername: '',
                     materialcode: '',
+                    materialdescription: '',
                     status: 'Processing',
                     action: '',
                     error: null,
@@ -440,9 +289,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 try {
                     // Validate and clean record
                     const { cleanedRecord, errors } = validateRecord(record, headerMapping);
-                    recordResult.dealercodeid = cleanedRecord.dealercodeid || 'Unknown';
-                    recordResult.dealername = cleanedRecord.dealername || 'N/A';
-                    recordResult.materialcode = cleanedRecord.materialcode || 'N/A';
+                    recordResult.materialcode = cleanedRecord.materialcode || 'Unknown';
+                    recordResult.materialdescription = cleanedRecord.materialdescription || 'N/A';
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -455,14 +303,12 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         continue;
                     }
 
-                    // Create unique key for duplicate detection within file
-                    const uniqueKey = `${cleanedRecord.dealercodeid}_${cleanedRecord.materialcode}_${cleanedRecord.plant}`;
-                    
-                    if (processedKeys.has(uniqueKey)) {
+                    // Check for duplicates within the file
+                    if (processedMaterialCodes.has(cleanedRecord.materialcode)) {
                         recordResult.status = 'Skipped';
-                        recordResult.error = 'Duplicate combination in file (Dealer Code + Material Code + Plant)';
+                        recordResult.error = 'Duplicate Material Code in file';
                         recordResult.action = 'Skipped due to file duplicate';
-                        recordResult.warnings.push('Duplicate combination already processed in this file');
+                        recordResult.warnings.push('Material Code already processed in this file');
                         response.results.push(recordResult);
                         response.summary.duplicatesInFile++;
                         response.summary.skippedTotal++;
@@ -470,16 +316,45 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         continue;
                     }
 
-                    processedKeys.add(uniqueKey);
+                    processedMaterialCodes.add(cleanedRecord.materialcode);
 
-                    // Create new record (since we deleted all existing ones)
-                    const newRecord = new DealerStock(cleanedRecord);
-                    await newRecord.save();
+                    // Check if record exists in database
+                    const existingRecord = await Aerb.findOne({ materialcode: cleanedRecord.materialcode });
+                    
+                    if (existingRecord) {
+                        // Check if description is different
+                        if (existingRecord.materialdescription.trim() !== cleanedRecord.materialdescription.trim()) {
+                            // Update existing record
+                            const updatedRecord = await Aerb.findOneAndUpdate(
+                                { materialcode: cleanedRecord.materialcode },
+                                {
+                                    materialdescription: cleanedRecord.materialdescription,
+                                    modifiedAt: new Date()
+                                },
+                                { new: true, runValidators: true }
+                            );
 
-                    recordResult.status = 'Created';
-                    recordResult.action = 'Created new record';
-                    response.summary.created++;
-                    response.successfulRecords++;
+                            recordResult.status = 'Updated';
+                            recordResult.action = 'Updated existing record with new description';
+                            response.summary.updated++;
+                            response.successfulRecords++;
+                        } else {
+                            recordResult.status = 'Skipped';
+                            recordResult.action = 'No changes required';
+                            recordResult.warnings.push('Material Code already exists with same description');
+                            response.summary.existingRecords++;
+                            response.summary.skippedTotal++;
+                        }
+                    } else {
+                        // Create new record
+                        const newRecord = new Aerb(cleanedRecord);
+                        await newRecord.save();
+
+                        recordResult.status = 'Created';
+                        recordResult.action = 'Created new record';
+                        response.summary.created++;
+                        response.successfulRecords++;
+                    }
 
                     response.results.push(recordResult);
 
@@ -489,7 +364,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     recordResult.action = 'Database operation failed';
                     recordResult.error = err.message;
                     if (err.code === 11000) {
-                        recordResult.error = 'Duplicate key error';
+                        recordResult.error = 'Duplicate Material Code - already exists in database';
                     }
                     response.results.push(recordResult);
                     response.failedRecords++;
@@ -519,10 +394,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
         // Add detailed summary message
         response.message = `Processing completed successfully. ` +
-            `Deleted existing: ${response.summary.deletedExisting}, ` +
             `Created: ${response.summary.created}, ` +
+            `Updated: ${response.summary.updated}, ` +
             `Failed: ${response.summary.failed}, ` +
             `File Duplicates: ${response.summary.duplicatesInFile}, ` +
+            `Existing Records: ${response.summary.existingRecords}, ` +
             `Total Skipped: ${response.summary.skippedTotal}`;
 
         // Final response
@@ -530,7 +406,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('DealerStock bulk upload error:', error);
+        console.error('Aerb bulk upload error:', error);
         response.status = 'failed';
         response.endTime = new Date();
         response.errors.push(`System error: ${error.message}`);

@@ -1,319 +1,538 @@
-const express = require("express")
-const router = express.Router()
-const mongoose = require("mongoose")
-const Customer = require("../../Model/UploadSchema/CustomerSchema")
-const XLSX = require("xlsx")
-const multer = require("multer")
+const XLSX = require('xlsx');
+const express = require('express');
+const router = express.Router();
+const multer = require('multer');
+const csv = require('csv-parser');
+const { Readable } = require('stream');
 
-// Configure memory storage
-const storage = multer.memoryStorage()
-const upload = multer({ storage })
+// Import Mongoose model
+const Customer = require('../../Model/UploadSchema/CustomerSchema');
 
-// Bulk customer upload/update endpoint
-router.post("/bulk-upload", upload.single("file"), async (req, res) => {
-  res.setHeader("Content-Type", "application/json")
-  res.setHeader("Transfer-Encoding", "chunked")
-
-  const response = {
-    status: "processing",
-    startTime: new Date(),
-    totalRecords: 0,
-    processedRecords: 0,
-    createdCount: 0,
-    updatedCount: 0,
-    failedCount: 0,
-    skippedCount: 0,
-    failures: [],
-    creations: [],
-    updates: [],
-    skips: [],
-    stats: {
-      processingTime: 0,
-      recordsPerSecond: 0,
-    },
-  }
-
-  try {
-    if (!req.file) {
-      response.status = "failed"
-      response.endTime = new Date()
-      response.failures.push({
-        error: "No file uploaded",
-        suggestion: "Please upload a valid Excel file with customer data",
-      })
-      return res.status(400).json(response)
-    }
-
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" })
-    const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]])
-
-    if (!jsonData || jsonData.length === 0) {
-      response.status = "failed"
-      response.endTime = new Date()
-      response.failures.push({
-        error: "Empty file",
-        suggestion: "The uploaded file contains no data. Please check the file and try again.",
-      })
-      return res.status(400).json(response)
-    }
-
-    response.totalRecords = jsonData.length
-    res.write(JSON.stringify(response) + "\n")
-
-    // Track seen customer codes to prevent duplicates in this batch
-    const seenCustomerCodes = new Set()
-
-    for (let i = 0; i < jsonData.length; i++) {
-      const record = jsonData[i]
-      const recordIdentifier = `Record ${i + 1}`
-
-      try {
-        // Field mapping for all possible Excel column names
-        const fieldMappings = {
-          customercodeid: ["customercodeid", "customerCode", "Customer Code"],
-          customername: ["customername", "customerName", "Customer Name"],
-          hospitalname: ["hospitalname", "hospitalName", "Hospital Name"],
-          street: ["street", "Street Address"],
-          city: ["city", "City"],
-          postalcode: ["postalcode", "postalCode", "Postal Code", "pincode", "Pincode"],
-          district: ["district", "District"],
-          state: ["state", "State"],
-          region: ["region", "Region"],
-          country: ["country", "Country"],
-          telephone: ["telephone", "phone", "Phone", "Phone Number"],
-          taxnumber1: ["taxnumber1", "taxNumber1", "Tax ID 1"],
-          taxnumber2: ["taxnumber2", "taxNumber2", "Tax ID 2"],
-          email: ["email", "Email", "Email Address"],
-          status: ["status", "Status"],
-          customertype: ["customertype", "customerType", "Customer Type"],
-        }
-
-        // Build customer data object from Excel
-        const customerData = {}
-        for (const [field, aliases] of Object.entries(fieldMappings)) {
-          for (const alias of aliases) {
-            if (record[alias] !== undefined && record[alias] !== "") {
-              customerData[field] = record[alias]
-              break
-            }
-          }
-        }
-
-        // Only customercodeid is mandatory
-        if (!customerData.customercodeid) {
-          throw new Error(
-            'Missing required field: customercodeid (must be present as "customercodeid", "customerCode", or "Customer Code")',
-          )
-        }
-
-        // FIXED: Convert customercodeid to string and validate
-        customerData.customercodeid = String(customerData.customercodeid).trim()
-
-        // Validate customer code format (now accepts both strings and numbers)
-        if (
-          !customerData.customercodeid ||
-          customerData.customercodeid === "" ||
-          customerData.customercodeid === "undefined" ||
-          customerData.customercodeid === "null"
-        ) {
-          throw new Error("Invalid customer code format. Customer code cannot be empty, null, or undefined.")
-        }
-
-        // Check for duplicates in this batch
-        if (seenCustomerCodes.has(customerData.customercodeid)) {
-          throw new Error(`Duplicate customer code in this upload batch: ${customerData.customercodeid}`)
-        }
-        seenCustomerCodes.add(customerData.customercodeid)
-
-        // Check for existing customer
-        const existingCustomer = await Customer.findOne({
-          customercodeid: customerData.customercodeid,
-        })
-
-        if (existingCustomer) {
-          // Track changes for all fields
-          const changes = {}
-          let hasChanges = false
-
-          // Check each field that exists in the Excel
-          for (const key in customerData) {
-            // Skip comparison for these fields as they are handled separately
-            if (key === "createdAt" || key === "modifiedAt") continue
-
-            // Convert both values to strings for comparison to handle type differences
-            const existingValue = String(existingCustomer[key] || "")
-            const newValue = String(customerData[key] || "")
-
-            if (existingValue !== newValue) {
-              changes[key] = {
-                old: existingCustomer[key],
-                new: customerData[key],
-              }
-              hasChanges = true
-            }
-          }
-
-          if (!hasChanges) {
-            response.skippedCount++
-            response.skips.push({
-              record: recordIdentifier,
-              customercodeid: customerData.customercodeid,
-              message: "No changes detected - record matches existing data",
-              details: {
-                existingRecord: {
-                  customername: existingCustomer.customername,
-                  email: existingCustomer.email,
-                  lastModified: existingCustomer.modifiedAt,
-                },
-              },
-              timestamp: new Date(),
-            })
-            continue
-          }
-
-          // Update existing customer with modifiedAt timestamp
-          const updateData = {
-            ...customerData,
-            modifiedAt: new Date(),
-          }
-
-          const updatedCustomer = await Customer.findOneAndUpdate(
-            { customercodeid: customerData.customercodeid },
-            updateData,
-            { new: true },
-          )
-
-          response.updatedCount++
-          response.updates.push({
-            record: recordIdentifier,
-            customercodeid: customerData.customercodeid,
-            changes: changes,
-            details: {
-              previousData: {
-                customername: existingCustomer.customername,
-                email: existingCustomer.email,
-              },
-              newData: {
-                customername: updatedCustomer.customername,
-                email: updatedCustomer.email,
-              },
-            },
-            timestamp: new Date(),
-          })
+// Multer memory storage for file uploads
+const storage = multer.memoryStorage();
+const upload = multer({ 
+    storage,
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+            'application/vnd.ms-excel', // .xls
+            'text/csv', // .csv
+            'application/csv'
+        ];
+        
+        if (allowedTypes.includes(file.mimetype) || 
+            file.originalname.toLowerCase().endsWith('.csv') ||
+            file.originalname.toLowerCase().endsWith('.xlsx') ||
+            file.originalname.toLowerCase().endsWith('.xls')) {
+            cb(null, true);
         } else {
-          // Create new customer with timestamps
-          const newCustomerData = {
-            ...customerData,
-            createdAt: new Date(),
-            modifiedAt: new Date(),
-          }
-
-          // Set default values for required fields if not provided
-          if (!newCustomerData.hospitalname) newCustomerData.hospitalname = "Unknown"
-          if (!newCustomerData.email) newCustomerData.email = "no-email@example.com"
-          if (!newCustomerData.status) newCustomerData.status = "active"
-
-          const customer = new Customer(newCustomerData)
-          await customer.save()
-
-          response.createdCount++
-          response.creations.push({
-            record: recordIdentifier,
-            customercodeid: customer.customercodeid,
-            details: {
-              customername: customer.customername,
-              email: customer.email,
-              hospitalname: customer.hospitalname,
-            },
-            timestamp: new Date(),
-          })
+            cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
         }
-      } catch (error) {
-        response.failedCount++
-        response.failures.push({
-          record: recordIdentifier,
-          data: {
-            customercodeid: record.customercodeid || record.customerCode || record["Customer Code"] || "N/A",
-            customername: record.customername || record.customerName || record["Customer Name"] || "N/A",
-          },
-          error: error.message,
-          suggestion: error.message.includes("required field")
-            ? "Please ensure the customer code is provided in the Excel file"
-            : error.message.includes("Duplicate")
-              ? "Remove duplicate entries from your upload file"
-              : error.message.includes("Invalid customer code format")
-                ? "Customer codes can be numbers or text, but cannot be empty. Check your Excel file for empty customer code cells."
-                : "Please check the data format and try again",
-          timestamp: new Date(),
-        })
-      } finally {
-        response.processedRecords++
+    },
+    limits: {
+        fileSize: 50 * 1024 * 1024 // 50MB limit
+    }
+});
 
-        // Calculate processing stats
-        const elapsedTime = (new Date() - response.startTime) / 1000
-        response.stats.processingTime = elapsedTime
-        response.stats.recordsPerSecond = response.processedRecords / elapsedTime
+/**
+ * Clean and normalize field names for comparison
+ * Removes spaces, special characters, and converts to lowercase
+ */
+function normalizeFieldName(fieldName) {
+    if (!fieldName) return '';
+    
+    return fieldName
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '') // Remove all non-alphanumeric characters including spaces
+        .trim();
+}
 
-        // Send progress update every 10 records or at the end
-        if (i % 10 === 0 || i === jsonData.length - 1) {
-          res.write(
-            JSON.stringify({
-              status: response.status,
-              processedRecords: response.processedRecords,
-              progress: `${Math.round((response.processedRecords / response.totalRecords) * 100)}%`,
-              stats: response.stats,
-              currentCounts: {
-                created: response.createdCount,
-                updated: response.updatedCount,
-                skipped: response.skippedCount,
-                failed: response.failedCount,
-              },
-            }) + "\n",
-          )
+/**
+ * Map Excel/CSV headers to schema fields
+ */
+function mapHeaders(headers) {
+    const fieldMapping = {
+        'customercodeid': [
+            'customercodeid',
+            'customercode',
+            'customer_code',
+            'customer_id',
+            'custcode',
+            'cust_code',
+            'code'
+        ],
+        'customername': [
+            'customername',
+            'customer_name',
+            'name1',
+            'name',
+            'customername1',
+            'customer_name1'
+        ],
+        'hospitalname': [
+            'hospitalname',
+            'hospital_name',
+            'name2',
+            'customername2',
+            'customer_name2',
+            'hospital'
+        ],
+        'street': [
+            'street',
+            'streetaddress',
+            'street_address',
+            'address1',
+            'address',
+            'addr1'
+        ],
+        'city': [
+            'city',
+            'cityname',
+            'city_name'
+        ],
+        'postalcode': [
+            'postalcode',
+            'postal_code',
+            'pincode',
+            'pin_code',
+            'zipcode',
+            'zip_code',
+            'zip'
+        ],
+        'district': [
+            'district',
+            'dist',
+            'districtname',
+            'district_name'
+        ],
+        'region': [
+            'region',
+            'regionname',
+            'region_name',
+            'zone'
+        ],
+        'country': [
+            'country',
+            'countryname',
+            'country_name',
+            'nation'
+        ],
+        'telephone': [
+            'telephone',
+            'phone',
+            'phonenumber',
+            'phone_number',
+            'mobile',
+            'contact',
+            'contactno',
+            'contact_no'
+        ],
+        'taxnumber1': [
+            'taxnumber1',
+            'tax_number1',
+            'taxno1',
+            'tax_no1',
+            'gst',
+            'gstin',
+            'tax1'
+        ],
+        'taxnumber2': [
+            'taxnumber2',
+            'tax_number2',
+            'taxno2',
+            'tax_no2',
+            'pan',
+            'tax2'
+        ],
+        'email': [
+            'email',
+            'emailaddress',
+            'email_address',
+            'emailid',
+            'email_id'
+        ]
+    };
+    
+    const mappedHeaders = {};
+    
+    headers.forEach(header => {
+        const originalHeader = header;
+        const normalizedHeader = normalizeFieldName(header);
+        
+        // Check for exact matches
+        for (const [schemaField, variations] of Object.entries(fieldMapping)) {
+            const found = variations.some(variation => {
+                const normalizedVariation = normalizeFieldName(variation);
+                return normalizedHeader === normalizedVariation;
+            });
+            
+            if (found) {
+                mappedHeaders[originalHeader] = schemaField;
+                break;
+            }
         }
-      }
+    });
+    
+    return mappedHeaders;
+}
+
+/**
+ * Parse Excel file to JSON
+ */
+function parseExcelFile(buffer) {
+    try {
+        const workbook = XLSX.read(buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        return XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+    } catch (error) {
+        throw new Error(`Excel parsing error: ${error.message}`);
     }
+}
 
-    // Final status determination
-    if (response.failedCount === 0) {
-      response.status = response.skippedCount > 0 ? "completed_with_skips" : "completed"
-    } else {
-      response.status = "completed_with_errors"
+/**
+ * Parse CSV file to JSON
+ */
+function parseCSVFile(buffer) {
+    return new Promise((resolve, reject) => {
+        const results = [];
+        const readable = new Readable();
+        readable.push(buffer);
+        readable.push(null);
+        
+        readable
+            .pipe(csv())
+            .on('data', (data) => results.push(data))
+            .on('end', () => resolve(results))
+            .on('error', reject);
+    });
+}
+
+/**
+ * Validate and clean record data
+ */
+function validateRecord(record, headerMapping) {
+    const cleanedRecord = {};
+    
+    // Map headers to schema fields
+    for (const [originalHeader, schemaField] of Object.entries(headerMapping)) {
+        if (record[originalHeader] !== undefined && record[originalHeader] !== null) {
+            const value = String(record[originalHeader]).trim();
+            if (value !== '') {
+                cleanedRecord[schemaField] = value;
+            }
+        }
     }
-
-    response.endTime = new Date()
-    response.stats.processingTime = (response.endTime - response.startTime) / 1000
-    response.stats.recordsPerSecond = response.totalRecords / response.stats.processingTime
-
-    // Add summary information
-    response.summary = {
-      totalProcessed: response.processedRecords,
-      successRate: `${(((response.createdCount + response.updatedCount) / response.totalRecords) * 100).toFixed(2)}%`,
-      creationRate: `${((response.createdCount / response.totalRecords) * 100).toFixed(2)}%`,
-      updateRate: `${((response.updatedCount / response.totalRecords) * 100).toFixed(2)}%`,
-      failureRate: `${((response.failedCount / response.totalRecords) * 100).toFixed(2)}%`,
-      skipRate: `${((response.skippedCount / response.totalRecords) * 100).toFixed(2)}%`,
-      timeTaken: `${response.stats.processingTime.toFixed(2)} seconds`,
-      performance:
-        response.stats.recordsPerSecond > 10 ? "good" : response.stats.recordsPerSecond > 5 ? "average" : "slow",
+    
+    // Validation
+    const errors = [];
+    
+    // Required field validation - only Customer Code is required
+    if (!cleanedRecord.customercodeid || cleanedRecord.customercodeid === '') {
+        errors.push('Customer Code is required');
     }
+    
+    // Additional validation
+    if (cleanedRecord.customercodeid) {
+        if (cleanedRecord.customercodeid.length > 50) {
+            errors.push('Customer Code too long (max 50 characters)');
+        }
+        // Clean up customer code
+        cleanedRecord.customercodeid = cleanedRecord.customercodeid.replace(/\s+/g, ' ').trim();
+    }
+    
+    // Email validation
+    if (cleanedRecord.email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(cleanedRecord.email)) {
+            errors.push('Invalid email format');
+        }
+    }
+    
+    // Phone validation
+    if (cleanedRecord.telephone) {
+        const phoneRegex = /^[\+]?[0-9\-\(\)\s]{10,}$/;
+        if (!phoneRegex.test(cleanedRecord.telephone)) {
+            errors.push('Invalid telephone format');
+        }
+    }
+    
+    // Clean up text fields
+    const textFields = [
+        'customercodeid', 'customername', 'hospitalname', 'street', 'city',
+        'postalcode', 'district', 'region', 'country', 'telephone',
+        'taxnumber1', 'taxnumber2', 'email'
+    ];
+    
+    textFields.forEach(field => {
+        if (cleanedRecord[field]) {
+            cleanedRecord[field] = cleanedRecord[field].replace(/\s+/g, ' ').trim();
+        }
+    });
+    
+    return { cleanedRecord, errors };
+}
 
-    res.write(JSON.stringify(response) + "\n")
-    res.end()
-  } catch (error) {
-    console.error("Bulk upload failed:", error)
-    response.status = "failed"
-    response.endTime = new Date()
-    response.stats.processingTime = (response.endTime - response.startTime) / 1000
-    response.failures.push({
-      error: error.message,
-      suggestion:
-        "Please check the file format and try again. Ensure it is a valid Excel file with proper column headers.",
-      timestamp: new Date(),
-    })
-    res.write(JSON.stringify(response) + "\n")
-    res.end()
-  }
-})
+// Bulk upload route for Customer
+router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+    // Initialize response object with detailed tracking
+    const response = {
+        status: 'processing',
+        startTime: new Date(),
+        totalRecords: 0,
+        processedRecords: 0,
+        successfulRecords: 0,
+        failedRecords: 0,
+        results: [],
+        summary: {
+            created: 0,
+            updated: 0,
+            failed: 0,
+            duplicatesInFile: 0,
+            existingRecords: 0,
+            skippedTotal: 0
+        },
+        headerMapping: {},
+        errors: [],
+        warnings: []
+    };
 
-module.exports = router
+    try {
+        // Validate file upload
+        if (!req.file) {
+            response.status = 'failed';
+            response.errors.push('No file uploaded');
+            return res.status(400).json(response);
+        }
+
+        // Set headers for streaming response (AWS-compatible)
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Transfer-Encoding', 'chunked');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        // Parse file based on type
+        let jsonData;
+        const fileName = req.file.originalname.toLowerCase();
+        
+        try {
+            if (fileName.endsWith('.csv')) {
+                jsonData = await parseCSVFile(req.file.buffer);
+            } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                jsonData = parseExcelFile(req.file.buffer);
+            } else {
+                throw new Error('Unsupported file format. Please upload Excel (.xlsx, .xls) or CSV files only.');
+            }
+        } catch (parseError) {
+            response.status = 'failed';
+            response.errors.push(`File parsing error: ${parseError.message}`);
+            return res.status(400).json(response);
+        }
+
+        if (!jsonData || jsonData.length === 0) {
+            response.status = 'failed';
+            response.errors.push('No data found in file or file is empty');
+            return res.status(400).json(response);
+        }
+
+        response.totalRecords = jsonData.length;
+
+        // Map headers
+        const headers = Object.keys(jsonData[0] || {});
+        const headerMapping = mapHeaders(headers);
+        response.headerMapping = headerMapping;
+        
+        // Validate that we found the required headers
+        const hasCustomerCodeField = Object.values(headerMapping).includes('customercodeid');
+        
+        if (!hasCustomerCodeField) {
+            response.status = 'failed';
+            response.errors.push(
+                `Required header not found: Customer Code. ` +
+                `Available headers: ${headers.join(', ')}. ` +
+                `Please ensure your file contains a "Customer Code" column.`
+            );
+            return res.status(400).json(response);
+        }
+
+        // Send initial response
+        res.write(JSON.stringify(response) + '\n');
+
+        // Process records in batches
+        const BATCH_SIZE = 50;
+        const processedCustomerCodes = new Set();
+
+        for (let i = 0; i < jsonData.length; i += BATCH_SIZE) {
+            const batch = jsonData.slice(i, i + BATCH_SIZE);
+
+            // Process each record in the batch
+            for (const [index, record] of batch.entries()) {
+                const recordResult = {
+                    row: i + index + 2, // +2 because Excel rows start from 1 and we skip header
+                    customercodeid: '',
+                    customername: '',
+                    status: 'Processing',
+                    action: '',
+                    error: null,
+                    warnings: []
+                };
+
+                try {
+                    // Validate and clean record
+                    const { cleanedRecord, errors } = validateRecord(record, headerMapping);
+                    recordResult.customercodeid = cleanedRecord.customercodeid || 'Unknown';
+                    recordResult.customername = cleanedRecord.customername || 'N/A';
+
+                    if (errors.length > 0) {
+                        recordResult.status = 'Failed';
+                        recordResult.error = errors.join(', ');
+                        recordResult.action = 'Validation failed';
+                        response.results.push(recordResult);
+                        response.failedRecords++;
+                        response.summary.failed++;
+                        response.processedRecords++;
+                        continue;
+                    }
+
+                    // Check for duplicates within the file
+                    if (processedCustomerCodes.has(cleanedRecord.customercodeid)) {
+                        recordResult.status = 'Skipped';
+                        recordResult.error = 'Duplicate Customer Code in file';
+                        recordResult.action = 'Skipped due to file duplicate';
+                        recordResult.warnings.push('Customer Code already processed in this file');
+                        response.results.push(recordResult);
+                        response.summary.duplicatesInFile++;
+                        response.summary.skippedTotal++;
+                        response.processedRecords++;
+                        continue;
+                    }
+
+                    processedCustomerCodes.add(cleanedRecord.customercodeid);
+
+                    // Check if record exists in database
+                    const existingRecord = await Customer.findOne({ 
+                        customercodeid: cleanedRecord.customercodeid 
+                    });
+                    
+                    if (existingRecord) {
+                        // Check if any field is different
+                        let hasChanges = false;
+                        const changes = {};
+                        
+                        for (const key in cleanedRecord) {
+                            if (key === 'createdAt' || key === 'modifiedAt') continue;
+                            
+                            const existingValue = String(existingRecord[key] || '').trim();
+                            const newValue = String(cleanedRecord[key] || '').trim();
+                            
+                            if (existingValue !== newValue) {
+                                hasChanges = true;
+                                changes[key] = { old: existingValue, new: newValue };
+                            }
+                        }
+                        
+                        if (hasChanges) {
+                            // Update existing record
+                            const updatedRecord = await Customer.findOneAndUpdate(
+                                { customercodeid: cleanedRecord.customercodeid },
+                                {
+                                    ...cleanedRecord,
+                                    modifiedAt: new Date()
+                                },
+                                { new: true, runValidators: true }
+                            );
+
+                            recordResult.status = 'Updated';
+                            recordResult.action = 'Updated existing record with changes';
+                            response.summary.updated++;
+                            response.successfulRecords++;
+                        } else {
+                            recordResult.status = 'Skipped';
+                            recordResult.action = 'No changes required';
+                            recordResult.warnings.push('Customer Code already exists with same data');
+                            response.summary.existingRecords++;
+                            response.summary.skippedTotal++;
+                        }
+                    } else {
+                        // Create new record with timestamps
+                        const newRecord = new Customer({
+                            ...cleanedRecord,
+                            createdAt: new Date(),
+                            modifiedAt: new Date()
+                        });
+                        await newRecord.save();
+
+                        recordResult.status = 'Created';
+                        recordResult.action = 'Created new record';
+                        response.summary.created++;
+                        response.successfulRecords++;
+                    }
+
+                    response.results.push(recordResult);
+
+                } catch (err) {
+                    console.error(`Error processing record ${recordResult.row}:`, err);
+                    recordResult.status = 'Failed';
+                    recordResult.action = 'Database operation failed';
+                    recordResult.error = err.message;
+                    if (err.code === 11000) {
+                        recordResult.error = 'Duplicate Customer Code - already exists in database';
+                    }
+                    response.results.push(recordResult);
+                    response.failedRecords++;
+                    response.summary.failed++;
+                }
+
+                // Update progress
+                response.processedRecords++;
+            }
+
+            // Send progress update after each batch
+            const progressUpdate = {
+                ...response,
+                progress: Math.round((response.processedRecords / response.totalRecords) * 100)
+            };
+            res.write(JSON.stringify(progressUpdate) + '\n');
+
+            // Small delay to prevent overwhelming the client
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+
+        // Finalize response
+        response.status = 'completed';
+        response.endTime = new Date();
+        response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
+        response.progress = 100;
+
+        // Add detailed summary message
+        response.message = `Processing completed successfully. ` +
+            `Created: ${response.summary.created}, ` +
+            `Updated: ${response.summary.updated}, ` +
+            `Failed: ${response.summary.failed}, ` +
+            `File Duplicates: ${response.summary.duplicatesInFile}, ` +
+            `Existing Records: ${response.summary.existingRecords}, ` +
+            `Total Skipped: ${response.summary.skippedTotal}`;
+
+        // Final response
+        res.write(JSON.stringify(response) + '\n');
+        res.end();
+
+    } catch (error) {
+        console.error('Customer bulk upload error:', error);
+        response.status = 'failed';
+        response.endTime = new Date();
+        response.errors.push(`System error: ${error.message}`);
+        response.duration = response.endTime ? `${((response.endTime - response.startTime) / 1000).toFixed(2)}s` : '0s';
+        
+        if (!res.headersSent) {
+            return res.status(500).json(response);
+        } else {
+            res.write(JSON.stringify(response) + '\n');
+            res.end();
+        }
+    }
+});
+
+module.exports = router;

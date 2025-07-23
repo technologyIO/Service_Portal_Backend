@@ -23,5 +23,15 @@ const AerbSchema = new mongoose.Schema({
         default: Date.now
     }
 })
+AerbSchema.pre('save', function (next) {
+    this.modifiedAt = new Date();
+    next();
+});
+
+// Update modifiedAt before findOneAndUpdate
+AerbSchema.pre('findOneAndUpdate', function (next) {
+    this.set({ modifiedAt: new Date() });
+    next();
+});
 
 module.exports = mongoose.model("Aerb", AerbSchema);
