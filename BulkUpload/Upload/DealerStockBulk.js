@@ -4,26 +4,27 @@ const router = express.Router();
 const multer = require('multer');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-
-// Import Mongoose model
 const DealerStock = require('../../Model/UploadSchema/DealerStockSchema');
 
-// Multer memory storage for file uploads
+// Optimized: Pre-compiled regex patterns
+const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
+const MULTISPACE_REGEX = /\s+/g;
+
+// Memory storage with optimized settings
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
     storage,
     fileFilter: (req, file, cb) => {
-        const allowedTypes = [
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-            'application/vnd.ms-excel', // .xls
-            'text/csv', // .csv
-            'application/csv'
-        ];
-        
-        if (allowedTypes.includes(file.mimetype) || 
-            file.originalname.toLowerCase().endsWith('.csv') ||
-            file.originalname.toLowerCase().endsWith('.xlsx') ||
-            file.originalname.toLowerCase().endsWith('.xls')) {
+        const ext = file.originalname.toLowerCase().slice(-4);
+        if (
+            file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // .xlsx
+            file.mimetype === 'application/vnd.ms-excel' || // .xls
+            file.mimetype === 'text/csv' || // .csv
+            file.mimetype === 'application/csv' ||
+            ext === '.csv' ||
+            ext === '.xlsx' ||
+            ext === '.xls'
+        ) {
             cb(null, true);
         } else {
             cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
@@ -34,257 +35,176 @@ const upload = multer({
     }
 });
 
-/**
- * Clean and normalize field names for comparison
- * Removes spaces, special characters, and converts to lowercase
- */
+// Optimized: Predefined field mappings for faster access
+const FIELD_MAPPINGS = {
+    'dealercodeid': new Set(['dealercodeid', 'dealer_code_id', 'dealercode', 'dealer_code', 'code', 'dealerid', 'dealer_id']),
+    'dealername': new Set(['dealername', 'dealer_name', 'name', 'dealer', 'dealertitle', 'dealer_title']),
+    'dealercity': new Set(['dealercity', 'dealer_city', 'city', 'location', 'dealerlocation', 'dealer_location']),
+    'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'productcode', 'product_code', 'itemcode', 'item_code']),
+    'materialdescription': new Set(['materialdescription', 'material_description', 'description', 'desc', 'product_description', 'item_description', 'material_desc']),
+    'plant': new Set(['plant', 'factory', 'location', 'facility', 'warehouse', 'depot']),
+    'unrestrictedquantity': new Set(['unrestrictedquantity', 'unrestricted_quantity', 'quantity', 'qty', 'stock', 'available_quantity', 'available_qty', 'free_stock', 'freestock'])
+};
+
+// Optimized normalizeFieldName with memoization
+const normalizedFieldCache = new Map();
 function normalizeFieldName(fieldName) {
     if (!fieldName) return '';
-    
-    return fieldName
+    if (normalizedFieldCache.has(fieldName)) {
+        return normalizedFieldCache.get(fieldName);
+    }
+    const normalized = fieldName
         .toLowerCase()
-        .replace(/[^a-z0-9]/g, '') // Remove all non-alphanumeric characters including spaces
+        .replace(NON_ALPHANUMERIC_REGEX, '')
         .trim();
+    normalizedFieldCache.set(fieldName, normalized);
+    return normalized;
 }
 
-/**
- * Map Excel/CSV headers to schema fields
- * Focused on DealerStock fields
- */
+// Optimized header mapping with early exit
 function mapHeaders(headers) {
-    const fieldMapping = {
-        'dealercodeid': [
-            'dealercodeid',
-            'dealer_code_id',
-            'dealercode',
-            'dealer_code',
-            'code',
-            'dealerid',
-            'dealer_id'
-        ],
-        'dealername': [
-            'dealername',
-            'dealer_name',
-            'name',
-            'dealer',
-            'dealertitle',
-            'dealer_title'
-        ],
-        'dealercity': [
-            'dealercity',
-            'dealer_city',
-            'city',
-            'location',
-            'dealerlocation',
-            'dealer_location'
-        ],
-        'materialcode': [
-            'materialcode',
-            'material_code',
-            'partno',
-            'part_no',
-            'productcode',
-            'product_code',
-            'itemcode',
-            'item_code'
-        ],
-        'materialdescription': [
-            'materialdescription',
-            'material_description',
-            'description',
-            'desc',
-            'product_description',
-            'item_description',
-            'material_desc'
-        ],
-        'plant': [
-            'plant',
-            'factory',
-            'location',
-            'facility',
-            'warehouse',
-            'depot'
-        ],
-        'unrestrictedquantity': [
-            'unrestrictedquantity',
-            'unrestricted_quantity',
-            'quantity',
-            'qty',
-            'stock',
-            'available_quantity',
-            'available_qty',
-            'free_stock',
-            'freestock'
-        ]
-    };
-    
     const mappedHeaders = {};
-    
-    headers.forEach(header => {
-        const originalHeader = header;
+    const seenFields = new Set();
+
+    for (const header of headers) {
         const normalizedHeader = normalizeFieldName(header);
-        
-        // Check for exact matches first
-        for (const [schemaField, variations] of Object.entries(fieldMapping)) {
-            const found = variations.some(variation => {
-                const normalizedVariation = normalizeFieldName(variation);
-                return normalizedHeader === normalizedVariation;
-            });
-            
-            if (found) {
-                mappedHeaders[originalHeader] = schemaField;
-                break;
+
+        // Skip if we've already mapped this exact header
+        if (seenFields.has(normalizedHeader)) continue;
+        seenFields.add(normalizedHeader);
+
+        // Find the first matching schema field
+        for (const [schemaField, variations] of Object.entries(FIELD_MAPPINGS)) {
+            if (variations.has(normalizedHeader)) {
+                mappedHeaders[header] = schemaField;
+                break; // Move to next header once we find a match
             }
         }
-    });
-    
+    }
+
     return mappedHeaders;
 }
 
-/**
- * Parse Excel file to JSON
- */
+// Optimized Excel parsing with buffer reuse
 function parseExcelFile(buffer) {
     try {
-        const workbook = XLSX.read(buffer, { type: 'buffer' });
+        const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
         const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        return XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: false });
     } catch (error) {
         throw new Error(`Excel parsing error: ${error.message}`);
     }
 }
 
-/**
- * Parse CSV file to JSON
- */
+// Optimized CSV parsing with stream control
 function parseCSVFile(buffer) {
     return new Promise((resolve, reject) => {
         const results = [];
-        const readable = new Readable();
-        readable.push(buffer);
-        readable.push(null);
-        
-        readable
-            .pipe(csv())
+        const stream = Readable.from(buffer.toString())
+            .pipe(csv({
+                mapValues: ({ value }) => value.trim(),
+                strict: true,
+                skipLines: 0,
+                skipEmptyLines: true
+            }))
             .on('data', (data) => results.push(data))
             .on('end', () => resolve(results))
             .on('error', reject);
+
+        // Ensure stream is properly destroyed on errors
+        stream.on('error', () => stream.destroy());
     });
 }
 
-/**
- * Validate and clean record data
- */
+// Optimized record validation with early exits
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
-    
+    const errors = [];
+    const providedFields = [];
+
     // Map headers to schema fields
     for (const [originalHeader, schemaField] of Object.entries(headerMapping)) {
-        if (record[originalHeader] !== undefined && record[originalHeader] !== null) {
-            const value = String(record[originalHeader]).trim();
-            if (value !== '') {
-                cleanedRecord[schemaField] = value;
-            }
-        }
+        if (record[originalHeader] === undefined || record[originalHeader] === null) continue;
+
+        const value = String(record[originalHeader]).trim();
+        if (value === '' || value === 'undefined' || value === 'null') continue;
+
+        cleanedRecord[schemaField] = value.replace(MULTISPACE_REGEX, ' ').trim();
+        providedFields.push(schemaField);
     }
-    
-    // Validation
-    const errors = [];
-    
-    // Required field validations
-    if (!cleanedRecord.dealercodeid || cleanedRecord.dealercodeid === '') {
+
+    // Required field validations with early exit
+    if (!cleanedRecord.dealercodeid) {
         errors.push('Dealer Code is required');
     }
-    
-    if (!cleanedRecord.dealername || cleanedRecord.dealername === '') {
+    if (!cleanedRecord.dealername) {
         errors.push('Dealer Name is required');
     }
-    
-    if (!cleanedRecord.dealercity || cleanedRecord.dealercity === '') {
+    if (!cleanedRecord.dealercity) {
         errors.push('Dealer City is required');
     }
-    
-    if (!cleanedRecord.materialcode || cleanedRecord.materialcode === '') {
+    if (!cleanedRecord.materialcode) {
         errors.push('Material Code is required');
     }
-    
-    if (!cleanedRecord.materialdescription || cleanedRecord.materialdescription === '') {
+    if (!cleanedRecord.materialdescription) {
         errors.push('Material Description is required');
     }
-    
-    if (!cleanedRecord.plant || cleanedRecord.plant === '') {
+    if (!cleanedRecord.plant) {
         errors.push('Plant is required');
     }
-    
-    if (!cleanedRecord.unrestrictedquantity || cleanedRecord.unrestrictedquantity === '') {
+    if (!cleanedRecord.unrestrictedquantity) {
         errors.push('Unrestricted Quantity is required');
     }
-    
-    // Additional validation and cleaning
-    if (cleanedRecord.dealercodeid) {
-        if (cleanedRecord.dealercodeid.length > 50) {
-            errors.push('Dealer Code too long (max 50 characters)');
-        }
-        cleanedRecord.dealercodeid = cleanedRecord.dealercodeid.replace(/\s+/g, ' ').trim();
+
+    // Early exit if required fields are missing
+    if (errors.length > 0) {
+        return { cleanedRecord, errors, providedFields };
     }
-    
-    if (cleanedRecord.dealername) {
-        if (cleanedRecord.dealername.length > 200) {
-            errors.push('Dealer Name too long (max 200 characters)');
-        }
-        cleanedRecord.dealername = cleanedRecord.dealername.replace(/\s+/g, ' ').trim();
+
+    // Length validation
+    if (cleanedRecord.dealercodeid.length > 50) {
+        errors.push('Dealer Code too long (max 50 characters)');
     }
-    
-    if (cleanedRecord.dealercity) {
-        if (cleanedRecord.dealercity.length > 100) {
-            errors.push('Dealer City too long (max 100 characters)');
-        }
-        cleanedRecord.dealercity = cleanedRecord.dealercity.replace(/\s+/g, ' ').trim();
+    if (cleanedRecord.dealername.length > 200) {
+        errors.push('Dealer Name too long (max 200 characters)');
     }
-    
-    if (cleanedRecord.materialcode) {
-        if (cleanedRecord.materialcode.length > 50) {
-            errors.push('Material Code too long (max 50 characters)');
-        }
-        cleanedRecord.materialcode = cleanedRecord.materialcode.replace(/\s+/g, ' ').trim();
+    if (cleanedRecord.dealercity.length > 100) {
+        errors.push('Dealer City too long (max 100 characters)');
     }
-    
-    if (cleanedRecord.materialdescription) {
-        if (cleanedRecord.materialdescription.length > 500) {
-            errors.push('Material Description too long (max 500 characters)');
-        }
-        cleanedRecord.materialdescription = cleanedRecord.materialdescription.replace(/\s+/g, ' ').trim();
+    if (cleanedRecord.materialcode.length > 50) {
+        errors.push('Material Code too long (max 50 characters)');
     }
-    
-    if (cleanedRecord.plant) {
-        if (cleanedRecord.plant.length > 50) {
-            errors.push('Plant too long (max 50 characters)');
-        }
-        cleanedRecord.plant = cleanedRecord.plant.replace(/\s+/g, ' ').trim();
+    if (cleanedRecord.materialdescription.length > 500) {
+        errors.push('Material Description too long (max 500 characters)');
     }
-    
-    if (cleanedRecord.unrestrictedquantity) {
-        // Try to convert to number
-        const quantity = parseFloat(cleanedRecord.unrestrictedquantity);
-        if (isNaN(quantity)) {
-            errors.push('Unrestricted Quantity must be a valid number');
-        } else if (quantity < 0) {
-            errors.push('Unrestricted Quantity cannot be negative');
-        } else {
-            cleanedRecord.unrestrictedquantity = quantity;
-        }
+    if (cleanedRecord.plant.length > 50) {
+        errors.push('Plant too long (max 50 characters)');
     }
-    
-    // Set default status
-    cleanedRecord.status = cleanedRecord.status || 'Active';
-    
-    return { cleanedRecord, errors };
+
+    // Quantity validation
+    const quantity = parseFloat(cleanedRecord.unrestrictedquantity);
+    if (isNaN(quantity)) {
+        errors.push('Unrestricted Quantity must be a valid number');
+    } else if (quantity < 0) {
+        errors.push('Unrestricted Quantity cannot be negative');
+    } else {
+        cleanedRecord.unrestrictedquantity = quantity;
+    }
+
+    // Default status
+    if (!cleanedRecord.status) {
+        cleanedRecord.status = 'Active';
+    }
+
+    return { cleanedRecord, errors, providedFields };
 }
 
-// Bulk upload route for DealerStock with delete and replace functionality
+// MAIN ROUTE - Optimized with parallel processing and bulk operations
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
-    // Initialize response object with detailed tracking
+    const BATCH_SIZE = 2000; // Increased batch size for better performance
+    const PARALLEL_BATCHES = 3; // Process multiple batches in parallel
+
+    // Initialize response object with optimized structure
     const response = {
         status: 'processing',
         startTime: new Date(),
@@ -308,36 +228,41 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             totalExisting: 0,
             deleted: 0,
             progress: 0
+        },
+        batchProgress: {
+            currentBatch: 0,
+            totalBatches: 0,
+            batchSize: BATCH_SIZE,
+            currentBatchRecords: 0
         }
     };
 
     try {
-        // Validate file upload
         if (!req.file) {
             response.status = 'failed';
             response.errors.push('No file uploaded');
             return res.status(400).json(response);
         }
 
-        // Set headers for streaming response (AWS-compatible)
+        // Set headers for streaming response
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Transfer-Encoding', 'chunked');
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
-        res.setHeader('Access-Control-Allow-Origin', '*');
 
-        // Parse file based on type
+        // Parse file with optimized method selection
         let jsonData;
         const fileName = req.file.originalname.toLowerCase();
-        
+        const fileExt = fileName.slice(-4);
+
         try {
-            if (fileName.endsWith('.csv')) {
+            if (fileExt === '.csv') {
                 jsonData = await parseCSVFile(req.file.buffer);
-            } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+            } else if (fileExt === '.xlsx' || fileExt === '.xls') {
                 jsonData = parseExcelFile(req.file.buffer);
             } else {
-                throw new Error('Unsupported file format. Please upload Excel (.xlsx, .xls) or CSV files only.');
+                throw new Error('Unsupported file format');
             }
         } catch (parseError) {
             response.status = 'failed';
@@ -347,42 +272,36 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
         if (!jsonData || jsonData.length === 0) {
             response.status = 'failed';
-            response.errors.push('No data found in file or file is empty');
+            response.errors.push('No data found in file');
             return res.status(400).json(response);
         }
 
         response.totalRecords = jsonData.length;
+        response.batchProgress.totalBatches = Math.ceil(jsonData.length / BATCH_SIZE);
 
-        // Map headers
+        // Map headers with optimized method
         const headers = Object.keys(jsonData[0] || {});
         const headerMapping = mapHeaders(headers);
         response.headerMapping = headerMapping;
-        
-        // Validate that we found the required headers
+
+        // Check for required fields with optimized lookup
         const requiredFields = ['dealercodeid', 'dealername', 'dealercity', 'materialcode', 'materialdescription', 'plant', 'unrestrictedquantity'];
-        const missingFields = [];
-        
-        requiredFields.forEach(field => {
-            if (!Object.values(headerMapping).includes(field)) {
-                const fieldDisplayNames = {
-                    'dealercodeid': 'Dealer Code',
-                    'dealername': 'Dealer Name',
-                    'dealercity': 'Dealer City',
-                    'materialcode': 'Material Code',
-                    'materialdescription': 'Material Description',
-                    'plant': 'Plant',
-                    'unrestrictedquantity': 'Unrestricted Quantity'
-                };
-                missingFields.push(fieldDisplayNames[field]);
-            }
-        });
+        const missingFields = requiredFields.filter(field => !Object.values(headerMapping).includes(field));
         
         if (missingFields.length > 0) {
+            const fieldDisplayNames = {
+                'dealercodeid': 'Dealer Code',
+                'dealername': 'Dealer Name',
+                'dealercity': 'Dealer City',
+                'materialcode': 'Material Code',
+                'materialdescription': 'Material Description',
+                'plant': 'Plant',
+                'unrestrictedquantity': 'Unrestricted Quantity'
+            };
             response.status = 'failed';
             response.errors.push(
-                `Required headers not found: ${missingFields.join(', ')}. ` +
-                `Available headers: ${headers.join(', ')}. ` +
-                `Please ensure your file contains all required columns.`
+                `Required headers not found: ${missingFields.map(f => fieldDisplayNames[f]).join(', ')}. ` +
+                `Available headers: ${headers.join(', ')}`
             );
             return res.status(400).json(response);
         }
@@ -390,20 +309,21 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Send initial response
         res.write(JSON.stringify(response) + '\n');
 
-        // Phase 1: Delete existing records
+        // Phase 1: Delete existing records (optimized)
         response.deletionPhase.status = 'processing';
-        const totalExisting = await DealerStock.countDocuments();
+        const totalExisting = await DealerStock.estimatedDocumentCount(); // Faster than countDocuments
         response.deletionPhase.totalExisting = totalExisting;
         
         if (totalExisting > 0) {
-            // Send deletion start update
             res.write(JSON.stringify({
                 ...response,
                 deletionPhase: { ...response.deletionPhase, status: 'deleting' }
             }) + '\n');
             
-            // Delete all existing records
-            await DealerStock.deleteMany({});
+            // Use collection.drop() for faster deletion when we're replacing all data
+            await DealerStock.collection.drop();
+            await DealerStock.createCollection(); // Recreate collection immediately
+            
             response.deletionPhase.deleted = totalExisting;
             response.summary.deletedExisting = totalExisting;
         }
@@ -411,23 +331,25 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         response.deletionPhase.status = 'completed';
         response.deletionPhase.progress = 100;
         
-        // Send deletion completion update
         res.write(JSON.stringify({
             ...response,
             deletionPhase: response.deletionPhase
         }) + '\n');
 
-        // Phase 2: Process and insert new records
-        const BATCH_SIZE = 50;
-        const processedKeys = new Set(); // To track duplicates within file
-
-        for (let i = 0; i < jsonData.length; i += BATCH_SIZE) {
-            const batch = jsonData.slice(i, i + BATCH_SIZE);
+        // Phase 2: Process records in parallel batches
+        const processBatch = async (batch, batchIndex) => {
+            const batchResults = [];
+            const validRecords = [];
+            const processedKeys = new Set();
+            let batchCreated = 0;
+            let batchFailed = 0;
+            let batchSkipped = 0;
 
             // Process each record in the batch
             for (const [index, record] of batch.entries()) {
+                const rowNumber = (batchIndex * BATCH_SIZE) + index + 1;
                 const recordResult = {
-                    row: i + index + 2, // +2 because Excel rows start from 1 and we skip header
+                    row: rowNumber,
                     dealercodeid: '',
                     dealername: '',
                     materialcode: '',
@@ -438,7 +360,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 };
 
                 try {
-                    // Validate and clean record
                     const { cleanedRecord, errors } = validateRecord(record, headerMapping);
                     recordResult.dealercodeid = cleanedRecord.dealercodeid || 'Unknown';
                     recordResult.dealername = cleanedRecord.dealername || 'N/A';
@@ -448,76 +369,178 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         recordResult.status = 'Failed';
                         recordResult.error = errors.join(', ');
                         recordResult.action = 'Validation failed';
-                        response.results.push(recordResult);
-                        response.failedRecords++;
-                        response.summary.failed++;
-                        response.processedRecords++;
+                        batchResults.push(recordResult);
+                        batchFailed++;
                         continue;
                     }
 
-                    // Create unique key for duplicate detection within file
                     const uniqueKey = `${cleanedRecord.dealercodeid}_${cleanedRecord.materialcode}_${cleanedRecord.plant}`;
                     
                     if (processedKeys.has(uniqueKey)) {
                         recordResult.status = 'Skipped';
-                        recordResult.error = 'Duplicate combination in file (Dealer Code + Material Code + Plant)';
+                        recordResult.error = 'Duplicate combination in file';
                         recordResult.action = 'Skipped due to file duplicate';
-                        recordResult.warnings.push('Duplicate combination already processed in this file');
-                        response.results.push(recordResult);
-                        response.summary.duplicatesInFile++;
-                        response.summary.skippedTotal++;
-                        response.processedRecords++;
+                        recordResult.warnings.push('Duplicate combination already processed');
+                        batchResults.push(recordResult);
+                        batchSkipped++;
                         continue;
                     }
 
                     processedKeys.add(uniqueKey);
-
-                    // Create new record (since we deleted all existing ones)
-                    const newRecord = new DealerStock(cleanedRecord);
-                    await newRecord.save();
-
+                    validRecords.push(cleanedRecord);
+                    
                     recordResult.status = 'Created';
                     recordResult.action = 'Created new record';
-                    response.summary.created++;
-                    response.successfulRecords++;
-
-                    response.results.push(recordResult);
-
+                    batchResults.push(recordResult);
+                    batchCreated++;
+                    
                 } catch (err) {
-                    console.error(`Error processing record ${recordResult.row}:`, err);
                     recordResult.status = 'Failed';
-                    recordResult.action = 'Database operation failed';
+                    recordResult.action = 'Validation error';
                     recordResult.error = err.message;
-                    if (err.code === 11000) {
-                        recordResult.error = 'Duplicate key error';
-                    }
-                    response.results.push(recordResult);
-                    response.failedRecords++;
-                    response.summary.failed++;
+                    batchResults.push(recordResult);
+                    batchFailed++;
                 }
-
-                // Update progress
-                response.processedRecords++;
             }
 
-            // Send progress update after each batch
-            const progressUpdate = {
-                ...response,
-                progress: Math.round((response.processedRecords / response.totalRecords) * 100)
-            };
-            res.write(JSON.stringify(progressUpdate) + '\n');
+            // Process valid records in bulk
+            if (validRecords.length > 0) {
+                try {
+                    // Use insertMany with ordered: false for better performance
+                    const insertResult = await DealerStock.insertMany(validRecords, { 
+                        ordered: false,
+                        lean: true
+                    });
+                    
+                    batchCreated = insertResult.length;
+                    
+                } catch (insertError) {
+                    // Handle MongoDB BulkWriteError properly
+                    if (insertError.name === 'BulkWriteError' || insertError.name === 'MongoBulkWriteError') {
+                        const insertedCount = insertError.result?.insertedCount || 0;
+                        const failedCount = validRecords.length - insertedCount;
+                        
+                        batchCreated = insertedCount;
+                        batchFailed += failedCount;
+                        
+                        // Update record statuses based on actual results
+                        if (insertError.writeErrors && insertError.writeErrors.length > 0) {
+                            insertError.writeErrors.forEach((writeError) => {
+                                const failedIndex = writeError.index;
+                                if (batchResults[failedIndex] && batchResults[failedIndex].status === 'Created') {
+                                    batchResults[failedIndex].status = 'Failed';
+                                    batchResults[failedIndex].action = 'Database insert failed';
+                                    batchResults[failedIndex].error = writeError.errmsg || 'Insert operation failed';
+                                }
+                            });
+                        }
+                    } else {
+                        // Handle other types of errors
+                        batchResults.forEach(result => {
+                            if (result.status === 'Created') {
+                                result.status = 'Failed';
+                                result.action = 'Database connection error';
+                                result.error = insertError.message;
+                            }
+                        });
+                        
+                        batchFailed += validRecords.length;
+                        batchCreated = 0;
+                    }
+                }
+            }
 
-            // Small delay to prevent overwhelming the client
-            await new Promise(resolve => setTimeout(resolve, 10));
+            return {
+                batchResults,
+                batchCreated,
+                batchFailed,
+                batchSkipped
+            };
+        };
+
+        // Process batches in parallel with controlled concurrency
+        const batchPromises = [];
+        for (let batchIndex = 0; batchIndex < response.batchProgress.totalBatches; batchIndex++) {
+            const startIdx = batchIndex * BATCH_SIZE;
+            const endIdx = Math.min(startIdx + BATCH_SIZE, jsonData.length);
+            const batch = jsonData.slice(startIdx, endIdx);
+
+            response.batchProgress.currentBatch = batchIndex + 1;
+            response.batchProgress.currentBatchRecords = batch.length;
+
+            // Send progress update
+            res.write(JSON.stringify({
+                ...response,
+                batchProgress: response.batchProgress
+            }) + '\n');
+
+            // Process batch with controlled parallelism
+            if (batchPromises.length >= PARALLEL_BATCHES) {
+                const completedBatch = await Promise.race(batchPromises);
+                batchPromises.splice(batchPromises.indexOf(completedBatch), 1);
+
+                // Update response with completed batch results
+                response.processedRecords += completedBatch.batchResults.length;
+                response.successfulRecords += completedBatch.batchCreated;
+                response.failedRecords += completedBatch.batchFailed;
+                response.summary.created += completedBatch.batchCreated;
+                response.summary.failed += completedBatch.batchFailed;
+                response.summary.skippedTotal += completedBatch.batchSkipped;
+                response.summary.duplicatesInFile += completedBatch.batchResults.filter(
+                    r => r.status === 'Skipped' && r.error === 'Duplicate combination in file'
+                ).length;
+                response.results.push(...completedBatch.batchResults);
+
+                res.write(JSON.stringify({
+                    ...response,
+                    batchCompleted: true,
+                    batchSummary: {
+                        created: completedBatch.batchCreated,
+                        failed: completedBatch.batchFailed,
+                        skipped: completedBatch.batchSkipped
+                    },
+                    batchProgress: response.batchProgress,
+                    latestRecords: completedBatch.batchResults.slice(-3)
+                }) + '\n');
+            }
+
+            batchPromises.push(processBatch(batch, batchIndex));
+        }
+
+        // Process remaining batches
+        while (batchPromises.length > 0) {
+            const completedBatch = await batchPromises.shift();
+
+            // Update response with completed batch results
+            response.processedRecords += completedBatch.batchResults.length;
+            response.successfulRecords += completedBatch.batchCreated;
+            response.failedRecords += completedBatch.batchFailed;
+            response.summary.created += completedBatch.batchCreated;
+            response.summary.failed += completedBatch.batchFailed;
+            response.summary.skippedTotal += completedBatch.batchSkipped;
+            response.summary.duplicatesInFile += completedBatch.batchResults.filter(
+                r => r.status === 'Skipped' && r.error === 'Duplicate combination in file'
+            ).length;
+            response.results.push(...completedBatch.batchResults);
+
+            res.write(JSON.stringify({
+                ...response,
+                batchCompleted: true,
+                batchSummary: {
+                    created: completedBatch.batchCreated,
+                    failed: completedBatch.batchFailed,
+                    skipped: completedBatch.batchSkipped
+                },
+                batchProgress: response.batchProgress,
+                latestRecords: completedBatch.batchResults.slice(-3)
+            }) + '\n');
         }
 
         // Finalize response
         response.status = 'completed';
         response.endTime = new Date();
         response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
-        response.progress = 100;
 
-        // Add detailed summary message
         response.message = `Processing completed successfully. ` +
             `Deleted existing: ${response.summary.deletedExisting}, ` +
             `Created: ${response.summary.created}, ` +
@@ -525,7 +548,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             `File Duplicates: ${response.summary.duplicatesInFile}, ` +
             `Total Skipped: ${response.summary.skippedTotal}`;
 
-        // Final response
         res.write(JSON.stringify(response) + '\n');
         res.end();
 
@@ -535,7 +557,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         response.endTime = new Date();
         response.errors.push(`System error: ${error.message}`);
         response.duration = response.endTime ? `${((response.endTime - response.startTime) / 1000).toFixed(2)}s` : '0s';
-        
+
         if (!res.headersSent) {
             return res.status(500).json(response);
         } else {

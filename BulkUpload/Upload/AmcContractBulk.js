@@ -5,26 +5,27 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
 const { parse, isValid } = require('date-fns');
-
-// Import Mongoose model
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 
-// Multer memory storage for file uploads
+// Optimized: Pre-compiled regex patterns
+const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
+const MULTISPACE_REGEX = /\s+/g;
+
+// Memory storage with optimized settings
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
     storage,
     fileFilter: (req, file, cb) => {
-        const allowedTypes = [
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-            'application/vnd.ms-excel', // .xls
-            'text/csv', // .csv
-            'application/csv'
-        ];
-        
-        if (allowedTypes.includes(file.mimetype) || 
-            file.originalname.toLowerCase().endsWith('.csv') ||
-            file.originalname.toLowerCase().endsWith('.xlsx') ||
-            file.originalname.toLowerCase().endsWith('.xls')) {
+        const ext = file.originalname.toLowerCase().slice(-4);
+        if (
+            file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // .xlsx
+            file.mimetype === 'application/vnd.ms-excel' || // .xls
+            file.mimetype === 'text/csv' || // .csv
+            file.mimetype === 'application/csv' ||
+            ext === '.csv' ||
+            ext === '.xlsx' ||
+            ext === '.xls'
+        ) {
             cb(null, true);
         } else {
             cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
@@ -35,246 +36,290 @@ const upload = multer({
     }
 });
 
-/**
- * Clean and normalize field names for comparison
- * Removes spaces, special characters, and converts to lowercase
- */
+// Optimized: Predefined field mappings for faster access
+const FIELD_MAPPINGS = {
+    'salesdoc': new Set(['salesdoc', 'sales_doc', 'salesdocument', 'sales_document', 'document', 'docno', 'doc_no']),
+    'startdate': new Set(['startdate', 'start_date', 'begin_date', 'begindate', 'fromdate', 'from_date']),
+    'enddate': new Set(['enddate', 'end_date', 'finish_date', 'finishdate', 'todate', 'to_date', 'expiry_date', 'expirydate']),
+    'satypeZDRC_ZDRN': new Set(['satype', 'sa_type', 'satypezdrc_zdrn', 'satype_zdrc_zdrn', 'type', 'satypezdrczdrn']),
+    'serialnumber': new Set(['serialnumber', 'serial_number', 'serialno', 'serial_no', 'sno']),
+    'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'code', 'item_code', 'product_code'])
+};
+
+// Optimized normalizeFieldName with memoization
+const normalizedFieldCache = new Map();
 function normalizeFieldName(fieldName) {
     if (!fieldName) return '';
-    
-    return fieldName
+    if (normalizedFieldCache.has(fieldName)) {
+        return normalizedFieldCache.get(fieldName);
+    }
+    const normalized = fieldName
         .toLowerCase()
-        .replace(/[^a-z0-9]/g, '') // Remove all non-alphanumeric characters including spaces
+        .replace(NON_ALPHANUMERIC_REGEX, '')
         .trim();
+    normalizedFieldCache.set(fieldName, normalized);
+    return normalized;
 }
 
-/**
- * Map Excel/CSV headers to schema fields
- */
+// Optimized header mapping with early exit
 function mapHeaders(headers) {
-    const fieldMapping = {
-        'salesdoc': [
-            'salesdoc',
-            'sales_doc',
-            'salesdocument',
-            'sales_document',
-            'document',
-            'docno',
-            'doc_no'
-        ],
-        'startdate': [
-            'startdate',
-            'start_date',
-            'begin_date',
-            'begindate',
-            'fromdate',
-            'from_date'
-        ],
-        'enddate': [
-            'enddate',
-            'end_date',
-            'finish_date',
-            'finishdate',
-            'todate',
-            'to_date',
-            'expiry_date',
-            'expirydate'
-        ],
-        'satype': [
-            'satype',
-            'sa_type',
-            'satypezdrc_zdrn',
-            'satype_zdrc_zdrn',
-            'type'
-        ],
-        'serialnumber': [
-            'serialnumber',
-            'serial_number',
-            'serialno',
-            'serial_no',
-            'sno'
-        ],
-        'materialcode': [
-            'materialcode',
-            'material_code',
-            'partno',
-            'part_no',
-            'code',
-            'item_code',
-            'product_code'
-        ]
-    };
-    
     const mappedHeaders = {};
-    
-    headers.forEach(header => {
-        const originalHeader = header;
+    const seenFields = new Set();
+
+    for (const header of headers) {
         const normalizedHeader = normalizeFieldName(header);
-        
-        // Check for exact matches
-        for (const [schemaField, variations] of Object.entries(fieldMapping)) {
-            const found = variations.some(variation => {
-                const normalizedVariation = normalizeFieldName(variation);
-                return normalizedHeader === normalizedVariation;
-            });
-            
-            if (found) {
-                mappedHeaders[originalHeader] = schemaField;
-                break;
+
+        // Skip if we've already mapped this exact header
+        if (seenFields.has(normalizedHeader)) continue;
+        seenFields.add(normalizedHeader);
+
+        // Find the first matching schema field
+        for (const [schemaField, variations] of Object.entries(FIELD_MAPPINGS)) {
+            if (variations.has(normalizedHeader)) {
+                mappedHeaders[header] = schemaField;
+                break; // Move to next header once we find a match
             }
         }
-    });
-    
+    }
+
     return mappedHeaders;
 }
 
-/**
- * Universal date parser supporting multiple formats and Excel serials
- */
+// Optimized date parsing with cache and consistent date normalization
+const dateCache = new Map();
 function parseUniversalDate(dateInput) {
     if (!dateInput) return null;
+    
+    // Handle ### (Excel error) or invalid dates
+    if (typeof dateInput === 'string' && (dateInput.includes('#') || dateInput.trim() === '')) {
+        return null;
+    }
+    
+    const cacheKey = JSON.stringify(dateInput);
+    if (dateCache.has(cacheKey)) return dateCache.get(cacheKey);
+
+    let result = null;
 
     if (dateInput instanceof Date && !isNaN(dateInput)) {
-        return dateInput;
-    }
-
-    if (typeof dateInput === 'number') {
+        // Normalize to date only (remove time component)
+        const date = new Date(dateInput);
+        result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    } else if (typeof dateInput === 'number') {
         try {
             const excelDate = XLSX.SSF.parse_date_code(dateInput);
-            return new Date(excelDate.y, excelDate.m - 1, excelDate.d);
+            result = new Date(excelDate.y, excelDate.m - 1, excelDate.d);
         } catch (e) {
-            return null;
+            result = null;
         }
-    }
+    } else {
+        const formats = [
+            'dd/MM/yyyy', 'dd-MM-yyyy', 'dd.MM.yyyy',
+            'MM/dd/yyyy', 'MM-dd-yyyy', 'MM.dd.yyyy',
+            'yyyy/MM/dd', 'yyyy-MM-dd', 'yyyy.MM.dd',
+            'd/M/yyyy', 'd-M-yyyy', 'd.M.yyyy',
+            'M/d/yyyy', 'M-d-yyyy', 'M.d.yyyy',
+            'dd/MM/yy', 'dd-MM-yy', 'dd.MM.yy'
+        ];
 
-    const formats = [
-        'dd/MM/yyyy', 'dd-MM-yyyy', 'dd.MM.yyyy',
-        'MM/dd/yyyy', 'MM-dd-yyyy', 'MM.dd.yyyy',
-        'yyyy/MM/dd', 'yyyy-MM-dd', 'yyyy.MM.dd',
-        'd/M/yyyy', 'd-M-yyyy', 'd.M.yyyy',
-        'M/d/yyyy', 'M-d-yyyy', 'M.d.yyyy',
-        'dd/MM/yy', 'dd-MM-yy', 'dd.MM.yy'
-    ];
-
-    for (const format of formats) {
-        try {
-            const parsedDate = parse(dateInput.toString(), format, new Date());
-            if (isValid(parsedDate)) {
-                return parsedDate;
+        for (const format of formats) {
+            try {
+                const parsedDate = parse(dateInput.toString(), format, new Date());
+                if (isValid(parsedDate)) {
+                    // Normalize to date only (remove time component)
+                    result = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
+                    break;
+                }
+            } catch (e) {
+                continue;
             }
-        } catch (e) {
-            continue;
         }
     }
 
-    return null;
+    dateCache.set(cacheKey, result);
+    return result;
 }
 
-/**
- * Parse Excel file to JSON
- */
+// Optimized Excel parsing with buffer reuse
 function parseExcelFile(buffer) {
     try {
         const workbook = XLSX.read(buffer, { 
-            type: 'buffer',
+            type: 'buffer', 
             cellDates: true,
-            dateNF: 'dd"/"mm"/"yyyy;@'
+            codepage: 65001 // UTF-8
         });
         const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        return XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { 
+            defval: '',
+            raw: false
+        });
     } catch (error) {
         throw new Error(`Excel parsing error: ${error.message}`);
     }
 }
 
-/**
- * Parse CSV file to JSON
- */
+// Optimized CSV parsing with stream control
 function parseCSVFile(buffer) {
     return new Promise((resolve, reject) => {
         const results = [];
-        const readable = new Readable();
-        readable.push(buffer);
-        readable.push(null);
-        
-        readable
-            .pipe(csv())
+        const stream = Readable.from(buffer.toString())
+            .pipe(csv({
+                mapValues: ({ value }) => value.trim(),
+                strict: true,
+                skipLines: 0,
+                skipEmptyLines: true
+            }))
             .on('data', (data) => results.push(data))
             .on('end', () => resolve(results))
             .on('error', reject);
+
+        stream.on('error', () => stream.destroy());
     });
 }
 
-/**
- * Validate and clean record data
- */
+// Create composite key for record identification
+function createCompositeKey(record) {
+    // Using all fields to create unique identifier since no field is unique
+    const keyParts = [
+        record.salesdoc || '',
+        record.serialnumber || '',
+        record.materialcode || '',
+        record.satypeZDRC_ZDRN || ''
+    ];
+    
+    // Add date parts if available
+    if (record.startdate) {
+        keyParts.push(record.startdate.toISOString().split('T')[0]); // YYYY-MM-DD format
+    }
+    if (record.enddate) {
+        keyParts.push(record.enddate.toISOString().split('T')[0]); // YYYY-MM-DD format
+    }
+    
+    return keyParts.join('|').toLowerCase();
+}
+
+// Optimized record validation with early exits
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
-    
+    const providedFields = [];
+    const errors = [];
+
     // Map headers to schema fields
     for (const [originalHeader, schemaField] of Object.entries(headerMapping)) {
-        if (record[originalHeader] !== undefined && record[originalHeader] !== null) {
-            let value = String(record[originalHeader]).trim();
-            
-            // Special handling for dates
-            if (['startdate', 'enddate'].includes(schemaField)) {
-                const parsedDate = parseUniversalDate(record[originalHeader]);
-                if (parsedDate) {
-                    cleanedRecord[schemaField] = parsedDate;
-                }
-            } else if (value !== '') {
-                cleanedRecord[schemaField] = value;
+        if (record[originalHeader] === undefined || record[originalHeader] === null) continue;
+
+        const value = String(record[originalHeader]).trim();
+        if (value === '' || value === 'undefined' || value === 'null') continue;
+
+        // Special handling for dates
+        if (['startdate', 'enddate'].includes(schemaField)) {
+            const parsedDate = parseUniversalDate(record[originalHeader]);
+            if (parsedDate) {
+                cleanedRecord[schemaField] = parsedDate;
+                providedFields.push(schemaField);
+            } else if (value.includes('#')) {
+                // Skip records with invalid dates (like ########)
+                errors.push(`Invalid ${schemaField}: ${value}`);
             }
+        } else {
+            cleanedRecord[schemaField] = value.replace(MULTISPACE_REGEX, ' ').trim();
+            providedFields.push(schemaField);
         }
     }
-    
-    // Validation
-    const errors = [];
-    
-    // Required fields validation
-    if (!cleanedRecord.salesdoc || cleanedRecord.salesdoc === '') {
+
+    // Required field validation
+    if (!cleanedRecord.salesdoc) {
         errors.push('Sales Doc is required');
     }
-    
-    if (!cleanedRecord.serialnumber || cleanedRecord.serialnumber === '') {
+    if (!cleanedRecord.serialnumber) {
         errors.push('Serial Number is required');
     }
-    
-    // Additional validation
-    if (cleanedRecord.salesdoc && cleanedRecord.salesdoc.length > 50) {
+    if (!cleanedRecord.satypeZDRC_ZDRN) {
+        errors.push('SA Type is required');
+    }
+    if (!cleanedRecord.materialcode) {
+        errors.push('Material Code is required');
+    }
+
+    // Early exit if required fields are missing
+    if (errors.length > 0) {
+        return { cleanedRecord, errors, providedFields };
+    }
+
+    // Length validation
+    if (cleanedRecord.salesdoc.length > 50) {
         errors.push('Sales Doc too long (max 50 characters)');
     }
-    
-    if (cleanedRecord.serialnumber && cleanedRecord.serialnumber.length > 50) {
+    if (cleanedRecord.serialnumber.length > 50) {
         errors.push('Serial Number too long (max 50 characters)');
     }
-    
-    if (cleanedRecord.materialcode && cleanedRecord.materialcode.length > 50) {
+    if (cleanedRecord.materialcode.length > 50) {
         errors.push('Material Code too long (max 50 characters)');
     }
-    
+
     // Date validation
-    if (cleanedRecord.startdate && cleanedRecord.enddate) {
-        if (cleanedRecord.startdate > cleanedRecord.enddate) {
-            errors.push('Start Date cannot be later than End Date');
-        }
+    if (cleanedRecord.startdate && cleanedRecord.enddate && cleanedRecord.startdate > cleanedRecord.enddate) {
+        errors.push('Start Date cannot be later than End Date');
     }
-    
-    // Clean up text fields
-    const textFields = ['salesdoc', 'satype', 'serialnumber', 'materialcode'];
-    textFields.forEach(field => {
-        if (cleanedRecord[field]) {
-            cleanedRecord[field] = cleanedRecord[field].replace(/\s+/g, ' ').trim();
-        }
-    });
-    
-    return { cleanedRecord, errors };
+
+    // Default status
+    cleanedRecord.status = 'Active';
+
+    return { cleanedRecord, errors, providedFields };
 }
 
-// Bulk upload route for AMC Contract
+// Enhanced comparison function for all fields
+function checkForChanges(existingRecord, newRecord, providedFields) {
+    let hasAnyChange = false;
+    const changeDetails = [];
+
+    for (const field of providedFields) {
+        let isEqual = false;
+        let existingValue, newValue;
+
+        if (['startdate', 'enddate'].includes(field)) {
+            // Date comparison with proper handling
+            const existingDate = existingRecord[field] ? new Date(existingRecord[field]) : null;
+            const newDate = newRecord[field] ? new Date(newRecord[field]) : null;
+            
+            if (existingDate && newDate) {
+                // Compare only date part (ignore time differences)
+                const existingDateStr = existingDate.toDateString();
+                const newDateStr = newDate.toDateString();
+                isEqual = existingDateStr === newDateStr;
+                
+                existingValue = existingDate.toLocaleDateString('en-GB'); // DD/MM/YYYY format
+                newValue = newDate.toLocaleDateString('en-GB'); // DD/MM/YYYY format
+            } else {
+                isEqual = (!existingDate && !newDate); // Both are null/undefined
+                existingValue = existingDate ? existingDate.toLocaleDateString('en-GB') : '';
+                newValue = newDate ? newDate.toLocaleDateString('en-GB') : '';
+            }
+        } else {
+            // String comparison for non-date fields
+            existingValue = existingRecord[field] ? String(existingRecord[field]).trim() : '';
+            newValue = newRecord[field] ? String(newRecord[field]).trim() : '';
+            isEqual = existingValue === newValue;
+        }
+
+        if (!isEqual) {
+            hasAnyChange = true;
+            changeDetails.push({
+                field,
+                oldValue: existingValue,
+                newValue
+            });
+        }
+    }
+
+    return { hasChanges: hasAnyChange, changeDetails };
+}
+
+// MAIN ROUTE - Complete implementation with composite key handling
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
-    // Initialize response object with detailed tracking
+    const BATCH_SIZE = 2000; // Reduced for better memory management
+    const PARALLEL_BATCHES = 3; // Reduced for stability
+
+    // Initialize response object
     const response = {
         status: 'processing',
         startTime: new Date(),
@@ -289,40 +334,47 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             failed: 0,
             duplicatesInFile: 0,
             existingRecords: 0,
-            skippedTotal: 0
+            skippedTotal: 0,
+            noChangesSkipped: 0,
+            invalidDates: 0
         },
         headerMapping: {},
         errors: [],
-        warnings: []
+        warnings: [],
+        batchProgress: {
+            currentBatch: 0,
+            totalBatches: 0,
+            batchSize: BATCH_SIZE,
+            currentBatchRecords: 0
+        }
     };
 
     try {
-        // Validate file upload
         if (!req.file) {
             response.status = 'failed';
             response.errors.push('No file uploaded');
             return res.status(400).json(response);
         }
 
-        // Set headers for streaming response (AWS-compatible)
+        // Set headers for streaming response
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Transfer-Encoding', 'chunked');
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
-        res.setHeader('Access-Control-Allow-Origin', '*');
 
-        // Parse file based on type
+        // Parse file
         let jsonData;
         const fileName = req.file.originalname.toLowerCase();
-        
+        const fileExt = fileName.slice(-4);
+
         try {
-            if (fileName.endsWith('.csv')) {
+            if (fileExt === '.csv') {
                 jsonData = await parseCSVFile(req.file.buffer);
-            } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+            } else if (fileExt === '.xlsx' || fileExt === '.xls') {
                 jsonData = parseExcelFile(req.file.buffer);
             } else {
-                throw new Error('Unsupported file format. Please upload Excel (.xlsx, .xls) or CSV files only.');
+                throw new Error('Unsupported file format');
             }
         } catch (parseError) {
             response.status = 'failed';
@@ -332,31 +384,26 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
         if (!jsonData || jsonData.length === 0) {
             response.status = 'failed';
-            response.errors.push('No data found in file or file is empty');
+            response.errors.push('No data found in file');
             return res.status(400).json(response);
         }
 
         response.totalRecords = jsonData.length;
+        response.batchProgress.totalBatches = Math.ceil(jsonData.length / BATCH_SIZE);
 
         // Map headers
         const headers = Object.keys(jsonData[0] || {});
         const headerMapping = mapHeaders(headers);
         response.headerMapping = headerMapping;
-        
-        // Validate that we found the required headers
-        const hasSalesDocField = Object.values(headerMapping).includes('salesdoc');
-        const hasSerialField = Object.values(headerMapping).includes('serialnumber');
-        
-        if (!hasSalesDocField || !hasSerialField) {
+
+        // Check for required fields
+        const hasRequiredFields = ['salesdoc', 'serialnumber', 'satypeZDRC_ZDRN', 'materialcode'].every(field => 
+            Object.values(headerMapping).includes(field)
+        );
+        if (!hasRequiredFields) {
             response.status = 'failed';
-            const missingFields = [];
-            if (!hasSalesDocField) missingFields.push('Sales Doc');
-            if (!hasSerialField) missingFields.push('Serial Number');
-            
             response.errors.push(
-                `Required headers not found: ${missingFields.join(', ')}. ` +
-                `Available headers: ${headers.join(', ')}. ` +
-                `Please ensure your file contains "Sales Doc" and "Serial Number" columns.`
+                `Required headers not found. Available headers: ${headers.join(', ')}`
             );
             return res.status(400).json(response);
         }
@@ -364,17 +411,25 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Send initial response
         res.write(JSON.stringify(response) + '\n');
 
-        // Process records in batches
-        const BATCH_SIZE = 50;
-        const processedSerialNumbers = new Set();
+        const processedCompositeKeys = new Set(); // Track processed records in current file
+        let currentRow = 0;
 
-        for (let i = 0; i < jsonData.length; i += BATCH_SIZE) {
-            const batch = jsonData.slice(i, i + BATCH_SIZE);
+        // Process data in batches
+        const processBatch = async (batch, batchIndex) => {
+            const batchResults = [];
+            const validRecords = [];
+            let batchCreated = 0;
+            let batchUpdated = 0;
+            let batchFailed = 0;
+            let batchSkippedDuplicates = 0;
+            let batchSkippedNoChanges = 0;
+            let batchInvalidDates = 0;
 
             // Process each record in the batch
-            for (const [index, record] of batch.entries()) {
+            for (const record of batch) {
+                currentRow++;
                 const recordResult = {
-                    row: i + index + 2, // +2 because Excel rows start from 1 and we skip header
+                    row: currentRow,
                     salesdoc: '',
                     serialnumber: '',
                     status: 'Processing',
@@ -384,8 +439,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 };
 
                 try {
-                    // Validate and clean record
-                    const { cleanedRecord, errors } = validateRecord(record, headerMapping);
+                    const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
                     recordResult.salesdoc = cleanedRecord.salesdoc || 'Unknown';
                     recordResult.serialnumber = cleanedRecord.serialnumber || 'Unknown';
 
@@ -393,102 +447,232 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         recordResult.status = 'Failed';
                         recordResult.error = errors.join(', ');
                         recordResult.action = 'Validation failed';
-                        response.results.push(recordResult);
-                        response.failedRecords++;
-                        response.summary.failed++;
-                        response.processedRecords++;
+                        batchResults.push(recordResult);
+                        batchFailed++;
+                        
+                        // Check if it's due to invalid date
+                        if (errors.some(err => err.includes('Invalid'))) {
+                            batchInvalidDates++;
+                        }
                         continue;
                     }
 
-                    // Check for duplicates within the file
-                    if (processedSerialNumbers.has(cleanedRecord.serialnumber)) {
+                    // Create composite key for this record
+                    const compositeKey = createCompositeKey(cleanedRecord);
+
+                    // Check for duplicates within the current file being processed
+                    if (processedCompositeKeys.has(compositeKey)) {
                         recordResult.status = 'Skipped';
-                        recordResult.error = 'Duplicate Serial Number in file';
+                        recordResult.error = 'Duplicate record in file (same combination of all fields)';
                         recordResult.action = 'Skipped due to file duplicate';
-                        recordResult.warnings.push('Serial Number already processed in this file');
-                        response.results.push(recordResult);
-                        response.summary.duplicatesInFile++;
-                        response.summary.skippedTotal++;
-                        response.processedRecords++;
+                        recordResult.warnings.push('Exact duplicate found in this file');
+                        batchResults.push(recordResult);
+                        batchSkippedDuplicates++;
                         continue;
                     }
 
-                    processedSerialNumbers.add(cleanedRecord.serialnumber);
+                    processedCompositeKeys.add(compositeKey);
+                    validRecords.push({ cleanedRecord, recordResult, providedFields, compositeKey });
 
-                    // Check if record exists in database
-                    const existingRecord = await AMCContract.findOne({ 
-                        serialnumber: cleanedRecord.serialnumber 
-                    });
-                    
+                } catch (err) {
+                    recordResult.status = 'Failed';
+                    recordResult.action = 'Validation error';
+                    recordResult.error = err.message;
+                    batchResults.push(recordResult);
+                    batchFailed++;
+                }
+            }
+
+            // Process valid records
+            if (validRecords.length > 0) {
+                // Find existing records using multiple criteria for better matching
+                const searchConditions = validRecords.map(r => ({
+                    salesdoc: r.cleanedRecord.salesdoc,
+                    serialnumber: r.cleanedRecord.serialnumber,
+                    materialcode: r.cleanedRecord.materialcode,
+                    satypeZDRC_ZDRN: r.cleanedRecord.satypeZDRC_ZDRN
+                }));
+
+                const existingRecords = await AMCContract.find({
+                    $or: searchConditions
+                }).lean();
+
+                // Create map with composite key for existing records
+                const existingRecordsMap = new Map();
+                existingRecords.forEach(rec => {
+                    const compositeKey = createCompositeKey(rec);
+                    existingRecordsMap.set(compositeKey, rec);
+                });
+
+                // Prepare bulk operations
+                const bulkOps = [];
+                const now = new Date();
+
+                for (const { cleanedRecord, recordResult, providedFields, compositeKey } of validRecords) {
+                    const existingRecord = existingRecordsMap.get(compositeKey);
+
                     if (existingRecord) {
-                        // Update existing record
-                        const updatedRecord = await AMCContract.findOneAndUpdate(
-                            { serialnumber: cleanedRecord.serialnumber },
-                            {
-                                ...cleanedRecord,
-                                modifiedAt: new Date()
-                            },
-                            { new: true, runValidators: true }
-                        );
+                        response.summary.existingRecords++;
 
-                        recordResult.status = 'Updated';
-                        recordResult.action = 'Updated existing record';
-                        response.summary.updated++;
-                        response.successfulRecords++;
+                        const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields);
+
+                        if (comparisonResult.hasChanges) {
+                            const updateData = { modifiedAt: now };
+                            providedFields.forEach(field => {
+                                updateData[field] = cleanedRecord[field];
+                            });
+
+                            bulkOps.push({
+                                updateOne: {
+                                    filter: { _id: existingRecord._id },
+                                    update: { $set: updateData }
+                                }
+                            });
+
+                            const changesList = comparisonResult.changeDetails.map(change =>
+                                `${change.field}: "${change.oldValue}" → "${change.newValue}"`
+                            ).join(', ');
+
+                            recordResult.status = 'Updated';
+                            recordResult.action = 'Updated existing record';
+                            recordResult.changeDetails = comparisonResult.changeDetails;
+                            recordResult.changesText = changesList;
+                            recordResult.warnings.push(`Changes detected: ${changesList}`);
+
+                            batchUpdated++;
+                        } else {
+                            recordResult.status = 'Skipped';
+                            recordResult.action = 'No changes detected';
+                            recordResult.changeDetails = [];
+                            recordResult.changesText = 'No changes detected';
+                            recordResult.warnings.push('Record already exists with identical data');
+
+                            batchSkippedNoChanges++;
+                        }
                     } else {
-                        // Create new record
-                        const newRecord = new AMCContract(cleanedRecord);
-                        await newRecord.save();
+                        bulkOps.push({
+                            insertOne: {
+                                document: {
+                                    ...cleanedRecord,
+                                    createdAt: now,
+                                    modifiedAt: now
+                                }
+                            }
+                        });
 
                         recordResult.status = 'Created';
                         recordResult.action = 'Created new record';
-                        response.summary.created++;
-                        response.successfulRecords++;
+                        recordResult.changeDetails = [];
+                        recordResult.changesText = 'New record created';
+
+                        batchCreated++;
                     }
 
-                    response.results.push(recordResult);
-
-                } catch (err) {
-                    console.error(`Error processing record ${recordResult.row}:`, err);
-                    recordResult.status = 'Failed';
-                    recordResult.action = 'Database operation failed';
-                    recordResult.error = err.message;
-                    if (err.code === 11000) {
-                        recordResult.error = 'Duplicate Serial Number - already exists in database';
-                    }
-                    response.results.push(recordResult);
-                    response.failedRecords++;
-                    response.summary.failed++;
+                    batchResults.push(recordResult);
                 }
 
-                // Update progress
-                response.processedRecords++;
+                // Execute bulk operations if any
+                if (bulkOps.length > 0) {
+                    try {
+                        await AMCContract.bulkWrite(bulkOps, { ordered: false });
+                    } catch (bulkError) {
+                        console.error('Bulk write error:', bulkError);
+                        
+                        // Handle individual bulk errors
+                        if (bulkError.writeErrors) {
+                            bulkError.writeErrors.forEach(error => {
+                                // Find the corresponding record and mark as failed
+                                const errorIndex = error.index;
+                                if (errorIndex < batchResults.length) {
+                                    const failedRecord = batchResults[errorIndex];
+                                    const originalStatus = failedRecord.status;
+                                    
+                                    failedRecord.status = 'Failed';
+                                    failedRecord.action = 'Database operation failed';
+                                    failedRecord.error = error.errmsg || 'Unknown database error';
+                                    
+                                    batchFailed++;
+                                    if (originalStatus === 'Created') batchCreated--;
+                                    if (originalStatus === 'Updated') batchUpdated--;
+                                }
+                            });
+                        }
+                    }
+                }
             }
 
-            // Send progress update after each batch
-            const progressUpdate = {
-                ...response,
-                progress: Math.round((response.processedRecords / response.totalRecords) * 100)
+            return {
+                batchResults,
+                batchCreated,
+                batchUpdated,
+                batchFailed,
+                batchSkippedDuplicates,
+                batchSkippedNoChanges,
+                batchInvalidDates
             };
-            res.write(JSON.stringify(progressUpdate) + '\n');
+        };
 
-            // Small delay to prevent overwhelming the client
-            await new Promise(resolve => setTimeout(resolve, 10));
+        // Process all batches
+        const allBatches = [];
+        for (let batchIndex = 0; batchIndex < response.batchProgress.totalBatches; batchIndex++) {
+            const startIdx = batchIndex * BATCH_SIZE;
+            const endIdx = Math.min(startIdx + BATCH_SIZE, jsonData.length);
+            const batch = jsonData.slice(startIdx, endIdx);
+            allBatches.push({ batch, batchIndex });
+        }
+
+        // Process batches with controlled parallelism
+        for (let i = 0; i < allBatches.length; i += PARALLEL_BATCHES) {
+            const batchPromises = [];
+            
+            for (let j = 0; j < PARALLEL_BATCHES && (i + j) < allBatches.length; j++) {
+                const { batch, batchIndex } = allBatches[i + j];
+                
+                response.batchProgress.currentBatch = batchIndex + 1;
+                response.batchProgress.currentBatchRecords = batch.length;
+                
+                batchPromises.push(processBatch(batch, batchIndex));
+            }
+
+            // Wait for current batch group to complete
+            const completedBatches = await Promise.all(batchPromises);
+
+            // Update response with all completed batch results
+            for (const completedBatch of completedBatches) {
+                response.processedRecords += completedBatch.batchResults.length;
+                response.successfulRecords += completedBatch.batchCreated + completedBatch.batchUpdated;
+                response.failedRecords += completedBatch.batchFailed;
+                response.summary.created += completedBatch.batchCreated;
+                response.summary.updated += completedBatch.batchUpdated;
+                response.summary.failed += completedBatch.batchFailed;
+                response.summary.duplicatesInFile += completedBatch.batchSkippedDuplicates;
+                response.summary.noChangesSkipped += completedBatch.batchSkippedNoChanges;
+                response.summary.invalidDates += completedBatch.batchInvalidDates;
+                response.summary.skippedTotal += completedBatch.batchSkippedDuplicates + completedBatch.batchSkippedNoChanges;
+                response.results.push(...completedBatch.batchResults);
+            }
+
+            // Send progress update
+            res.write(JSON.stringify({
+                ...response,
+                batchCompleted: true,
+                batchProgress: response.batchProgress,
+                latestProcessedRecords: response.results.slice(-5) // Show last 5 processed records
+            }) + '\n');
         }
 
         // Finalize response
         response.status = 'completed';
         response.endTime = new Date();
         response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
-        response.progress = 100;
 
-        // Add detailed summary message
         response.message = `Processing completed successfully. ` +
             `Created: ${response.summary.created}, ` +
             `Updated: ${response.summary.updated}, ` +
             `Failed: ${response.summary.failed}, ` +
             `File Duplicates: ${response.summary.duplicatesInFile}, ` +
-            `Existing Records: ${response.summary.existingRecords}, ` +
+            `No Changes Skipped: ${response.summary.noChangesSkipped}, ` +
+            `Invalid Dates: ${response.summary.invalidDates}, ` +
             `Total Skipped: ${response.summary.skippedTotal}`;
 
         // Final response
@@ -501,7 +685,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         response.endTime = new Date();
         response.errors.push(`System error: ${error.message}`);
         response.duration = response.endTime ? `${((response.endTime - response.startTime) / 1000).toFixed(2)}s` : '0s';
-        
+
         if (!res.headersSent) {
             return res.status(500).json(response);
         } else {

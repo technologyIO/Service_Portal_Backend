@@ -44,7 +44,8 @@ const PendingComplaintsSchema = new mongoose.Schema({
     type: String
   },
   status: {
-    type: String
+    type: String,
+    default: "Active"
   },
   productgroup: {
     type: String
