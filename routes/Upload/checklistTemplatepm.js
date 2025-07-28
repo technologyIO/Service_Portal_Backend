@@ -7,6 +7,8 @@ const getChecklistHTMLPM = ({
   checklistItems,   // array of { checkpoint, result, remark }
   serviceEngineer,
   remarkglobal,
+  documentChlNo,
+  documentRevNo,
   formatChlNo,
   pmType,
   formatRevNo,
@@ -94,17 +96,16 @@ const getChecklistHTMLPM = ({
               <!-- Right cell: Format No & Revision -->
               <td style="width: 30%; border: 1px solid black;">
                 <table style="width: 100%; height: 100px; border-collapse: collapse;">
-                  <tr>
-                    <td style="border-bottom: 1px solid black; font-weight: bold; height: 40px; font-size: 8px;">
-                      Format No &amp; Revision:${formatChlNo}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight: bold; font-size: 8px;">
-                      Document reference no <br/>
-                      &amp; Revision: ${formatRevNo}
-                    </td> 
-                  </tr>
+                 <tr>
+                  <td style="border-bottom: 1px solid black; font-weight: bold; height: 50px; font-size: 13px;">
+                    Format No &amp; Revision: ${formatChlNo || "N/A"} - ${formatRevNo || "N/A"}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="font-weight: bold; font-size: 13px;">
+                    Document reference no <br />&amp; Revision: ${documentChlNo || "N/A"} - ${documentRevNo || "N/A"}
+                  </td>
+                </tr>
                 </table>
               </td>
             </tr>

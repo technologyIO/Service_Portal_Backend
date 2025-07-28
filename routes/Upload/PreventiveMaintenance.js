@@ -618,8 +618,9 @@ router.post("/reportAndUpdate", async (req, res) => {
       formatRevNo: pmData.formatRevNo || "N/A",
     };
 
-    console.log("HTML generation parameters:", JSON.stringify(htmlParams, null, 2));
 
+    console.log("HTML generation parameters:", JSON.stringify(htmlParams, null, 2));
+    console.log("REVCHAL", pmData.formatChlNo, pmData.documentChlNo, pmData.documentRevNo, pmData.formatRevNo)
     // Prepare checklist HTML with updated parameters
     const checklistHtml = getChecklistHTMLPM(htmlParams);
 

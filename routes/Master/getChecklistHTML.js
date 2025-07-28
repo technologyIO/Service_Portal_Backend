@@ -170,12 +170,12 @@ const getChecklistHTML = ({
               <table style="width: 100%; height: 100px;">
                 <tr>
                   <td style="border-bottom: 1px solid black; font-weight: bold; height: 50px; font-size: 13px;">
-                    Format No &amp; Revision: ${formatChlNo} - ${formatRevNo}
+                    Format No &amp; Revision: ${formatChlNo || "N/A"} - ${formatRevNo || "N/A"}
                   </td>
                 </tr>
                 <tr>
                   <td style="font-weight: bold; font-size: 13px;">
-                    Document reference no <br />&amp; Revision: ${documentChlNo} - ${documentRevNo}
+                    Document reference no <br />&amp; Revision: ${documentChlNo || "N/A"} - ${documentRevNo || "N/A"}
                   </td>
                 </tr>
               </table>

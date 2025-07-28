@@ -14,8 +14,8 @@ const puppeteer = require('puppeteer');
 const getCertificateHTML = require('./certificateTemplate'); // Our HTML template function
 const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
-
-
+const Product = require('../../Model/MasterSchema/ProductSchema');
+const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
 
 
 
@@ -387,7 +387,59 @@ const generateSimplePdf = async (html) => {
         return null;
     }
 };
+router.get('/informatedoc/by-part/:partnoid', async (req, res) => {
+    try {
+        const partnoid = req.params.partnoid;
 
+        // Step 1: Find the product using partnoid
+        const product = await Product.findOne({ partnoid });
+        if (!product) {
+            return res.status(404).json({
+                success: false,
+                message: 'Product not found for the provided part number'
+            });
+        }
+
+        // Step 2: Extract product group
+        const productGroup = product.productgroup;
+
+        // Step 3: Find documents from PMDocMaster (PM type) and FormatMaster
+        const [pmDocs, formatDocs] = await Promise.all([
+            // PM Documents from PMDocMaster
+            PMDocMaster.find({
+                productGroup: productGroup,
+                type: 'IN'
+            }).select('chlNo revNo type status createdAt modifiedAt'),
+
+            // Format Documents from FormatMaster
+            FormatMaster.find({
+                productGroup: productGroup,
+                type: 'IN'
+            }).select('chlNo revNo type status createdAt updatedAt')
+        ]);
+
+        res.json({
+            success: true,
+            productGroup,
+            // PM Documents from PMDocMaster in 'documents' array
+            documents: pmDocs.map(doc => ({
+                chlNo: doc.chlNo,
+                revNo: doc.revNo,
+            })),
+            // Format Documents from FormatMaster in 'formats' array
+            formats: formatDocs.map(doc => ({
+                chlNo: doc.chlNo,
+                revNo: doc.revNo,
+
+            }))
+        });
+    } catch (err) {
+        res.status(500).json({
+            success: false,
+            message: err.message
+        });
+    }
+});
 
 router.post("/equipment/bulk", async (req, res) => {
     const response = {
@@ -517,6 +569,36 @@ router.post("/equipment/bulk", async (req, res) => {
                             await FormatMaster.findOne({ productGroup: enhancedChecklist.prodGroup }) :
                             null;
 
+                        // Get document information from checklist payload
+                        const documentInfo = enhancedChecklist.documentInfo;
+
+                        // Extract document and format details
+                        let documentChlNo = "N/A";
+                        let documentRevNo = "N/A";
+                        let formatChlNo = "N/A";
+                        let formatRevNo = "N/A";
+
+                        // Set format details from FormatMaster (existing logic)
+                        if (formatDetails) {
+                            formatChlNo = formatDetails.chlNo || "N/A";
+                            formatRevNo = formatDetails.revNo || "N/A";
+                        }
+
+                        // Override with document info if available
+                        if (documentInfo) {
+                            // Use formats from document info if available
+                            if (documentInfo.formats && documentInfo.formats.length > 0) {
+                                formatChlNo = documentInfo.formats[0].chlNo || formatChlNo;
+                                formatRevNo = documentInfo.formats[0].revNo || formatRevNo;
+                            }
+
+                            // Use documents from document info if available
+                            if (documentInfo.documents && documentInfo.documents.length > 0) {
+                                documentChlNo = documentInfo.documents[0].chlNo || "N/A";
+                                documentRevNo = documentInfo.documents[0].revNo || "N/A";
+                            }
+                        }
+
                         const checklistHtml = getChecklistHTML({
                             reportNo,
                             date: pdfData.dateOfInstallation || new Date().toLocaleDateString("en-GB"),
@@ -540,8 +622,12 @@ router.post("/equipment/bulk", async (req, res) => {
                             remarkglobal: enhancedChecklist.globalRemark || "",
                             checklistItems: enhancedChecklist.checklistResults,
                             serviceEngineer: `${pdfData.userInfo?.firstName || ""} ${pdfData.userInfo?.lastName || ""}`,
-                            formatChlNo: formatDetails?.chlNo || "",
-                            formatRevNo: formatDetails?.revNo || "",
+                            // Document information
+                            documentChlNo,
+                            documentRevNo,
+                            // Format information
+                            formatChlNo,
+                            formatRevNo,
                         });
 
                         checklistBuffer = await generateSimplePdf(checklistHtml);
@@ -646,6 +732,7 @@ router.post("/equipment/bulk", async (req, res) => {
         res.end();
     }
 });
+
 
 
 // UPDATE equipment
