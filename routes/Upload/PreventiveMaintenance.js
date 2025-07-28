@@ -11,7 +11,7 @@ const Customer = require('../../Model/UploadSchema/CustomerSchema');
 const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
 const pdf = require('html-pdf');
 const { getChecklistHTMLPM } = require("./checklistTemplatepm"); // DO NOT change its design
-
+const FormatMaster = require("../../Model/MasterSchema/FormatMasterSchema");
 // In-memory store for OTPs keyed by customerCode
 
 const pdfStore = {};
@@ -340,33 +340,62 @@ router.get('/checklist/by-part/:partnoid', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
-router.get('/pmdoc/by-part/:partnoid', async (req, res) => {
+router.get('/docs/by-part/:partnoid', async (req, res) => {
   try {
     const partnoid = req.params.partnoid;
 
     // Step 1: Find the product using partnoid
     const product = await Product.findOne({ partnoid });
     if (!product) {
-      return res.status(404).json({ message: 'Product not found for the provided part number' });
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found for the provided part number'
+      });
     }
 
     // Step 2: Extract product group
     const productGroup = product.productgroup;
 
-    // Step 3: Find PM Doc Master entries matching product group and type "PM"
-    const pmDocs = await PMDocMaster.find({
-      productGroup: productGroup,
-      type: 'PM'
-    }).select('chlNo revNo type status createdAt modifiedAt');
+    // Step 3: Find documents from PMDocMaster (PM type) and FormatMaster
+    const [pmDocs, formatDocs] = await Promise.all([
+      // PM Documents from PMDocMaster
+      PMDocMaster.find({
+        productGroup: productGroup,
+        type: 'PM'
+      }).select('chlNo revNo type status createdAt modifiedAt'),
+
+      // Format Documents from FormatMaster
+      FormatMaster.find({
+        productGroup: productGroup,
+        type: 'PM'
+      }).select('chlNo revNo type status createdAt updatedAt')
+    ]);
 
     res.json({
+      success: true,
       productGroup,
-      pmDocs
+      // PM Documents from PMDocMaster in 'documents' array
+      documents: pmDocs.map(doc => ({
+        chlNo: doc.chlNo,
+        revNo: doc.revNo,
+      })),
+      // Format Documents from FormatMaster in 'formats' array
+      formats: formatDocs.map(doc => ({
+        chlNo: doc.chlNo,
+        revNo: doc.revNo,
+
+      }))
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
   }
 });
+
+
+
 router.post("/otp/send", async (req, res) => {
   try {
     const { customerCode } = req.body;
@@ -451,6 +480,14 @@ router.post("/reportAndUpdate", async (req, res) => {
   try {
     const { pmData, checklistData, customerCode, globalRemark, userInfo } = req.body;
 
+    // ✅ Add debugging logs
+    console.log("=== REPORT AND UPDATE API CALLED ===");
+    console.log("pmData:", JSON.stringify(pmData, null, 2));
+    console.log("checklistData:", JSON.stringify(checklistData, null, 2));
+    console.log("customerCode:", customerCode);
+    console.log("globalRemark:", globalRemark);
+    console.log("userInfo:", JSON.stringify(userInfo, null, 2));
+
     if (!pmData || !customerCode) {
       return res.status(400).json({ message: "PM data and customer code are required" });
     }
@@ -459,6 +496,8 @@ router.post("/reportAndUpdate", async (req, res) => {
     if (!existingPm) {
       return res.status(404).json({ message: "PM record not found" });
     }
+
+    console.log("existingPm found:", existingPm.pmNumber);
 
     // Generate and assign new pmNumber if not present
     if (!existingPm.pmNumber) {
@@ -510,6 +549,8 @@ router.post("/reportAndUpdate", async (req, res) => {
         } else {
           existingPm.pmNumber = newPmNumber;
         }
+
+        console.log("Generated new PM number:", existingPm.pmNumber);
       } catch (err) {
         console.error("Error generating PM number:", err);
         // Fallback to timestamp-based number if something goes wrong
@@ -524,36 +565,65 @@ router.post("/reportAndUpdate", async (req, res) => {
     existingPm.pmStatus = pmData.pmStatus || existingPm.pmStatus;
 
     await existingPm.save();
+    console.log("PM record updated successfully");
 
     // Fetch customer data
     const customer = await Customer.findOne({ customercodeid: customerCode });
     if (!customer) {
+      console.log("Customer not found for code:", customerCode);
       return res.status(404).json({ message: "Customer not found" });
     }
 
-    // Prepare checklist HTML
-    const checklistHtml = getChecklistHTMLPM({
-      reportNo: existingPm.pmNumber,
-      date: existingPm.pmDoneDate,
-      pmType: existingPm.pmType,
-      city: existingPm.city,
-      customer,
+    console.log("Customer found:", customer.hospitalname);
+
+    // ✅ Process checklist data with proper validation
+    const processedChecklistItems = [];
+    if (checklistData && Array.isArray(checklistData)) {
+      console.log("Processing checklist items:", checklistData.length);
+
+      checklistData.forEach((item, index) => {
+        console.log(`Checklist item ${index}:`, JSON.stringify(item, null, 2));
+        processedChecklistItems.push({
+          checkpoint: item.checkpoint || item.description || `Checkpoint ${index + 1}`,
+          result: item.result || item.status || "N/A",
+          remark: item.remark || item.remarks || item.comment || ""
+        });
+      });
+    } else {
+      console.log("No valid checklist data found, using empty array");
+    }
+
+    console.log("Processed checklist items:", processedChecklistItems.length);
+
+    // ✅ Prepare parameters for HTML generation
+    const htmlParams = {
+      reportNo: existingPm.pmNumber || "N/A",
+      date: existingPm.pmDoneDate || new Date().toLocaleDateString(),
+      pmType: existingPm.pmType || pmData.pmType || "N/A",
+      city: existingPm.city || pmData.city || "N/A",
+      customer: customer,
       machine: {
-        partNumber: existingPm.partNumber,
-        modelDescription: existingPm.materialDescription,
-        serialNumber: existingPm.serialNumber,
+        partNumber: existingPm.partNumber || pmData.partNumber || "N/A",
+        modelDescription: existingPm.materialDescription || pmData.materialDescription || "N/A",
+        serialNumber: existingPm.serialNumber || pmData.serialNumber || "N/A",
         machineId: existingPm._id,
       },
-      checklistItems: (checklistData || []).map((c) => ({
-        checkpoint: c.checkpoint,
-        result: c.result || "",
-        remark: c.remark || "",
-      })),
-      serviceEngineer: existingPm.pmEngineerCode,
+      checklistItems: processedChecklistItems,
+      serviceEngineer: existingPm.pmEngineerCode || "N/A",
       remarkglobal: globalRemark || "N/A",
-      formatChlNo: pmData.chlNo,
-      formatRevNo: pmData.revNo,
-    });
+
+      documentChlNo: pmData.documentChlNo || "N/A",
+      documentRevNo: pmData.documentRevNo || "N/A",
+      formatChlNo: pmData.formatChlNo || "N/A",
+      formatRevNo: pmData.formatRevNo || "N/A",
+    };
+
+    console.log("HTML generation parameters:", JSON.stringify(htmlParams, null, 2));
+
+    // Prepare checklist HTML with updated parameters
+    const checklistHtml = getChecklistHTMLPM(htmlParams);
+
+    console.log("HTML generated, creating PDF...");
 
     // Generate PDF from HTML
     const pdfOptions = {
@@ -567,6 +637,8 @@ router.post("/reportAndUpdate", async (req, res) => {
         return res.status(500).json({ message: "Failed to create Checklist PDF" });
       }
 
+      console.log("PDF generated successfully, size:", pdfBuffer.length);
+
       // Store in pdfStore
       if (!pdfStore[customerCode]) {
         pdfStore[customerCode] = [];
@@ -577,16 +649,20 @@ router.post("/reportAndUpdate", async (req, res) => {
         buffer: pdfBuffer,
       });
 
+      console.log("PDF stored in pdfStore for customer:", customerCode);
+
       res.json({
         message: "PM updated & PDF generated successfully",
         pmNumber: existingPm.pmNumber
       });
     });
   } catch (err) {
-    console.error("Server error:", err);
+    console.error("Server error in reportAndUpdate:", err);
     res.status(500).json({ message: err.message });
   }
 });
+
+
 
 // ==========================
 // (C) Final Email Route

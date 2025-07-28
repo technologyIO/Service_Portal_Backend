@@ -4,6 +4,8 @@ const PendingInstallation = require('../../Model/UploadSchema/PendingInstallatio
 const WarrantyCode = require('../../Model/MasterSchema/WarrantyCodeSchema');
 const User = require('../../Model/MasterSchema/UserSchema');
 const Aerb = require('../../Model/MasterSchema/AerbSchema');
+const Product = require('../../Model/MasterSchema/ProductSchema');
+const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
 // Middleware to get a PendingInstallation by ID
 async function getPendingInstallationById(req, res, next) {
     let pendingInstallation;
@@ -295,6 +297,33 @@ router.put('/pendinginstallations/:id', getPendingInstallationById, checkDuplica
         res.json(updatedPendingInstallation);
     } catch (err) {
         res.status(400).json({ message: err.message });
+    }
+});
+router.get('/installationdoc/by-part/:partnoid', async (req, res) => {
+    try {
+        const partnoid = req.params.partnoid;
+
+        // Step 1: Find the product using partnoid
+        const product = await Product.findOne({ partnoid });
+        if (!product) {
+            return res.status(404).json({ message: 'Product not found for the provided part number' });
+        }
+
+        // Step 2: Extract product group
+        const productGroup = product.productgroup;
+
+        // Step 3: Find Installation Doc Master entries matching product group and type "IN"
+        const installationDocs = await PMDocMaster.find({
+            productGroup: productGroup,
+            type: 'IN'
+        }).select('chlNo revNo type status createdAt modifiedAt');
+
+        res.json({
+            productGroup,
+            installationDocs
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
     }
 });
 

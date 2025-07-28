@@ -88,7 +88,7 @@ const getChecklistHTMLPM = ({
               >
                 Skanray Technologies Limited
                 <br />
-                <span style="font-size: 12px;">Installation Checklist</span>
+                <span style="font-size: 12px;">Preventive Checklist</span>
               </td>
     
               <!-- Right cell: Format No & Revision -->
