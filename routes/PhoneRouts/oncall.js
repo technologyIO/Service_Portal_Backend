@@ -642,6 +642,37 @@ router.get('/by-complaint/:complaintId', async (req, res) => {
     }
 })
 
+router.get('/check-by-complaint/:complaintId', async (req, res) => {
+    try {
+        const { complaintId } = req.params;
+
+        // Validation
+        if (!complaintId) {
+            return res.status(400).json({
+                success: false,
+                exists: false
+            });
+        }
+
+        // Database में search करें
+        const existingOnCall = await OnCall.findOne({
+            'complaint.notification_complaintid': complaintId
+        });
+
+        // Simple true/false response
+        return res.status(200).json({
+            success: true,
+            exists: existingOnCall ? true : false
+        });
+
+    } catch (error) {
+        console.error('Error checking OnCall by complaint ID:', error);
+        return res.status(500).json({
+            success: false,
+            exists: false
+        });
+    }
+});
 // Now keep /:id at the END
 router.get('/:id', async (req, res) => {
     // your single oncall fetch logic

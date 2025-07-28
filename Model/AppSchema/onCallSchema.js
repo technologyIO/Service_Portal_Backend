@@ -134,13 +134,12 @@ const onCallSchema = new mongoose.Schema({
     }
 });
 
-// Middleware: Auto status update
 onCallSchema.pre('save', async function (next) {
+    // OnCall number generation (अगर नहीं है तो)
     if (!this.onCallNumber) {
         try {
             const year = new Date().getFullYear();
 
-            // Find latest onCallNumber starting with this year
             const latest = await this.constructor
                 .findOne({ onCallNumber: { $regex: `^ONCALL-${year}-` } })
                 .sort({ onCallNumber: -1 })
@@ -148,34 +147,24 @@ onCallSchema.pre('save', async function (next) {
                 .lean();
 
             let nextNumber = 1;
-
             if (latest && latest.onCallNumber) {
-                const lastPart = latest.onCallNumber.split('-').pop(); // get 00001
+                const lastPart = latest.onCallNumber.split('-').pop();
                 const parsed = parseInt(lastPart, 10);
                 if (!isNaN(parsed)) nextNumber = parsed + 1;
             }
 
             this.onCallNumber = `ONCALL-${year}-${String(nextNumber).padStart(5, '0')}`;
-            next();
         } catch (err) {
-            next(err);
+            return next(err);
         }
-    } else {
-        next();
     }
-});
 
-
-// ✅ New: Unique onCallNumber without Counter
-onCallSchema.pre('save', async function (next) {
-    if (!this.onCallNumber) {
-        const year = new Date().getFullYear();
-        const random = Math.floor(1000 + Math.random() * 9000); // random 4-digit
-        const timestamp = Date.now().toString().slice(-5); // last 5 digits of ms timestamp
-        this.onCallNumber = `ONCALL-${year}-${timestamp}${random}`;
-    }
+    // UpdatedAt set करें
+    this.updatedAt = new Date();
     next();
 });
+
+
 
 // Auto update updatedAt
 onCallSchema.pre('findOneAndUpdate', function (next) {
