@@ -122,9 +122,17 @@ router.get('/allpms/:employeeid?', async (req, res) => {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
-      // Rest of the processing
+      // Get customer data
       const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
-      const customers = await Customer.find({ customercodeid: { $in: customerCodes } });
+      const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
+        .select('customercodeid customername hospitalname street city region email');
+
+      // Create customer lookup map for better performance
+      const customerMap = {};
+      customers.forEach(customer => {
+        customerMap[customer.customercodeid] = customer;
+      });
+
       const customerRegions = [...new Set(customers.map(c => c.region).filter(Boolean))];
       const states = await State.find({ stateId: { $in: customerRegions } });
       const stateNames = states.map(s => s.name);
@@ -135,7 +143,7 @@ router.get('/allpms/:employeeid?', async (req, res) => {
         userBranchShortCodes.includes(b.branchShortCode)
       );
 
-      // Final PM filtering
+      // Final PM filtering with customer data integration
       const finalPMs = pms.filter(pm => {
         const customer = customers.find(c => c.customercodeid === pm.customerCode);
         if (!customer) return false;
@@ -144,6 +152,21 @@ router.get('/allpms/:employeeid?', async (req, res) => {
         if (!state) return false;
 
         return allowedBranches.some(b => b.state === state.name);
+      }).map(pm => {
+        // Integrate essential customer data directly into PM object
+        const customer = customerMap[pm.customerCode];
+        const pmObject = pm.toObject();
+
+        if (customer) {
+          pmObject.email = customer.email;
+          pmObject.customername = customer.customername;
+          pmObject.hospitalname = customer.hospitalname;
+          pmObject.street = customer.street;
+          pmObject.city = customer.city;
+          pmObject.region = customer.region;
+        }
+
+        return pmObject;
       });
 
       return res.json({
@@ -153,14 +176,43 @@ router.get('/allpms/:employeeid?', async (req, res) => {
       });
     }
 
-    // If no employeeid provided, return all PMs with Due/Overdue status
+    // If no employeeid provided, return all PMs with Due/Overdue status and customer data
     const allPMs = await PM.find({
       pmStatus: { $in: ["Due", "Overdue"] } // Only these statuses
     });
 
+    // Get customer data for all PMs (only essential fields)
+    const allCustomerCodes = [...new Set(allPMs.map(pm => pm.customerCode).filter(Boolean))];
+    const allCustomers = await Customer.find({ customercodeid: { $in: allCustomerCodes } })
+      .select('customercodeid customername hospitalname street city region email');
+
+    // Create customer lookup map
+    const allCustomerMap = {};
+    allCustomers.forEach(customer => {
+      allCustomerMap[customer.customercodeid] = customer;
+    });
+
+    // Integrate customer data directly into PM objects
+    const enrichedAllPMs = allPMs.map(pm => {
+      const customer = allCustomerMap[pm.customerCode];
+      const pmObject = pm.toObject();
+
+      if (customer) {
+        pmObject.email = customer.email;
+        pmObject.customercodeid = customer.customercodeid;
+        pmObject.customername = customer.customername;
+        pmObject.hospitalname = customer.hospitalname;
+        pmObject.street = customer.street;
+        pmObject.city = customer.city;
+        pmObject.region = customer.region;
+      }
+
+      return pmObject;
+    });
+
     return res.json({
-      pms: allPMs,
-      count: allPMs.length,
+      pms: enrichedAllPMs,
+      count: enrichedAllPMs.length,
       filteredByEmployee: false
     });
 
@@ -169,6 +221,8 @@ router.get('/allpms/:employeeid?', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+
 // GET all PM records with pagination
 router.get('/allpms', async (req, res) => {
   try {
@@ -282,14 +336,35 @@ router.delete('/pms/:id', getPMById, async (req, res) => {
   }
 });
 
-// SEARCH PM records
+
+// SEARCH PM records with pagination
 router.get('/pmsearch', async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, page = 1, limit = 10 } = req.query;
+
     if (!q) {
       return res.status(400).json({ message: 'Query parameter is required' });
     }
 
+    // Convert page and limit to numbers
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+
+    // Calculate skip value for pagination
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // First, search for customers by name to get their codes
+    const matchingCustomers = await Customer.find({
+      $or: [
+        { customername: { $regex: q, $options: 'i' } },
+        { hospitalname: { $regex: q, $options: 'i' } },
+        { customercodeid: { $regex: q, $options: 'i' } }
+      ]
+    }).select('customercodeid');
+
+    const matchingCustomerCodes = matchingCustomers.map(c => c.customercodeid);
+
+    // Build the PM search query
     const query = {
       $or: [
         { pmType: { $regex: q, $options: 'i' } },
@@ -306,12 +381,68 @@ router.get('/pmsearch', async (req, res) => {
       ]
     };
 
-    const pms = await PM.find(query);
-    res.json(pms);
+    // Add customer code search if we found matching customers
+    if (matchingCustomerCodes.length > 0) {
+      query.$or.push({ customerCode: { $in: matchingCustomerCodes } });
+    }
+
+    // Get total count for pagination calculation
+    const totalRecords = await PM.countDocuments(query);
+
+    // Get paginated results
+    const pms = await PM.find(query)
+      .skip(skip)
+      .limit(limitNumber)
+      .sort({ createdAt: -1 }); // Sort by creation date, newest first
+
+    // Get customer data for the found PMs
+    const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
+    const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
+      .select('customercodeid customername hospitalname street city region email');
+
+    // Create customer lookup map
+    const customerMap = {};
+    customers.forEach(customer => {
+      customerMap[customer.customercodeid] = customer;
+    });
+
+    // Integrate customer data directly into PM objects
+    const enrichedPMs = pms.map(pm => {
+      const customer = customerMap[pm.customerCode];
+      const pmObject = pm.toObject();
+
+      if (customer) {
+        pmObject.email = customer.email;
+        pmObject.customercodeid = customer.customercodeid;
+        pmObject.customername = customer.customername;
+        pmObject.hospitalname = customer.hospitalname;
+        pmObject.street = customer.street;
+        pmObject.city = customer.city;
+        pmObject.region = customer.region;
+      }
+
+      return pmObject;
+    });
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalRecords / limitNumber);
+
+    // Return paginated response that matches your frontend expectations
+    res.json({
+      pms: enrichedPMs,
+      totalPages: totalPages,
+      currentPage: pageNumber,
+      totalRecords: totalRecords,
+      hasNextPage: pageNumber < totalPages,
+      hasPrevPage: pageNumber > 1
+    });
+
   } catch (err) {
+    console.error('Search error:', err);
     res.status(500).json({ message: err.message });
   }
 });
+
 
 
 

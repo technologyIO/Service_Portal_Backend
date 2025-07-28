@@ -425,7 +425,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
     // 6. Set up mail options
     const mailOptions = {
       from: 'webadmin@skanray-access.com',
-      to: 'shivamt2023@gmail.com, Damodara.s@skanray.com', // comma-separated string
+      to: 'ftshivamtiwari222@gmail.com, Damodara.s@skanray.com, tomson.m+customer@skanray.com', // comma-separated string
       subject: 'Updated Complaint',
       html: emailHTML
     };
@@ -1130,7 +1130,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
 </td>
 
           <td style="width: 17%;">Service Type:</td>
-          <td style="width: 17%;">${notificationType || "N/A"}</td>
+          <td style="width: 17%;">${notificationDate || "N/A"}</td>
         </tr>
       </table>
 
