@@ -16,6 +16,7 @@ const WarrantyCodeSchema = new mongoose.Schema({
     },
     status: {
         type: String,
+        default: "Active"
     },
     createdAt: {
         type: Date,

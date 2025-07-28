@@ -4,7 +4,7 @@ const router = express.Router();
 const multer = require('multer');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-const Aerb = require('../../Model/MasterSchema/AerbSchema');
+const ReplacedPartCode = require('../../Model/MasterSchema/ReplacedPartCodeSchema');
 
 // Optimized: Pre-compiled regex patterns
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
@@ -15,28 +15,19 @@ const storage = multer.memoryStorage();
 const upload = multer({
     storage,
     fileFilter: (req, file, cb) => {
-        const fileName = file.originalname.toLowerCase();
-        const allowedExtensions = ['.csv', '.xlsx', '.xls'];
-        const allowedMimeTypes = [
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'application/vnd.ms-excel',
-            'text/csv',
-            'application/csv'
-        ];
-
-        // Check file extension
-        const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-        
-        // Check MIME type
-        const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
-
-        if (hasValidExtension || hasValidMimeType) {
+        const ext = file.originalname.toLowerCase().slice(-4);
+        if (
+            file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // .xlsx
+            file.mimetype === 'application/vnd.ms-excel' || // .xls
+            file.mimetype === 'text/csv' || // .csv
+            file.mimetype === 'application/csv' ||
+            ext === '.csv' ||
+            ext === '.xlsx' ||
+            ext === '.xls'
+        ) {
             cb(null, true);
         } else {
-            cb(new Error(
-                `Invalid file type. Only ${allowedExtensions.join(', ')} formats are allowed. ` +
-                `Received: ${file.mimetype} (${fileName})`
-            ), false);
+            cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
         }
     },
     limits: {
@@ -46,15 +37,12 @@ const upload = multer({
 
 // Optimized: Predefined field mappings for faster access
 const FIELD_MAPPINGS = {
-    'materialcode': new Set([
-        'materialcode', 'material_code', 'partno',
-        'part_no', 'code', 'item_code', 'product_code'
-    ]),
-    'materialdescription': new Set([
-        'materialdescription', 'material_description',
-        'description', 'desc', 'product_description',
-        'item_description', 'material_desc'
-    ])
+    'catalog': new Set(['catalog', 'catalogue', 'catalog_name', 'catalogname']),
+    'codegroup': new Set(['codegroup', 'code_group', 'group', 'groupcode', 'group_code', 'partgroup', 'part_group']),
+    'name': new Set(['name', 'partname', 'part_name', 'componentname', 'component_name', 'itemname', 'item_name']),
+    'code': new Set(['code', 'partcode', 'part_code', 'itemcode', 'item_code', 'componentcode', 'component_code']),
+    'shorttextforcode': new Set(['shorttextforcode', 'short_text_for_code', 'shorttext', 'short_text', 'description', 'desc', 'shortdescription', 'short_description']),
+    'slno': new Set(['slno', 'sl_no', 'serialno', 'serial_no', 'serialnumber', 'serial_number', 'sno', 's_no', 'sequence', 'seq'])
 };
 
 // Optimized normalizeFieldName with memoization
@@ -88,7 +76,7 @@ function mapHeaders(headers) {
         for (const [schemaField, variations] of Object.entries(FIELD_MAPPINGS)) {
             if (variations.has(normalizedHeader)) {
                 mappedHeaders[header] = schemaField;
-                break;
+                break; // Move to next header once we find a match
             }
         }
     }
@@ -96,19 +84,34 @@ function mapHeaders(headers) {
     return mappedHeaders;
 }
 
+// Optimized: Inline simple functions
+function checkForChanges(existingRecord, newRecord, providedFields) {
+    let hasAnyChange = false;
+    const changeDetails = [];
+
+    for (const field of providedFields) {
+        const existingValue = existingRecord[field] ? String(existingRecord[field]).trim() : '';
+        const newValue = newRecord[field] ? String(newRecord[field]).trim() : '';
+
+        if (existingValue !== newValue) {
+            hasAnyChange = true;
+            changeDetails.push({
+                field,
+                oldValue: existingValue,
+                newValue
+            });
+        }
+    }
+
+    return { hasChanges: hasAnyChange, changeDetails };
+}
+
 // Optimized Excel parsing with buffer reuse
 function parseExcelFile(buffer) {
     try {
-        const workbook = XLSX.read(buffer, {
-            type: 'buffer',
-            cellDates: true,
-            codepage: 65001 // UTF-8
-        });
+        const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
         const sheetName = workbook.SheetNames[0];
-        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-            defval: '',
-            raw: false
-        });
+        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: false });
     } catch (error) {
         throw new Error(`Excel parsing error: ${error.message}`);
     }
@@ -129,60 +132,9 @@ function parseCSVFile(buffer) {
             .on('end', () => resolve(results))
             .on('error', reject);
 
+        // Ensure stream is properly destroyed on errors
         stream.on('error', () => stream.destroy());
     });
-}
-
-// Helper function to determine file type
-function getFileType(fileName, mimeType) {
-    const lowerFileName = fileName.toLowerCase();
-    
-    // Check by extension first
-    if (lowerFileName.endsWith('.csv')) {
-        return 'csv';
-    } else if (lowerFileName.endsWith('.xlsx')) {
-        return 'xlsx';
-    } else if (lowerFileName.endsWith('.xls')) {
-        return 'xls';
-    }
-    
-    // Fallback to MIME type
-    switch (mimeType) {
-        case 'text/csv':
-        case 'application/csv':
-            return 'csv';
-        case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-            return 'xlsx';
-        case 'application/vnd.ms-excel':
-            return 'xls';
-        default:
-            return 'unknown';
-    }
-}
-
-// Add missing checkForChanges function
-function checkForChanges(existingRecord, newRecord, providedFields) {
-    const changes = [];
-    let hasChanges = false;
-
-    for (const field of providedFields) {
-        const oldValue = existingRecord[field] || '';
-        const newValue = newRecord[field] || '';
-        
-        if (oldValue !== newValue) {
-            hasChanges = true;
-            changes.push({
-                field,
-                oldValue,
-                newValue
-            });
-        }
-    }
-
-    return {
-        hasChanges,
-        changeDetails: changes
-    };
 }
 
 // Optimized record validation with early exits
@@ -203,11 +155,23 @@ function validateRecord(record, headerMapping) {
     }
 
     // Required field validation
-    if (!cleanedRecord.materialcode) {
-        errors.push('Material Code is required');
+    if (!cleanedRecord.catalog) {
+        errors.push('Catalog is required');
     }
-    if (!cleanedRecord.materialdescription) {
-        errors.push('Material Description is required');
+    if (!cleanedRecord.codegroup) {
+        errors.push('Code Group is required');
+    }
+    if (!cleanedRecord.name) {
+        errors.push('Name is required');
+    }
+    if (!cleanedRecord.code) {
+        errors.push('Code is required');
+    }
+    if (!cleanedRecord.shorttextforcode) {
+        errors.push('Short Text For Code is required');
+    }
+    if (!cleanedRecord.slno) {
+        errors.push('Serial Number is required');
     }
 
     // Early exit if required fields are missing
@@ -216,11 +180,28 @@ function validateRecord(record, headerMapping) {
     }
 
     // Length validation
-    if (cleanedRecord.materialcode.length > 50) {
-        errors.push('Material Code too long (max 50 characters)');
+    if (cleanedRecord.catalog.length > 100) {
+        errors.push('Catalog too long (max 100 characters)');
     }
-    if (cleanedRecord.materialdescription.length > 500) {
-        errors.push('Material Description too long (max 500 characters)');
+    if (cleanedRecord.codegroup.length > 100) {
+        errors.push('Code Group too long (max 100 characters)');
+    }
+    if (cleanedRecord.name.length > 200) {
+        errors.push('Name too long (max 200 characters)');
+    }
+    if (cleanedRecord.code.length > 50) {
+        errors.push('Code too long (max 50 characters)');
+    }
+    if (cleanedRecord.shorttextforcode.length > 500) {
+        errors.push('Short Text For Code too long (max 500 characters)');
+    }
+    if (cleanedRecord.slno.length > 50) {
+        errors.push('Serial Number too long (max 50 characters)');
+    }
+
+    // Default status
+    if (!cleanedRecord.status) {
+        cleanedRecord.status = 'Active';
     }
 
     return { cleanedRecord, errors, providedFields };
@@ -228,9 +209,8 @@ function validateRecord(record, headerMapping) {
 
 // MAIN ROUTE - Optimized with parallel processing and bulk operations
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
-    const BATCH_SIZE = 2000;
-    const PARALLEL_BATCHES = 3;
-    const BULK_WRITE_BATCH_SIZE = 500;
+    const BATCH_SIZE = 2000; // Increased batch size for better performance
+    const PARALLEL_BATCHES = 3; // Process multiple batches in parallel
 
     // Initialize response object with optimized structure
     const response = {
@@ -275,17 +255,18 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
 
-        // Determine file type and parse accordingly
-        const fileType = getFileType(req.file.originalname, req.file.mimetype);
+        // Parse file with optimized method selection
         let jsonData;
+        const fileName = req.file.originalname.toLowerCase();
+        const fileExt = fileName.slice(-4);
 
         try {
-            if (fileType === 'csv') {
+            if (fileExt === '.csv') {
                 jsonData = await parseCSVFile(req.file.buffer);
-            } else if (fileType === 'xlsx' || fileType === 'xls') {
+            } else if (fileExt === '.xlsx' || fileExt === '.xls') {
                 jsonData = parseExcelFile(req.file.buffer);
             } else {
-                throw new Error(`Unsupported file format. File: ${req.file.originalname}, MIME: ${req.file.mimetype}`);
+                throw new Error('Unsupported file format');
             }
         } catch (parseError) {
             response.status = 'failed';
@@ -308,13 +289,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         response.headerMapping = headerMapping;
 
         // Check for required fields with optimized lookup
-        const hasRequiredFields = ['materialcode', 'materialdescription'].every(field =>
-            Object.values(headerMapping).includes(field)
+        const requiredFields = ['catalog', 'codegroup', 'name', 'code', 'shorttextforcode', 'slno'];
+        const missingRequiredFields = requiredFields.filter(field =>
+            !Object.values(headerMapping).includes(field)
         );
-        if (!hasRequiredFields) {
+
+        if (missingRequiredFields.length > 0) {
             response.status = 'failed';
             response.errors.push(
-                `Required headers not found. Available headers: ${headers.join(', ')}`
+                `Required headers not found: ${missingRequiredFields.join(', ')}. Available headers: ${headers.join(', ')}`
             );
             return res.status(400).json(response);
         }
@@ -322,7 +305,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Send initial response
         res.write(JSON.stringify(response) + '\n');
 
-        const processedMaterialCodes = new Set();
+        // Create unique identifier for checking duplicates (combination of catalog + codegroup + code)
+        const processedIdentifiers = new Set();
         let currentRow = 0;
 
         // Process data in parallel batches
@@ -339,8 +323,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 currentRow++;
                 const recordResult = {
                     row: currentRow,
-                    materialcode: '',
-                    materialdescription: '',
+                    catalog: '',
+                    codegroup: '',
+                    name: '',
+                    code: '',
+                    slno: '',
                     status: 'Processing',
                     action: '',
                     error: null,
@@ -349,8 +336,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
                 try {
                     const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
-                    recordResult.materialcode = cleanedRecord.materialcode || 'Unknown';
-                    recordResult.materialdescription = cleanedRecord.materialdescription || 'N/A';
+                    recordResult.catalog = cleanedRecord.catalog || 'Unknown';
+                    recordResult.codegroup = cleanedRecord.codegroup || 'Unknown';
+                    recordResult.name = cleanedRecord.name || 'N/A';
+                    recordResult.code = cleanedRecord.code || 'Unknown';
+                    recordResult.slno = cleanedRecord.slno || 'Unknown';
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -361,18 +351,21 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         continue;
                     }
 
+                    // Create unique identifier for duplicate checking
+                    const uniqueIdentifier = `${cleanedRecord.catalog}|${cleanedRecord.codegroup}|${cleanedRecord.code}`;
+
                     // Check for duplicates within the file
-                    if (processedMaterialCodes.has(cleanedRecord.materialcode)) {
+                    if (processedIdentifiers.has(uniqueIdentifier)) {
                         recordResult.status = 'Skipped';
-                        recordResult.error = 'Duplicate Material Code in file';
+                        recordResult.error = 'Duplicate record in file (same Catalog + Code Group + Code)';
                         recordResult.action = 'Skipped due to file duplicate';
-                        recordResult.warnings.push('Material Code already processed in this file');
+                        recordResult.warnings.push('Record with same Catalog, Code Group, and Code already processed in this file');
                         batchResults.push(recordResult);
                         batchSkipped++;
                         continue;
                     }
 
-                    processedMaterialCodes.add(cleanedRecord.materialcode);
+                    processedIdentifiers.add(uniqueIdentifier);
                     validRecords.push({ cleanedRecord, recordResult, providedFields });
 
                 } catch (err) {
@@ -386,24 +379,30 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
             // Process valid records in bulk
             if (validRecords.length > 0) {
-                // Find existing records in bulk
-                const materialCodes = validRecords.map(r => r.cleanedRecord.materialcode);
-                const existingRecords = await Aerb.find({
-                    materialcode: { $in: materialCodes }
+                // Find existing records in bulk using compound index
+                const searchCriteria = validRecords.map(r => ({
+                    catalog: r.cleanedRecord.catalog,
+                    codegroup: r.cleanedRecord.codegroup,
+                    code: r.cleanedRecord.code
+                }));
+
+                const existingRecords = await ReplacedPartCode.find({
+                    $or: searchCriteria
                 }).lean();
 
                 const existingRecordsMap = new Map();
                 existingRecords.forEach(rec => {
-                    existingRecordsMap.set(rec.materialcode, rec);
+                    const key = `${rec.catalog}|${rec.codegroup}|${rec.code}`;
+                    existingRecordsMap.set(key, rec);
                 });
 
                 // Prepare bulk operations
-                const bulkCreateOps = [];
-                const bulkUpdateOps = [];
+                const bulkOps = [];
                 const now = new Date();
 
                 for (const { cleanedRecord, recordResult, providedFields } of validRecords) {
-                    const existingRecord = existingRecordsMap.get(cleanedRecord.materialcode);
+                    const uniqueKey = `${cleanedRecord.catalog}|${cleanedRecord.codegroup}|${cleanedRecord.code}`;
+                    const existingRecord = existingRecordsMap.get(uniqueKey);
 
                     if (existingRecord) {
                         response.summary.existingRecords++;
@@ -411,14 +410,18 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields);
 
                         if (comparisonResult.hasChanges) {
-                            const updateData = {
-                                materialdescription: cleanedRecord.materialdescription,
-                                modifiedAt: now
-                            };
+                            const updateData = { modifiedAt: now };
+                            providedFields.forEach(field => {
+                                updateData[field] = cleanedRecord[field];
+                            });
 
-                            bulkUpdateOps.push({
+                            bulkOps.push({
                                 updateOne: {
-                                    filter: { materialcode: cleanedRecord.materialcode },
+                                    filter: {
+                                        catalog: cleanedRecord.catalog,
+                                        codegroup: cleanedRecord.codegroup,
+                                        code: cleanedRecord.code
+                                    },
                                     update: { $set: updateData }
                                 }
                             });
@@ -444,7 +447,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                             batchSkipped++;
                         }
                     } else {
-                        bulkCreateOps.push({
+                        bulkOps.push({
                             insertOne: {
                                 document: {
                                     ...cleanedRecord,
@@ -465,39 +468,33 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     batchResults.push(recordResult);
                 }
 
-                // Execute bulk operations in smaller chunks
-                const executeBulkWrite = async (operations) => {
-                    for (let i = 0; i < operations.length; i += BULK_WRITE_BATCH_SIZE) {
-                        const chunk = operations.slice(i, i + BULK_WRITE_BATCH_SIZE);
-                        try {
-                            await Aerb.bulkWrite(chunk, { ordered: false });
-                        } catch (bulkError) {
-                            // Handle bulk errors by marking affected records as failed
-                            if (bulkError.writeErrors) {
-                                bulkError.writeErrors.forEach(error => {
-                                    const failedRecord = batchResults.find(r =>
-                                        r.materialcode === error.op?.materialcode ||
-                                        r.materialcode === error.op?.updateOne?.filter?.materialcode
+                // Execute bulk operations if any
+                if (bulkOps.length > 0) {
+                    try {
+                        await ReplacedPartCode.bulkWrite(bulkOps, { ordered: false });
+                    } catch (bulkError) {
+                        // Handle bulk errors by marking affected records as failed
+                        if (bulkError.writeErrors) {
+                            bulkError.writeErrors.forEach(error => {
+                                const failedRecord = batchResults.find(r => {
+                                    const errorDoc = error.op?.insertOne?.document || error.op?.updateOne?.filter;
+                                    return errorDoc && (
+                                        (r.catalog === errorDoc.catalog && r.codegroup === errorDoc.codegroup && r.code === errorDoc.code) ||
+                                        (r.catalog === error.op?.catalog && r.codegroup === error.op?.codegroup && r.code === error.op?.code)
                                     );
-                                    if (failedRecord) {
-                                        failedRecord.status = 'Failed';
-                                        failedRecord.action = 'Bulk operation failed';
-                                        failedRecord.error = error.errmsg;
-                                        batchFailed++;
-                                        if (failedRecord.status === 'Created') batchCreated--;
-                                        if (failedRecord.status === 'Updated') batchUpdated--;
-                                    }
                                 });
-                            }
+                                if (failedRecord) {
+                                    failedRecord.status = 'Failed';
+                                    failedRecord.action = 'Bulk operation failed';
+                                    failedRecord.error = error.errmsg;
+                                    batchFailed++;
+                                    if (failedRecord.status === 'Created') batchCreated--;
+                                    if (failedRecord.status === 'Updated') batchUpdated--;
+                                }
+                            });
                         }
                     }
-                };
-
-                // Execute create and update operations in parallel
-                await Promise.all([
-                    bulkCreateOps.length > 0 ? executeBulkWrite(bulkCreateOps) : Promise.resolve(),
-                    bulkUpdateOps.length > 0 ? executeBulkWrite(bulkUpdateOps) : Promise.resolve()
-                ]);
+                }
             }
 
             return {
@@ -539,7 +536,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 response.summary.failed += completedBatch.batchFailed;
                 response.summary.skippedTotal += completedBatch.batchSkipped;
                 response.summary.duplicatesInFile += completedBatch.batchResults.filter(
-                    r => r.status === 'Skipped' && r.error === 'Duplicate Material Code in file'
+                    r => r.status === 'Skipped' && r.error && r.error.includes('Duplicate record in file')
                 ).length;
                 response.summary.noChangesSkipped += completedBatch.batchResults.filter(
                     r => r.status === 'Skipped' && r.action === 'No changes detected'
@@ -576,7 +573,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             response.summary.failed += completedBatch.batchFailed;
             response.summary.skippedTotal += completedBatch.batchSkipped;
             response.summary.duplicatesInFile += completedBatch.batchResults.filter(
-                r => r.status === 'Skipped' && r.error === 'Duplicate Material Code in file'
+                r => r.status === 'Skipped' && r.error && r.error.includes('Duplicate record in file')
             ).length;
             response.summary.noChangesSkipped += completedBatch.batchResults.filter(
                 r => r.status === 'Skipped' && r.action === 'No changes detected'
@@ -615,7 +612,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('AERB bulk upload error:', error);
+        console.error('ReplacedPartCode bulk upload error:', error);
         response.status = 'failed';
         response.endTime = new Date();
         response.errors.push(`System error: ${error.message}`);

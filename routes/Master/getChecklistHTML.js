@@ -204,15 +204,10 @@ const getChecklistHTML = ({
           <tr>
             <td class="cell section-title">Email:</td>
             <td class="cell">${customer?.email || ""}</td>
-            <td class="cell section-title">Doc No:</td>
-            <td class="cell"></td>
-          </tr>
-          <tr>
-            <td class="cell section-title">Part Number:</td>
+              <td class="cell section-title">Part Number:</td>
             <td class="cell">${machine?.partNumber || ""}</td>
-            <td class="cell section-title">Machine ID:</td>
-            <td class="cell">${machine?.machineId || ""}</td>
           </tr>
+          
           <tr>
             <td class="cell section-title">Model Description:</td>
             <td class="cell">${machine?.modelDescription || ""}</td>

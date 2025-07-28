@@ -67,6 +67,9 @@ const componentRoutes = require('./routes/Role/componentRoutes');
 const roleRoutes = require('./routes/Role/roleRoutes');
 const reportRoutes = require('./routes/Role/reportRoutes');
 const CustomerBulk = require('./BulkUpload/Upload/CustomerBulk');
+const replacedPartCodeUpload = require('./BulkUpload/Master/ReplacePartCodeBulk');
+const WarrantyCodeBulk = require('./BulkUpload/Master/WarrantyCodeBulk');
+const ReportedProblemBulk = require('./BulkUpload/Master/ReportedProblemBulk');
 const mobilecomponentRoutes = require('./routes/Role/MobileComponent');
 const path = require('path');
 const fs = require('fs');
@@ -184,9 +187,12 @@ app.use('/bulk/amccontract', AmcContractBulk);
 app.use('/bulk/dealerstock', DealerStockBulk);
 app.use('/bulk/hubstock', HubStockBulk);
 app.use('/bulk/pendingcomplaints', PendingComplaintsBulk);
-app.use('/bulk/sparemaster', SpareMasterBulk);
+app.use('/bulk/spare-master', SpareMasterBulk);
 app.use('/bulk/pendinginstallation', pendingInstallationBulk);
 app.use('/bulk/customer', CustomerBulk);
+app.use('/bulk/replaced-part-codes', replacedPartCodeUpload);
+app.use('/bulk/reported-problem', ReportedProblemBulk);
+app.use('/bulk/warranty-code', WarrantyCodeBulk);
 
 
 // Routes

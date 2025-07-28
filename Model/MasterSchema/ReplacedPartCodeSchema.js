@@ -1,3 +1,4 @@
+// Add this to your ReplacedPartCodeSchema.js file
 const mongoose = require('mongoose');
 
 const ReplacedPartCodeSchema = new mongoose.Schema({
@@ -27,6 +28,7 @@ const ReplacedPartCodeSchema = new mongoose.Schema({
     },
     status: {
         type: String,
+        default: 'Active'
     },
     createdAt: {
         type: Date,
@@ -37,5 +39,8 @@ const ReplacedPartCodeSchema = new mongoose.Schema({
         default: Date.now
     }
 });
+
+// Add compound index for better performance
+ReplacedPartCodeSchema.index({ catalog: 1, codegroup: 1, code: 1 }, { unique: true });
 
 module.exports = mongoose.model("ReplacedPartCode", ReplacedPartCodeSchema);

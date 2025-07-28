@@ -1,167 +1,759 @@
+const XLSX = require('xlsx');
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const XLSX = require('xlsx');
+const csv = require('csv-parser');
+const { Readable } = require('stream');
 const SpareMaster = require('../../Model/MasterSchema/SpareMasterSchema');
-const cors = require('cors');
 
-// Configure multer with memory storage
+// Optimized: Pre-compiled regex patterns
+const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
+const MULTISPACE_REGEX = /\s+/g;
+
+// Memory storage with optimized settings
 const storage = multer.memoryStorage();
-const upload = multer({ storage });
+const upload = multer({
+    storage,
+    fileFilter: (req, file, cb) => {
+        const fileName = file.originalname.toLowerCase();
+        const allowedExtensions = ['.csv', '.xlsx', '.xls'];
+        const allowedMimeTypes = [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel',
+            'text/csv',
+            'application/csv'
+        ];
 
-// Enable CORS pre-flight for bulk-upload
-router.options('/bulk-upload', cors());
+        // Check file extension
+        const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+        
+        // Check MIME type
+        const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
 
-/** Helper function to clean and convert numeric values */
-function cleanNumber(value) {
-  if (value === undefined || value === null) return 0;
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') {
-    // Remove commas and any non-numeric characters except decimal point
-    const cleaned = value.replace(/[^0-9.-]/g, '');
-    const num = parseFloat(cleaned);
-    return isNaN(num) ? 0 : num;
-  }
-  return 0;
+        if (hasValidExtension || hasValidMimeType) {
+            cb(null, true);
+        } else {
+            cb(new Error(
+                `Invalid file type. Only ${allowedExtensions.join(', ')} formats are allowed. ` +
+                `Received: ${file.mimetype} (${fileName})`
+            ), false);
+        }
+    },
+    limits: {
+        fileSize: 50 * 1024 * 1024 // 50MB limit
+    }
+});
+
+// Updated: Field mappings to match schema field names
+const FIELD_MAPPINGS = {
+    'subgrp': new Set([
+        'subgrp', 'sub_grp', 'subgroup', 'sub_group', 'group',
+        'category', 'subcategory', 'sub_category', 'grp'
+    ]),
+    'partnumber': new Set([
+        'partnumber', 'part_number', 'partno', 'part_no',
+        'itemcode', 'item_code', 'code', 'productcode', 'product_code'
+    ]),
+    'description': new Set([
+        'description', 'desc', 'product_description', 'item_description',
+        'part_description', 'product_desc', 'item_desc', 'name'
+    ]),
+    'type': new Set([
+        'type', 'category_type', 'item_type', 'product_type',
+        'spare_type', 'part_type', 'classification'
+    ]),
+    'rate': new Set([
+        'rate', 'mrp', 'rate_mrp', 'rateMrp', 'price', 'cost',
+        'amount', 'value', 'selling_price', 'sellingprice'
+    ]),
+    'dp': new Set([
+        'dp', 'dealer_price', 'dealerprice', 'wholesale_price',
+        'wholesaleprice', 'trade_price', 'tradeprice'
+    ]),
+    'charges': new Set([
+        'charges', 'exchange_price', 'exchangeprice', 'exchange',
+        'service_charges', 'servicecharges', 'additional_charges'
+    ]),
+    'spareiamegurl': new Set([
+        'spareiamegurl', 'spare_image_url', 'spareimageurl', 'image_url',
+        'imageurl', 'spare_img_url', 'spareimgurl', 'img_url'
+    ])
+};
+
+// Optimized normalizeFieldName with memoization
+const normalizedFieldCache = new Map();
+function normalizeFieldName(fieldName) {
+    if (!fieldName) return '';
+    if (normalizedFieldCache.has(fieldName)) {
+        return normalizedFieldCache.get(fieldName);
+    }
+    const normalized = fieldName
+        .toLowerCase()
+        .replace(NON_ALPHANUMERIC_REGEX, '')
+        .trim();
+    normalizedFieldCache.set(fieldName, normalized);
+    return normalized;
 }
 
-router.post('/bulk-upload', upload.single('file'), async (req, res) => {
-  // Initialize response object with streaming support
-  const response = {
-    status: 'processing',
-    startTime: new Date(),
-    totalRecords: 0,
-    processedRecords: 0,
-    createdCount: 0,
-    updatedCount: 0,
-    errorCount: 0,
-    currentRecord: null,
-    errors: [],
-    message: 'Starting processing'
-  };
+// Optimized header mapping with early exit
+function mapHeaders(headers) {
+    const mappedHeaders = {};
+    const seenFields = new Set();
 
-  try {
-    if (!req.file) {
-      response.status = 'failed';
-      response.errors.push('No file uploaded');
-      return res.status(400).json(response);
+    for (const header of headers) {
+        const normalizedHeader = normalizeFieldName(header);
+
+        // Skip if we've already mapped this exact header
+        if (seenFields.has(normalizedHeader)) continue;
+        seenFields.add(normalizedHeader);
+
+        // Find the first matching schema field
+        for (const [schemaField, variations] of Object.entries(FIELD_MAPPINGS)) {
+            if (variations.has(normalizedHeader)) {
+                mappedHeaders[header] = schemaField;
+                break;
+            }
+        }
     }
 
-    // Set headers for streaming response
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Transfer-Encoding', 'chunked');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    return mappedHeaders;
+}
 
-    // Read and parse Excel file
-    const workbook = XLSX.read(req.file.buffer, {
-      type: 'buffer',
-      cellDates: true,
-      raw: false // Get formatted strings for dates
+// Optimized Excel parsing with buffer reuse
+function parseExcelFile(buffer) {
+    try {
+        const workbook = XLSX.read(buffer, {
+            type: 'buffer',
+            cellDates: true,
+            codepage: 65001 // UTF-8
+        });
+        const sheetName = workbook.SheetNames[0];
+        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+            defval: '',
+            raw: false
+        });
+    } catch (error) {
+        throw new Error(`Excel parsing error: ${error.message}`);
+    }
+}
+
+// Optimized CSV parsing with stream control
+function parseCSVFile(buffer) {
+    return new Promise((resolve, reject) => {
+        const results = [];
+        const stream = Readable.from(buffer.toString())
+            .pipe(csv({
+                mapValues: ({ value }) => value.trim(),
+                strict: true,
+                skipLines: 0,
+                skipEmptyLines: true
+            }))
+            .on('data', (data) => results.push(data))
+            .on('end', () => resolve(results))
+            .on('error', reject);
+
+        stream.on('error', () => stream.destroy());
     });
+}
+
+// Helper function to determine file type
+function getFileType(fileName, mimeType) {
+    const lowerFileName = fileName.toLowerCase();
     
-    const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-    response.totalRecords = jsonData.length;
-    response.message = `Found ${response.totalRecords} records to process`;
+    // Check by extension first
+    if (lowerFileName.endsWith('.csv')) {
+        return 'csv';
+    } else if (lowerFileName.endsWith('.xlsx')) {
+        return 'xlsx';
+    } else if (lowerFileName.endsWith('.xls')) {
+        return 'xls';
+    }
+    
+    // Fallback to MIME type
+    switch (mimeType) {
+        case 'text/csv':
+        case 'application/csv':
+            return 'csv';
+        case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+            return 'xlsx';
+        case 'application/vnd.ms-excel':
+            return 'xls';
+        default:
+            return 'unknown';
+    }
+}
 
-    // Send initial response
-    res.write(JSON.stringify(response) + '\n');
+// Helper function to clean and convert numeric values
+function cleanNumber(value) {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+        // Handle special cases
+        if (value === '-' || value.toLowerCase() === 'na' || value.toLowerCase() === 'n/a') return null;
+        // Remove commas and any non-numeric characters except decimal point
+        const cleaned = value.replace(/[^0-9.-]/g, '');
+        const num = parseFloat(cleaned);
+        return isNaN(num) ? null : num;
+    }
+    return null;
+}
 
-    // Process records in batches
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < jsonData.length; i += BATCH_SIZE) {
-      const batch = jsonData.slice(i, i + BATCH_SIZE);
+// Helper function to clean charges field (Mixed type)
+function cleanCharges(value) {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+        // Keep original string if it's not a number
+        const trimmed = value.trim();
+        if (trimmed === '-' || trimmed.toLowerCase() === 'na' || trimmed.toLowerCase() === 'n/a') return null;
+        
+        // Try to convert to number
+        const cleaned = trimmed.replace(/[^0-9.-]/g, '');
+        const num = parseFloat(cleaned);
+        
+        // If it's a valid number, return number, otherwise return original string
+        return isNaN(num) ? trimmed : num;
+    }
+    return value;
+}
 
-      for (const [index, record] of batch.entries()) {
-        const absoluteIndex = i + index;
-        response.currentRecord = {
-          partNumber: record.PartNumber || 'Unknown',
-          description: record.Description || 'Unknown',
-          index: absoluteIndex + 1
-        };
-        response.processedRecords = absoluteIndex + 1;
-        response.message = `Processing record ${absoluteIndex + 1} of ${response.totalRecords}`;
+// Function to check for changes between existing and new records
+function checkForChanges(existingRecord, newRecord, providedFields) {
+    const changes = [];
+    let hasChanges = false;
 
-        try {
-          // Validate required fields
-          const requiredFields = ['PartNumber', 'Description', 'Type', 'Rate'];
-          const missingFields = requiredFields.filter(field => !record[field]);
-          if (missingFields.length > 0) {
-            throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
-          }
+    for (const field of providedFields) {
+        const oldValue = existingRecord[field] || '';
+        const newValue = newRecord[field] || '';
+        
+        if (oldValue !== newValue) {
+            hasChanges = true;
+            changes.push({
+                field,
+                oldValue,
+                newValue
+            });
+        }
+    }
 
-          // Prepare document with cleaned data
-          const doc = {
-            Sub_grp: record.Sub_grp || '',
-            PartNumber: record.PartNumber,
-            Description: record.Description,
-            Type: record.Type,
-            Rate: cleanNumber(record.Rate),
-            DP: cleanNumber(record.DP),
-            Charges: record.Charges === '-' ? 0 : cleanNumber(record.Charges),
-            spareiamegUrl: record.spareiamegUrl || ''
-          };
+    return {
+        hasChanges,
+        changeDetails: changes
+    };
+}
 
-          // Check for existing record
-          const existingRecord = await SpareMaster.findOne({ PartNumber: doc.PartNumber });
+// Generate unique identifier for SpareMaster records (using PartNumber as unique key)
+function generateUniqueKey(record) {
+    return `${record.PartNumber}`.toLowerCase();
+}
 
-          if (existingRecord) {
-            // Update existing record
-            await SpareMaster.findByIdAndUpdate(existingRecord._id, doc);
-            response.updatedCount++;
-            response.message = `Updated record ${doc.PartNumber}`;
-          } else {
-            // Create new record
-            await SpareMaster.create(doc);
-            response.createdCount++;
-            response.message = `Created record ${doc.PartNumber}`;
-          }
-        } catch (error) {
-          response.errorCount++;
-          response.errors.push({
-            record: record.PartNumber || 'Unknown',
-            description: record.Description || 'Unknown',
-            error: error.message
-          });
+// Updated: Record validation to match schema requirements
+function validateRecord(record, headerMapping) {
+    const cleanedRecord = {};
+    const providedFields = [];
+    const errors = [];
+
+    // Map headers to schema fields
+    for (const [originalHeader, schemaField] of Object.entries(headerMapping)) {
+        if (record[originalHeader] === undefined || record[originalHeader] === null) continue;
+
+        const value = String(record[originalHeader]).trim();
+        if (value === '' || value === 'undefined' || value === 'null') continue;
+
+        // Handle different field types based on schema
+        if (schemaField === 'rate' || schemaField === 'dp') {
+            const numValue = cleanNumber(value);
+            if (numValue !== null) {
+                cleanedRecord[getSchemaFieldName(schemaField)] = numValue;
+                providedFields.push(schemaField);
+            }
+        } else if (schemaField === 'charges') {
+            const chargesValue = cleanCharges(value);
+            if (chargesValue !== null) {
+                cleanedRecord['Charges'] = chargesValue;
+                providedFields.push(schemaField);
+            }
+        } else {
+            // String fields
+            cleanedRecord[getSchemaFieldName(schemaField)] = value.replace(MULTISPACE_REGEX, ' ').trim();
+            providedFields.push(schemaField);
+        }
+    }
+
+    // Updated: Only Sub_grp and PartNumber are required based on schema
+    const requiredFields = ['subgrp', 'partnumber'];
+    for (const field of requiredFields) {
+        const schemaFieldName = getSchemaFieldName(field);
+        if (!cleanedRecord[schemaFieldName]) {
+            errors.push(`${schemaFieldName} is required`);
+        }
+    }
+
+    // Early exit if required fields are missing
+    if (errors.length > 0) {
+        return { cleanedRecord, errors, providedFields };
+    }
+
+    // Length validation
+    const fieldLimits = {
+        'Sub_grp': 100,
+        'PartNumber': 100,
+        'Description': 500,
+        'Type': 100,
+        'spareiamegUrl': 500
+    };
+
+    for (const [field, maxLength] of Object.entries(fieldLimits)) {
+        if (cleanedRecord[field] && typeof cleanedRecord[field] === 'string' && cleanedRecord[field].length > maxLength) {
+            errors.push(`${field} too long (max ${maxLength} characters)`);
+        }
+    }
+
+    // Numeric validation
+    if (cleanedRecord.Rate !== undefined && cleanedRecord.Rate < 0) {
+        errors.push('Rate (MRP) cannot be negative');
+    }
+    if (cleanedRecord.DP !== undefined && cleanedRecord.DP < 0) {
+        errors.push('DP cannot be negative');
+    }
+    if (cleanedRecord.Charges !== undefined && typeof cleanedRecord.Charges === 'number' && cleanedRecord.Charges < 0) {
+        errors.push('Charges (Exchange Price) cannot be negative');
+    }
+
+    return { cleanedRecord, errors, providedFields };
+}
+
+// Helper function to convert field names to schema field names
+function getSchemaFieldName(field) {
+    const fieldMapping = {
+        'subgrp': 'Sub_grp',
+        'partnumber': 'PartNumber',
+        'description': 'Description',
+        'type': 'Type',
+        'rate': 'Rate',
+        'dp': 'DP',
+        'charges': 'Charges',
+        'spareiamegurl': 'spareiamegUrl'
+    };
+    return fieldMapping[field] || field;
+}
+
+// MAIN ROUTE - Optimized with parallel processing and bulk operations
+router.post('/bulk-upload', upload.single('file'), async (req, res) => {
+    const BATCH_SIZE = 2000;
+    const PARALLEL_BATCHES = 3;
+    const BULK_WRITE_BATCH_SIZE = 500;
+
+    // Initialize response object with optimized structure
+    const response = {
+        status: 'processing',
+        startTime: new Date(),
+        totalRecords: 0,
+        processedRecords: 0,
+        successfulRecords: 0,
+        failedRecords: 0,
+        results: [],
+        summary: {
+            created: 0,
+            updated: 0,
+            failed: 0,
+            duplicatesInFile: 0,
+            existingRecords: 0,
+            skippedTotal: 0,
+            noChangesSkipped: 0
+        },
+        headerMapping: {},
+        errors: [],
+        warnings: [],
+        batchProgress: {
+            currentBatch: 0,
+            totalBatches: 0,
+            batchSize: BATCH_SIZE,
+            currentBatchRecords: 0
+        }
+    };
+
+    try {
+        if (!req.file) {
+            response.status = 'failed';
+            response.errors.push('No file uploaded');
+            return res.status(400).json(response);
         }
 
-        // Send progress update after each record
+        // Set headers for streaming response
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Transfer-Encoding', 'chunked');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        // Determine file type and parse accordingly
+        const fileType = getFileType(req.file.originalname, req.file.mimetype);
+        let jsonData;
+
+        try {
+            if (fileType === 'csv') {
+                jsonData = await parseCSVFile(req.file.buffer);
+            } else if (fileType === 'xlsx' || fileType === 'xls') {
+                jsonData = parseExcelFile(req.file.buffer);
+            } else {
+                throw new Error(`Unsupported file format. File: ${req.file.originalname}, MIME: ${req.file.mimetype}`);
+            }
+        } catch (parseError) {
+            response.status = 'failed';
+            response.errors.push(`File parsing error: ${parseError.message}`);
+            return res.status(400).json(response);
+        }
+
+        if (!jsonData || jsonData.length === 0) {
+            response.status = 'failed';
+            response.errors.push('No data found in file');
+            return res.status(400).json(response);
+        }
+
+        response.totalRecords = jsonData.length;
+        response.batchProgress.totalBatches = Math.ceil(jsonData.length / BATCH_SIZE);
+
+        // Map headers with optimized method
+        const headers = Object.keys(jsonData[0] || {});
+        const headerMapping = mapHeaders(headers);
+        response.headerMapping = headerMapping;
+
+        // Updated: Check for required fields (only Sub_grp and PartNumber)
+        const requiredFields = ['subgrp', 'partnumber'];
+        const hasRequiredFields = requiredFields.every(field =>
+            Object.values(headerMapping).includes(field)
+        );
+        
+        if (!hasRequiredFields) {
+            const missingFields = requiredFields.filter(field => 
+                !Object.values(headerMapping).includes(field)
+            );
+            response.status = 'failed';
+            response.errors.push(
+                `Required headers not found: ${missingFields.map(f => getSchemaFieldName(f)).join(', ')}. Available headers: ${headers.join(', ')}`
+            );
+            return res.status(400).json(response);
+        }
+
+        // Send initial response
         res.write(JSON.stringify(response) + '\n');
-      }
-    }
 
-    // Finalize response
-    response.status = 'completed';
-    response.endTime = new Date();
-    response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
-    response.message = `Processing completed. Created: ${response.createdCount}, Updated: ${response.updatedCount}, Errors: ${response.errorCount}`;
-    
-    res.write(JSON.stringify(response) + '\n');
-    res.end();
+        const processedUniqueKeys = new Set();
+        let currentRow = 0;
 
-  } catch (error) {
-    console.error('Bulk upload error:', error);
-    
-    // If headers were already sent, try to send the error as the last chunk
-    if (res.headersSent) {
-      response.status = 'failed';
-      response.endTime = new Date();
-      response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
-      response.errors.push(error.message);
-      response.message = 'Processing failed due to unexpected error';
-      
-      res.write(JSON.stringify(response) + '\n');
-      res.end();
-    } else {
-      // If headers weren't sent, send a normal error response
-      response.status = 'failed';
-      response.endTime = new Date();
-      response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
-      response.errors.push(error.message);
-      response.message = 'Processing failed due to unexpected error';
-      
-      res.status(500).json(response);
+        // Process data in parallel batches
+        const processBatch = async (batch, batchIndex) => {
+            const batchResults = [];
+            const validRecords = [];
+            let batchCreated = 0;
+            let batchUpdated = 0;
+            let batchFailed = 0;
+            let batchSkipped = 0;
+
+            // Process each record in the batch
+            for (const record of batch) {
+                currentRow++;
+                const recordResult = {
+                    row: currentRow,
+                    partnumber: '',
+                    description: '',
+                    type: '',
+                    rate: null,
+                    status: 'Processing',
+                    action: '',
+                    error: null,
+                    warnings: []
+                };
+
+                try {
+                    const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
+                    
+                    // Update record result with cleaned data
+                    recordResult.partnumber = cleanedRecord.PartNumber || 'Unknown';
+                    recordResult.description = cleanedRecord.Description || 'N/A';
+                    recordResult.type = cleanedRecord.Type || 'N/A';
+                    recordResult.rate = cleanedRecord.Rate || null;
+
+                    if (errors.length > 0) {
+                        recordResult.status = 'Failed';
+                        recordResult.error = errors.join(', ');
+                        recordResult.action = 'Validation failed';
+                        batchResults.push(recordResult);
+                        batchFailed++;
+                        continue;
+                    }
+
+                    // Generate unique key for duplicate checking (using PartNumber)
+                    const uniqueKey = generateUniqueKey(cleanedRecord);
+
+                    // Check for duplicates within the file
+                    if (processedUniqueKeys.has(uniqueKey)) {
+                        recordResult.status = 'Skipped';
+                        recordResult.error = 'Duplicate Part Number in file';
+                        recordResult.action = 'Skipped due to file duplicate';
+                        recordResult.warnings.push('Part Number already processed in this file');
+                        batchResults.push(recordResult);
+                        batchSkipped++;
+                        continue;
+                    }
+
+                    processedUniqueKeys.add(uniqueKey);
+                    validRecords.push({ cleanedRecord, recordResult, providedFields, uniqueKey });
+
+                } catch (err) {
+                    recordResult.status = 'Failed';
+                    recordResult.action = 'Validation error';
+                    recordResult.error = err.message;
+                    batchResults.push(recordResult);
+                    batchFailed++;
+                }
+            }
+
+            // Process valid records in bulk
+            if (validRecords.length > 0) {
+                // Find existing records in bulk using PartNumber
+                const partNumbers = validRecords.map(r => r.cleanedRecord.PartNumber);
+                const existingRecords = await SpareMaster.find({
+                    PartNumber: { $in: partNumbers }
+                }).lean();
+
+                const existingRecordsMap = new Map();
+                existingRecords.forEach(rec => {
+                    const key = generateUniqueKey(rec);
+                    existingRecordsMap.set(key, rec);
+                });
+
+                // Prepare bulk operations
+                const bulkCreateOps = [];
+                const bulkUpdateOps = [];
+                const now = new Date();
+
+                for (const { cleanedRecord, recordResult, providedFields, uniqueKey } of validRecords) {
+                    const existingRecord = existingRecordsMap.get(uniqueKey);
+
+                    if (existingRecord) {
+                        response.summary.existingRecords++;
+
+                        const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields.map(f => getSchemaFieldName(f)));
+
+                        if (comparisonResult.hasChanges) {
+                            const updateData = {
+                                ...cleanedRecord,
+                                updatedAt: now
+                            };
+
+                            bulkUpdateOps.push({
+                                updateOne: {
+                                    filter: { _id: existingRecord._id },
+                                    update: { $set: updateData }
+                                }
+                            });
+
+                            const changesList = comparisonResult.changeDetails.map(change =>
+                                `${change.field}: "${change.oldValue}" → "${change.newValue}"`
+                            ).join(', ');
+
+                            recordResult.status = 'Updated';
+                            recordResult.action = 'Updated existing record';
+                            recordResult.changeDetails = comparisonResult.changeDetails;
+                            recordResult.changesText = changesList;
+                            recordResult.warnings.push(`Changes detected: ${changesList}`);
+
+                            batchUpdated++;
+                        } else {
+                            recordResult.status = 'Skipped';
+                            recordResult.action = 'No changes detected';
+                            recordResult.changeDetails = [];
+                            recordResult.changesText = 'No changes detected';
+                            recordResult.warnings.push('Record already exists with identical data');
+
+                            batchSkipped++;
+                        }
+                    } else {
+                        bulkCreateOps.push({
+                            insertOne: {
+                                document: {
+                                    ...cleanedRecord
+                                }
+                            }
+                        });
+
+                        recordResult.status = 'Created';
+                        recordResult.action = 'Created new record';
+                        recordResult.changeDetails = [];
+                        recordResult.changesText = 'New record created';
+
+                        batchCreated++;
+                    }
+
+                    batchResults.push(recordResult);
+                }
+
+                // Execute bulk operations in smaller chunks
+                const executeBulkWrite = async (operations) => {
+                    for (let i = 0; i < operations.length; i += BULK_WRITE_BATCH_SIZE) {
+                        const chunk = operations.slice(i, i + BULK_WRITE_BATCH_SIZE);
+                        try {
+                            await SpareMaster.bulkWrite(chunk, { ordered: false });
+                        } catch (bulkError) {
+                            // Handle bulk errors by marking affected records as failed
+                            if (bulkError.writeErrors) {
+                                bulkError.writeErrors.forEach(error => {
+                                    const failedRecord = batchResults.find(r => {
+                                        const errorDoc = error.op?.insertOne?.document || error.op?.updateOne?.update?.$set;
+                                        return errorDoc && r.partnumber === errorDoc.PartNumber;
+                                    });
+                                    if (failedRecord) {
+                                        const previousStatus = failedRecord.status;
+                                        failedRecord.status = 'Failed';
+                                        failedRecord.action = 'Bulk operation failed';
+                                        failedRecord.error = error.errmsg;
+                                        batchFailed++;
+                                        if (previousStatus === 'Created') batchCreated--;
+                                        if (previousStatus === 'Updated') batchUpdated--;
+                                    }
+                                });
+                            }
+                        }
+                    }
+                };
+
+                // Execute create and update operations in parallel
+                await Promise.all([
+                    bulkCreateOps.length > 0 ? executeBulkWrite(bulkCreateOps) : Promise.resolve(),
+                    bulkUpdateOps.length > 0 ? executeBulkWrite(bulkUpdateOps) : Promise.resolve()
+                ]);
+            }
+
+            return {
+                batchResults,
+                batchCreated,
+                batchUpdated,
+                batchFailed,
+                batchSkipped
+            };
+        };
+
+        // Process batches in parallel with controlled concurrency
+        const batchPromises = [];
+        for (let batchIndex = 0; batchIndex < response.batchProgress.totalBatches; batchIndex++) {
+            const startIdx = batchIndex * BATCH_SIZE;
+            const endIdx = Math.min(startIdx + BATCH_SIZE, jsonData.length);
+            const batch = jsonData.slice(startIdx, endIdx);
+
+            response.batchProgress.currentBatch = batchIndex + 1;
+            response.batchProgress.currentBatchRecords = batch.length;
+
+            // Send progress update
+            res.write(JSON.stringify({
+                ...response,
+                batchProgress: response.batchProgress
+            }) + '\n');
+
+            // Process batch with controlled parallelism
+            if (batchPromises.length >= PARALLEL_BATCHES) {
+                const completedBatch = await Promise.race(batchPromises);
+                batchPromises.splice(batchPromises.indexOf(completedBatch), 1);
+
+                // Update response with completed batch results
+                response.processedRecords += completedBatch.batchResults.length;
+                response.successfulRecords += completedBatch.batchCreated + completedBatch.batchUpdated;
+                response.failedRecords += completedBatch.batchFailed;
+                response.summary.created += completedBatch.batchCreated;
+                response.summary.updated += completedBatch.batchUpdated;
+                response.summary.failed += completedBatch.batchFailed;
+                response.summary.skippedTotal += completedBatch.batchSkipped;
+                response.summary.duplicatesInFile += completedBatch.batchResults.filter(
+                    r => r.status === 'Skipped' && r.error === 'Duplicate Part Number in file'
+                ).length;
+                response.summary.noChangesSkipped += completedBatch.batchResults.filter(
+                    r => r.status === 'Skipped' && r.action === 'No changes detected'
+                ).length;
+                response.results.push(...completedBatch.batchResults);
+
+                res.write(JSON.stringify({
+                    ...response,
+                    batchCompleted: true,
+                    batchSummary: {
+                        created: completedBatch.batchCreated,
+                        updated: completedBatch.batchUpdated,
+                        failed: completedBatch.batchFailed,
+                        skipped: completedBatch.batchSkipped
+                    },
+                    batchProgress: response.batchProgress,
+                    latestRecords: completedBatch.batchResults.slice(-3)
+                }) + '\n');
+            }
+
+            batchPromises.push(processBatch(batch, batchIndex));
+        }
+
+        // Process remaining batches
+        while (batchPromises.length > 0) {
+            const completedBatch = await batchPromises.shift();
+
+            // Update response with completed batch results
+            response.processedRecords += completedBatch.batchResults.length;
+            response.successfulRecords += completedBatch.batchCreated + completedBatch.batchUpdated;
+            response.failedRecords += completedBatch.batchFailed;
+            response.summary.created += completedBatch.batchCreated;
+            response.summary.updated += completedBatch.batchUpdated;
+            response.summary.failed += completedBatch.batchFailed;
+            response.summary.skippedTotal += completedBatch.batchSkipped;
+            response.summary.duplicatesInFile += completedBatch.batchResults.filter(
+                r => r.status === 'Skipped' && r.error === 'Duplicate Part Number in file'
+            ).length;
+            response.summary.noChangesSkipped += completedBatch.batchResults.filter(
+                r => r.status === 'Skipped' && r.action === 'No changes detected'
+            ).length;
+            response.results.push(...completedBatch.batchResults);
+
+            res.write(JSON.stringify({
+                ...response,
+                batchCompleted: true,
+                batchSummary: {
+                    created: completedBatch.batchCreated,
+                    updated: completedBatch.batchUpdated,
+                    failed: completedBatch.batchFailed,
+                    skipped: completedBatch.batchSkipped
+                },
+                batchProgress: response.batchProgress,
+                latestRecords: completedBatch.batchResults.slice(-3)
+            }) + '\n');
+        }
+
+        // Finalize response
+        response.status = 'completed';
+        response.endTime = new Date();
+        response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
+
+        response.message = `Processing completed successfully. ` +
+            `Created: ${response.summary.created}, ` +
+            `Updated: ${response.summary.updated}, ` +
+            `Failed: ${response.summary.failed}, ` +
+            `File Duplicates: ${response.summary.duplicatesInFile}, ` +
+            `Existing Records: ${response.summary.existingRecords}, ` +
+            `No Changes Skipped: ${response.summary.noChangesSkipped}, ` +
+            `Total Skipped: ${response.summary.skippedTotal}`;
+
+        res.write(JSON.stringify(response) + '\n');
+        res.end();
+
+    } catch (error) {
+        console.error('SpareMaster bulk upload error:', error);
+        response.status = 'failed';
+        response.endTime = new Date();
+        response.errors.push(`System error: ${error.message}`);
+        response.duration = response.endTime ? `${((response.endTime - response.startTime) / 1000).toFixed(2)}s` : '0s';
+
+        if (!res.headersSent) {
+            return res.status(500).json(response);
+        } else {
+            res.write(JSON.stringify(response) + '\n');
+            res.end();
+        }
     }
-  }
 });
 
 module.exports = router;

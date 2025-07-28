@@ -5,10 +5,14 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
 const DealerStock = require('../../Model/UploadSchema/DealerStockSchema');
+const iconv = require('iconv-lite'); // Add this dependency: npm install iconv-lite
 
 // Optimized: Pre-compiled regex patterns
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
 const MULTISPACE_REGEX = /\s+/g;
+// Add regex patterns for cleaning special characters
+const SPECIAL_CHARS_REGEX = /[^\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g; // Remove non-printable chars
+const INVALID_CHARS_REGEX = /[\uFFFD\u0000-\u001F\u007F-\u009F]/g; // Remove replacement chars and control chars
 
 // Memory storage with optimized settings
 const storage = multer.memoryStorage();
@@ -35,7 +39,7 @@ const upload = multer({
     }
 });
 
-// Optimized: Predefined field mappings for faster access
+// Field mappings remain the same
 const FIELD_MAPPINGS = {
     'dealercodeid': new Set(['dealercodeid', 'dealer_code_id', 'dealercode', 'dealer_code', 'code', 'dealerid', 'dealer_id']),
     'dealername': new Set(['dealername', 'dealer_name', 'name', 'dealer', 'dealertitle', 'dealer_title']),
@@ -46,14 +50,115 @@ const FIELD_MAPPINGS = {
     'unrestrictedquantity': new Set(['unrestrictedquantity', 'unrestricted_quantity', 'quantity', 'qty', 'stock', 'available_quantity', 'available_qty', 'free_stock', 'freestock'])
 };
 
-// Optimized normalizeFieldName with memoization
+// Enhanced function to clean and normalize text
+function cleanText(text) {
+    if (!text || typeof text !== 'string') return '';
+    
+    return text
+        // Remove invalid Unicode characters and replacement characters
+        .replace(INVALID_CHARS_REGEX, '')
+        // Remove other special/non-printable characters but keep basic Latin and extended Latin
+        .replace(SPECIAL_CHARS_REGEX, ' ')
+        // Replace multiple spaces with single space
+        .replace(MULTISPACE_REGEX, ' ')
+        // Trim whitespace
+        .trim();
+}
+
+// Enhanced Excel parsing with encoding handling
+function parseExcelFile(buffer) {
+    try {
+        const workbook = XLSX.read(buffer, { 
+            type: 'buffer', 
+            cellDates: true,
+            codepage: 65001, // UTF-8 encoding
+            raw: false // This ensures strings are properly processed
+        });
+        const sheetName = workbook.SheetNames[0];
+        const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { 
+            defval: '', 
+            raw: false,
+            blankrows: false // Skip blank rows
+        });
+        
+        // Clean all text fields in the data
+        return jsonData.map(row => {
+            const cleanedRow = {};
+            for (const [key, value] of Object.entries(row)) {
+                cleanedRow[key] = typeof value === 'string' ? cleanText(value) : value;
+            }
+            return cleanedRow;
+        });
+    } catch (error) {
+        throw new Error(`Excel parsing error: ${error.message}`);
+    }
+}
+
+// Enhanced CSV parsing with encoding detection and handling
+function parseCSVFile(buffer) {
+    return new Promise((resolve, reject) => {
+        const results = [];
+        
+        // Try to detect encoding and convert to UTF-8
+        let csvContent;
+        try {
+            // First try UTF-8
+            csvContent = buffer.toString('utf8');
+            
+            // If we detect encoding issues, try different encodings
+            if (csvContent.includes('\uFFFD') || csvContent.includes('�')) {
+                // Try Windows-1252 (common for Excel CSV exports)
+                if (iconv.encodingExists('win1252')) {
+                    csvContent = iconv.decode(buffer, 'win1252');
+                } else if (iconv.encodingExists('iso-8859-1')) {
+                    csvContent = iconv.decode(buffer, 'iso-8859-1');
+                } else {
+                    // Fallback: clean the UTF-8 version
+                    csvContent = cleanText(csvContent);
+                }
+            }
+        } catch (encodingError) {
+            console.warn('Encoding detection failed, using UTF-8:', encodingError.message);
+            csvContent = buffer.toString('utf8');
+        }
+        
+        const stream = Readable.from(csvContent)
+            .pipe(csv({
+                mapValues: ({ value }) => cleanText(value), // Apply text cleaning here
+                strict: false, // Be more lenient with malformed CSV
+                skipLines: 0,
+                skipEmptyLines: true,
+                separator: ',', // Explicitly set separator
+                quote: '"', // Explicitly set quote character
+                escape: '"' // Explicitly set escape character
+            }))
+            .on('data', (data) => {
+                // Additional cleaning for each row
+                const cleanedData = {};
+                for (const [key, value] of Object.entries(data)) {
+                    cleanedData[cleanText(key)] = cleanText(value);
+                }
+                results.push(cleanedData);
+            })
+            .on('end', () => resolve(results))
+            .on('error', (error) => {
+                console.error('CSV parsing error:', error);
+                reject(error);
+            });
+
+        // Ensure stream is properly destroyed on errors
+        stream.on('error', () => stream.destroy());
+    });
+}
+
+// Optimized normalizeFieldName with memoization (remains the same)
 const normalizedFieldCache = new Map();
 function normalizeFieldName(fieldName) {
     if (!fieldName) return '';
     if (normalizedFieldCache.has(fieldName)) {
         return normalizedFieldCache.get(fieldName);
     }
-    const normalized = fieldName
+    const normalized = cleanText(fieldName) // Use cleanText instead
         .toLowerCase()
         .replace(NON_ALPHANUMERIC_REGEX, '')
         .trim();
@@ -61,7 +166,7 @@ function normalizeFieldName(fieldName) {
     return normalized;
 }
 
-// Optimized header mapping with early exit
+// mapHeaders function remains the same
 function mapHeaders(headers) {
     const mappedHeaders = {};
     const seenFields = new Set();
@@ -85,38 +190,7 @@ function mapHeaders(headers) {
     return mappedHeaders;
 }
 
-// Optimized Excel parsing with buffer reuse
-function parseExcelFile(buffer) {
-    try {
-        const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-        const sheetName = workbook.SheetNames[0];
-        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: false });
-    } catch (error) {
-        throw new Error(`Excel parsing error: ${error.message}`);
-    }
-}
-
-// Optimized CSV parsing with stream control
-function parseCSVFile(buffer) {
-    return new Promise((resolve, reject) => {
-        const results = [];
-        const stream = Readable.from(buffer.toString())
-            .pipe(csv({
-                mapValues: ({ value }) => value.trim(),
-                strict: true,
-                skipLines: 0,
-                skipEmptyLines: true
-            }))
-            .on('data', (data) => results.push(data))
-            .on('end', () => resolve(results))
-            .on('error', reject);
-
-        // Ensure stream is properly destroyed on errors
-        stream.on('error', () => stream.destroy());
-    });
-}
-
-// Optimized record validation with early exits
+// Enhanced record validation with better text cleaning
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
     const errors = [];
@@ -126,14 +200,26 @@ function validateRecord(record, headerMapping) {
     for (const [originalHeader, schemaField] of Object.entries(headerMapping)) {
         if (record[originalHeader] === undefined || record[originalHeader] === null) continue;
 
-        const value = String(record[originalHeader]).trim();
+        let value = String(record[originalHeader]).trim();
         if (value === '' || value === 'undefined' || value === 'null') continue;
 
-        cleanedRecord[schemaField] = value.replace(MULTISPACE_REGEX, ' ').trim();
-        providedFields.push(schemaField);
+        // Apply enhanced text cleaning, especially for description fields
+        if (schemaField === 'materialdescription' || schemaField === 'dealername') {
+            value = cleanText(value);
+        } else {
+            value = cleanText(value);
+        }
+
+        // Final cleanup for multiple spaces
+        value = value.replace(MULTISPACE_REGEX, ' ').trim();
+
+        if (value) { // Only add if not empty after cleaning
+            cleanedRecord[schemaField] = value;
+            providedFields.push(schemaField);
+        }
     }
 
-    // Required field validations with early exit
+    // Required field validations (rest remains the same)
     if (!cleanedRecord.dealercodeid) {
         errors.push('Dealer Code is required');
     }

@@ -601,8 +601,46 @@ router.put('/:id/update-conumber', async (req, res) => {
     }
 });
 
+router.get('/by-complaint/:complaintId', async (req, res) => {
+    try {
+        const { complaintId } = req.params
 
+        if (!complaintId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Complaint ID is required'
+            })
+        }
 
+        // Find OnCall document by complaint notification_complaintid
+        const onCall = await OnCall.findOne({
+            'complaint.notification_complaintid': complaintId
+        }).lean()
+
+        if (!onCall) {
+            return res.status(404).json({
+                success: false,
+                message: `No OnCall found for complaint ID: ${complaintId}`
+            })
+        }
+
+        // Return the status and other details
+        return res.json({
+            success: true,
+            data: {
+                status: onCall.status,
+            }
+        })
+
+    } catch (error) {
+        console.error('Error fetching OnCall:', error)
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: error.message
+        })
+    }
+})
 
 // Now keep /:id at the END
 router.get('/:id', async (req, res) => {

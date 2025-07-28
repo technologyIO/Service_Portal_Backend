@@ -4,7 +4,7 @@ const router = express.Router();
 const multer = require('multer');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-const Aerb = require('../../Model/MasterSchema/AerbSchema');
+const ReportedProblem = require('../../Model/MasterSchema/ReportedProblemSchema');
 
 // Optimized: Pre-compiled regex patterns
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
@@ -46,14 +46,31 @@ const upload = multer({
 
 // Optimized: Predefined field mappings for faster access
 const FIELD_MAPPINGS = {
-    'materialcode': new Set([
-        'materialcode', 'material_code', 'partno',
-        'part_no', 'code', 'item_code', 'product_code'
+    'catalog': new Set([
+        'catalog', 'catalogue', 'cat', 'catalog_name',
+        'category', 'catalogtype', 'catalog_type'
     ]),
-    'materialdescription': new Set([
-        'materialdescription', 'material_description',
-        'description', 'desc', 'product_description',
-        'item_description', 'material_desc'
+    'codegroup': new Set([
+        'codegroup', 'code_group', 'group_code', 'groupcode',
+        'code_grp', 'grp_code', 'problem_group', 'problemgroup'
+    ]),
+    'prodgroup': new Set([
+        'prodgroup', 'prod_group', 'product_group', 'productgroup',
+        'prod_grp', 'grp_prod', 'production_group', 'productiongroup'
+    ]),
+    'name': new Set([
+        'name', 'problem_name', 'problemname', 'title',
+        'description', 'problem_title', 'problemtitle'
+    ]),
+    'shorttextforcode': new Set([
+        'shorttextforcode', 'short_text_for_code', 'shorttext',
+        'short_text', 'code_text', 'codetext', 'abbreviation',
+        'short_desc', 'shortdesc', 'brief_text', 'brieftext'
+    ]),
+    'status': new Set([
+        'status', 'record_status', 'recordstatus', 'state',
+        'condition', 'active_status', 'activestatus', 'enabled',
+        'is_active', 'isactive', 'current_status', 'currentstatus'
     ])
 };
 
@@ -160,7 +177,7 @@ function getFileType(fileName, mimeType) {
     }
 }
 
-// Add missing checkForChanges function
+// Function to check for changes between existing and new records
 function checkForChanges(existingRecord, newRecord, providedFields) {
     const changes = [];
     let hasChanges = false;
@@ -185,6 +202,19 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
     };
 }
 
+// **UPDATED**: Generate unique identifier for ReportedProblem records using ALL fields
+function generateUniqueKey(record) {
+    // Include ALL fields for complete uniqueness check
+    const catalog = record.catalog || '';
+    const codegroup = record.codegroup || '';
+    const prodgroup = record.prodgroup || '';
+    const name = record.name || '';
+    const shorttextforcode = record.shorttextforcode || '';
+    const status = record.status || '';
+    
+    return `${catalog}_${codegroup}_${prodgroup}_${name}_${shorttextforcode}_${status}`.toLowerCase();
+}
+
 // Optimized record validation with early exits
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
@@ -202,12 +232,12 @@ function validateRecord(record, headerMapping) {
         providedFields.push(schemaField);
     }
 
-    // Required field validation
-    if (!cleanedRecord.materialcode) {
-        errors.push('Material Code is required');
-    }
-    if (!cleanedRecord.materialdescription) {
-        errors.push('Material Description is required');
+    // Required field validation (status is optional)
+    const requiredFields = ['catalog', 'codegroup', 'prodgroup', 'name', 'shorttextforcode'];
+    for (const field of requiredFields) {
+        if (!cleanedRecord[field]) {
+            errors.push(`${field.charAt(0).toUpperCase() + field.slice(1)} is required`);
+        }
     }
 
     // Early exit if required fields are missing
@@ -216,11 +246,19 @@ function validateRecord(record, headerMapping) {
     }
 
     // Length validation
-    if (cleanedRecord.materialcode.length > 50) {
-        errors.push('Material Code too long (max 50 characters)');
-    }
-    if (cleanedRecord.materialdescription.length > 500) {
-        errors.push('Material Description too long (max 500 characters)');
+    const fieldLimits = {
+        catalog: 100,
+        codegroup: 100,
+        prodgroup: 100,
+        name: 200,
+        shorttextforcode: 150,
+        status: 50 // Adding status field limit
+    };
+
+    for (const [field, maxLength] of Object.entries(fieldLimits)) {
+        if (cleanedRecord[field] && cleanedRecord[field].length > maxLength) {
+            errors.push(`${field.charAt(0).toUpperCase() + field.slice(1)} too long (max ${maxLength} characters)`);
+        }
     }
 
     return { cleanedRecord, errors, providedFields };
@@ -308,13 +346,18 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         response.headerMapping = headerMapping;
 
         // Check for required fields with optimized lookup
-        const hasRequiredFields = ['materialcode', 'materialdescription'].every(field =>
+        const requiredFields = ['catalog', 'codegroup', 'prodgroup', 'name', 'shorttextforcode'];
+        const hasRequiredFields = requiredFields.every(field =>
             Object.values(headerMapping).includes(field)
         );
+        
         if (!hasRequiredFields) {
+            const missingFields = requiredFields.filter(field => 
+                !Object.values(headerMapping).includes(field)
+            );
             response.status = 'failed';
             response.errors.push(
-                `Required headers not found. Available headers: ${headers.join(', ')}`
+                `Required headers not found: ${missingFields.join(', ')}. Available headers: ${headers.join(', ')}`
             );
             return res.status(400).json(response);
         }
@@ -322,7 +365,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Send initial response
         res.write(JSON.stringify(response) + '\n');
 
-        const processedMaterialCodes = new Set();
+        const processedUniqueKeys = new Set();
         let currentRow = 0;
 
         // Process data in parallel batches
@@ -339,8 +382,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 currentRow++;
                 const recordResult = {
                     row: currentRow,
-                    materialcode: '',
-                    materialdescription: '',
+                    catalog: '',
+                    codegroup: '',
+                    prodgroup: '',
+                    name: '',
+                    shorttextforcode: '',
                     status: 'Processing',
                     action: '',
                     error: null,
@@ -349,8 +395,13 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
                 try {
                     const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
-                    recordResult.materialcode = cleanedRecord.materialcode || 'Unknown';
-                    recordResult.materialdescription = cleanedRecord.materialdescription || 'N/A';
+                    
+                    // Update record result with cleaned data
+                    recordResult.catalog = cleanedRecord.catalog || 'Unknown';
+                    recordResult.codegroup = cleanedRecord.codegroup || 'Unknown';
+                    recordResult.prodgroup = cleanedRecord.prodgroup || 'Unknown';
+                    recordResult.name = cleanedRecord.name || 'Unknown';
+                    recordResult.shorttextforcode = cleanedRecord.shorttextforcode || 'Unknown';
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -361,19 +412,22 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         continue;
                     }
 
+                    // Generate unique key for duplicate checking (now includes ALL fields)
+                    const uniqueKey = generateUniqueKey(cleanedRecord);
+
                     // Check for duplicates within the file
-                    if (processedMaterialCodes.has(cleanedRecord.materialcode)) {
+                    if (processedUniqueKeys.has(uniqueKey)) {
                         recordResult.status = 'Skipped';
-                        recordResult.error = 'Duplicate Material Code in file';
+                        recordResult.error = 'Duplicate record in file (all fields match)';
                         recordResult.action = 'Skipped due to file duplicate';
-                        recordResult.warnings.push('Material Code already processed in this file');
+                        recordResult.warnings.push('Exact duplicate record already processed in this file');
                         batchResults.push(recordResult);
                         batchSkipped++;
                         continue;
                     }
 
-                    processedMaterialCodes.add(cleanedRecord.materialcode);
-                    validRecords.push({ cleanedRecord, recordResult, providedFields });
+                    processedUniqueKeys.add(uniqueKey);
+                    validRecords.push({ cleanedRecord, recordResult, providedFields, uniqueKey });
 
                 } catch (err) {
                     recordResult.status = 'Failed';
@@ -386,15 +440,22 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
             // Process valid records in bulk
             if (validRecords.length > 0) {
-                // Find existing records in bulk
-                const materialCodes = validRecords.map(r => r.cleanedRecord.materialcode);
-                const existingRecords = await Aerb.find({
-                    materialcode: { $in: materialCodes }
+                // **UPDATED**: Find existing records using ALL fields for exact match
+                const existingRecords = await ReportedProblem.find({
+                    $or: validRecords.map(r => ({
+                        catalog: r.cleanedRecord.catalog,
+                        codegroup: r.cleanedRecord.codegroup,
+                        prodgroup: r.cleanedRecord.prodgroup,
+                        name: r.cleanedRecord.name,
+                        shorttextforcode: r.cleanedRecord.shorttextforcode,
+                        status: r.cleanedRecord.status || null // Handle optional status field
+                    }))
                 }).lean();
 
                 const existingRecordsMap = new Map();
                 existingRecords.forEach(rec => {
-                    existingRecordsMap.set(rec.materialcode, rec);
+                    const key = generateUniqueKey(rec);
+                    existingRecordsMap.set(key, rec);
                 });
 
                 // Prepare bulk operations
@@ -402,62 +463,37 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 const bulkUpdateOps = [];
                 const now = new Date();
 
-                for (const { cleanedRecord, recordResult, providedFields } of validRecords) {
-                    const existingRecord = existingRecordsMap.get(cleanedRecord.materialcode);
+                for (const { cleanedRecord, recordResult, providedFields, uniqueKey } of validRecords) {
+                    const existingRecord = existingRecordsMap.get(uniqueKey);
 
                     if (existingRecord) {
                         response.summary.existingRecords++;
 
-                        const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields);
+                        // Since all fields match exactly, no changes are possible
+                        recordResult.status = 'Skipped';
+                        recordResult.action = 'Exact duplicate found in database';
+                        recordResult.changeDetails = [];
+                        recordResult.changesText = 'All fields match existing record';
+                        recordResult.warnings.push('Exact duplicate record already exists in database');
 
-                        if (comparisonResult.hasChanges) {
-                            const updateData = {
-                                materialdescription: cleanedRecord.materialdescription,
-                                modifiedAt: now
-                            };
-
-                            bulkUpdateOps.push({
-                                updateOne: {
-                                    filter: { materialcode: cleanedRecord.materialcode },
-                                    update: { $set: updateData }
-                                }
-                            });
-
-                            const changesList = comparisonResult.changeDetails.map(change =>
-                                `${change.field}: "${change.oldValue}" → "${change.newValue}"`
-                            ).join(', ');
-
-                            recordResult.status = 'Updated';
-                            recordResult.action = 'Updated existing record';
-                            recordResult.changeDetails = comparisonResult.changeDetails;
-                            recordResult.changesText = changesList;
-                            recordResult.warnings.push(`Changes detected: ${changesList}`);
-
-                            batchUpdated++;
-                        } else {
-                            recordResult.status = 'Skipped';
-                            recordResult.action = 'No changes detected';
-                            recordResult.changeDetails = [];
-                            recordResult.changesText = 'No changes detected';
-                            recordResult.warnings.push('Record already exists with identical data');
-
-                            batchSkipped++;
-                        }
+                        batchSkipped++;
                     } else {
+                        // Create new record since it's unique
                         bulkCreateOps.push({
                             insertOne: {
                                 document: {
                                     ...cleanedRecord,
                                     createdAt: now,
-                                    modifiedAt: now
+                                    modifiedAt: now,
+                                    status: cleanedRecord.status || 'Active'
                                 }
                             }
                         });
 
                         recordResult.status = 'Created';
-                        recordResult.action = 'Created new record';
+                        recordResult.action = 'Created new unique record';
                         recordResult.changeDetails = [];
-                        recordResult.changesText = 'New record created';
+                        recordResult.changesText = 'New unique record created';
 
                         batchCreated++;
                     }
@@ -470,22 +506,28 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     for (let i = 0; i < operations.length; i += BULK_WRITE_BATCH_SIZE) {
                         const chunk = operations.slice(i, i + BULK_WRITE_BATCH_SIZE);
                         try {
-                            await Aerb.bulkWrite(chunk, { ordered: false });
+                            await ReportedProblem.bulkWrite(chunk, { ordered: false });
                         } catch (bulkError) {
                             // Handle bulk errors by marking affected records as failed
                             if (bulkError.writeErrors) {
                                 bulkError.writeErrors.forEach(error => {
-                                    const failedRecord = batchResults.find(r =>
-                                        r.materialcode === error.op?.materialcode ||
-                                        r.materialcode === error.op?.updateOne?.filter?.materialcode
-                                    );
+                                    const failedRecord = batchResults.find(r => {
+                                        const errorDoc = error.op?.insertOne?.document;
+                                        return errorDoc && (
+                                            r.catalog === errorDoc.catalog &&
+                                            r.codegroup === errorDoc.codegroup &&
+                                            r.prodgroup === errorDoc.prodgroup &&
+                                            r.name === errorDoc.name &&
+                                            r.shorttextforcode === errorDoc.shorttextforcode
+                                        );
+                                    });
                                     if (failedRecord) {
+                                        const previousStatus = failedRecord.status;
                                         failedRecord.status = 'Failed';
                                         failedRecord.action = 'Bulk operation failed';
                                         failedRecord.error = error.errmsg;
                                         batchFailed++;
-                                        if (failedRecord.status === 'Created') batchCreated--;
-                                        if (failedRecord.status === 'Updated') batchUpdated--;
+                                        if (previousStatus === 'Created') batchCreated--;
                                     }
                                 });
                             }
@@ -493,11 +535,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     }
                 };
 
-                // Execute create and update operations in parallel
-                await Promise.all([
-                    bulkCreateOps.length > 0 ? executeBulkWrite(bulkCreateOps) : Promise.resolve(),
-                    bulkUpdateOps.length > 0 ? executeBulkWrite(bulkUpdateOps) : Promise.resolve()
-                ]);
+                // Execute create operations (no update operations needed since exact duplicates are skipped)
+                if (bulkCreateOps.length > 0) {
+                    await executeBulkWrite(bulkCreateOps);
+                }
             }
 
             return {
@@ -539,10 +580,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 response.summary.failed += completedBatch.batchFailed;
                 response.summary.skippedTotal += completedBatch.batchSkipped;
                 response.summary.duplicatesInFile += completedBatch.batchResults.filter(
-                    r => r.status === 'Skipped' && r.error === 'Duplicate Material Code in file'
+                    r => r.status === 'Skipped' && r.error && r.error.includes('Duplicate record in file')
                 ).length;
                 response.summary.noChangesSkipped += completedBatch.batchResults.filter(
-                    r => r.status === 'Skipped' && r.action === 'No changes detected'
+                    r => r.status === 'Skipped' && r.action && r.action.includes('Exact duplicate found')
                 ).length;
                 response.results.push(...completedBatch.batchResults);
 
@@ -576,10 +617,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             response.summary.failed += completedBatch.batchFailed;
             response.summary.skippedTotal += completedBatch.batchSkipped;
             response.summary.duplicatesInFile += completedBatch.batchResults.filter(
-                r => r.status === 'Skipped' && r.error === 'Duplicate Material Code in file'
+                r => r.status === 'Skipped' && r.error && r.error.includes('Duplicate record in file')
             ).length;
             response.summary.noChangesSkipped += completedBatch.batchResults.filter(
-                r => r.status === 'Skipped' && r.action === 'No changes detected'
+                r => r.status === 'Skipped' && r.action && r.action.includes('Exact duplicate found')
             ).length;
             response.results.push(...completedBatch.batchResults);
 
@@ -615,7 +656,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('AERB bulk upload error:', error);
+        console.error('ReportedProblem bulk upload error:', error);
         response.status = 'failed';
         response.endTime = new Date();
         response.errors.push(`System error: ${error.message}`);

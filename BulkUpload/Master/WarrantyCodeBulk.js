@@ -4,7 +4,7 @@ const router = express.Router();
 const multer = require('multer');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-const Aerb = require('../../Model/MasterSchema/AerbSchema');
+const WarrantyCode = require('../../Model/MasterSchema/WarrantyCodeSchema');
 
 // Optimized: Pre-compiled regex patterns
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
@@ -44,16 +44,25 @@ const upload = multer({
     }
 });
 
-// Optimized: Predefined field mappings for faster access
+// Optimized: Predefined field mappings for WarrantyCode
 const FIELD_MAPPINGS = {
-    'materialcode': new Set([
-        'materialcode', 'material_code', 'partno',
-        'part_no', 'code', 'item_code', 'product_code'
+    'warrantycodeid': new Set([
+        'warrantycodeid', 'warranty_code_id', 'warrantycid', 'warranty_id',
+        'code_id', 'codeid', 'warranty_code', 'warrantycode', 'wid'
     ]),
-    'materialdescription': new Set([
-        'materialdescription', 'material_description',
-        'description', 'desc', 'product_description',
-        'item_description', 'material_desc'
+    'description': new Set([
+        'description', 'desc', 'warranty_description', 'warrantydesc',
+        'warranty_desc', 'details', 'name', 'warranty_name', 'warrantyname'
+    ]),
+    'months': new Set([
+        'months', 'month', 'warranty_months', 'warrantymonths',
+        'period', 'duration', 'warranty_period', 'warrantyperiod',
+        'validity', 'term', 'warranty_duration', 'warrantyduration'
+    ]),
+    'status': new Set([
+        'status', 'warranty_status', 'warrantystatus', 'state',
+        'condition', 'active_status', 'activestatus', 'enabled',
+        'is_active', 'isactive', 'record_status', 'recordstatus'
     ])
 };
 
@@ -160,7 +169,22 @@ function getFileType(fileName, mimeType) {
     }
 }
 
-// Add missing checkForChanges function
+// Helper function to clean and convert numeric values
+function cleanNumber(value) {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+        // Handle special cases
+        if (value === '-' || value.toLowerCase() === 'na' || value.toLowerCase() === 'n/a') return null;
+        // Remove commas and any non-numeric characters except decimal point
+        const cleaned = value.replace(/[^0-9.-]/g, '');
+        const num = parseFloat(cleaned);
+        return isNaN(num) ? null : Math.round(num); // Round to nearest integer for months
+    }
+    return null;
+}
+
+// Function to check for changes between existing and new records
 function checkForChanges(existingRecord, newRecord, providedFields) {
     const changes = [];
     let hasChanges = false;
@@ -185,6 +209,11 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
     };
 }
 
+// Generate unique identifier for WarrantyCode records (using warrantycodeid as unique key)
+function generateUniqueKey(record) {
+    return `${record.warrantycodeid}`.toLowerCase();
+}
+
 // Optimized record validation with early exits
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
@@ -198,16 +227,26 @@ function validateRecord(record, headerMapping) {
         const value = String(record[originalHeader]).trim();
         if (value === '' || value === 'undefined' || value === 'null') continue;
 
-        cleanedRecord[schemaField] = value.replace(MULTISPACE_REGEX, ' ').trim();
-        providedFields.push(schemaField);
+        // Handle different field types based on schema
+        if (schemaField === 'months') {
+            const numValue = cleanNumber(value);
+            if (numValue !== null) {
+                cleanedRecord[schemaField] = numValue;
+                providedFields.push(schemaField);
+            }
+        } else {
+            // String fields
+            cleanedRecord[schemaField] = value.replace(MULTISPACE_REGEX, ' ').trim();
+            providedFields.push(schemaField);
+        }
     }
 
-    // Required field validation
-    if (!cleanedRecord.materialcode) {
-        errors.push('Material Code is required');
-    }
-    if (!cleanedRecord.materialdescription) {
-        errors.push('Material Description is required');
+    // Required field validation: warrantycodeid, description, months
+    const requiredFields = ['warrantycodeid', 'description', 'months'];
+    for (const field of requiredFields) {
+        if (!cleanedRecord[field] && cleanedRecord[field] !== 0) { // Allow 0 for months
+            errors.push(`${field.charAt(0).toUpperCase() + field.slice(1)} is required`);
+        }
     }
 
     // Early exit if required fields are missing
@@ -216,15 +255,34 @@ function validateRecord(record, headerMapping) {
     }
 
     // Length validation
-    if (cleanedRecord.materialcode.length > 50) {
-        errors.push('Material Code too long (max 50 characters)');
+    const fieldLimits = {
+        warrantycodeid: 50,
+        description: 500,
+        status: 20
+    };
+
+    for (const [field, maxLength] of Object.entries(fieldLimits)) {
+        if (cleanedRecord[field] && typeof cleanedRecord[field] === 'string' && cleanedRecord[field].length > maxLength) {
+            errors.push(`${field.charAt(0).toUpperCase() + field.slice(1)} too long (max ${maxLength} characters)`);
+        }
     }
-    if (cleanedRecord.materialdescription.length > 500) {
-        errors.push('Material Description too long (max 500 characters)');
+
+    // Updated: Numeric validation - now accepts 0 months
+    if (cleanedRecord.months !== undefined && cleanedRecord.months < 0) {
+        errors.push('Months cannot be negative');
+    }
+    if (cleanedRecord.months !== undefined && cleanedRecord.months > 1200) { // Max 100 years
+        errors.push('Months cannot exceed 1200 (100 years)');
+    }
+
+    // Set default status if not provided
+    if (!cleanedRecord.status) {
+        cleanedRecord.status = 'Active';
     }
 
     return { cleanedRecord, errors, providedFields };
 }
+
 
 // MAIN ROUTE - Optimized with parallel processing and bulk operations
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
@@ -307,14 +365,19 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         const headerMapping = mapHeaders(headers);
         response.headerMapping = headerMapping;
 
-        // Check for required fields with optimized lookup
-        const hasRequiredFields = ['materialcode', 'materialdescription'].every(field =>
+        // Check for required fields
+        const requiredFields = ['warrantycodeid', 'description', 'months'];
+        const hasRequiredFields = requiredFields.every(field =>
             Object.values(headerMapping).includes(field)
         );
+        
         if (!hasRequiredFields) {
+            const missingFields = requiredFields.filter(field => 
+                !Object.values(headerMapping).includes(field)
+            );
             response.status = 'failed';
             response.errors.push(
-                `Required headers not found. Available headers: ${headers.join(', ')}`
+                `Required headers not found: ${missingFields.join(', ')}. Available headers: ${headers.join(', ')}`
             );
             return res.status(400).json(response);
         }
@@ -322,7 +385,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Send initial response
         res.write(JSON.stringify(response) + '\n');
 
-        const processedMaterialCodes = new Set();
+        const processedUniqueKeys = new Set();
         let currentRow = 0;
 
         // Process data in parallel batches
@@ -339,8 +402,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 currentRow++;
                 const recordResult = {
                     row: currentRow,
-                    materialcode: '',
-                    materialdescription: '',
+                    warrantycodeid: '',
+                    description: '',
+                    months: null,
                     status: 'Processing',
                     action: '',
                     error: null,
@@ -349,8 +413,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
                 try {
                     const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
-                    recordResult.materialcode = cleanedRecord.materialcode || 'Unknown';
-                    recordResult.materialdescription = cleanedRecord.materialdescription || 'N/A';
+                    
+                    // Update record result with cleaned data
+                    recordResult.warrantycodeid = cleanedRecord.warrantycodeid || 'Unknown';
+                    recordResult.description = cleanedRecord.description || 'N/A';
+                    recordResult.months = cleanedRecord.months || null;
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -361,19 +428,22 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         continue;
                     }
 
+                    // Generate unique key for duplicate checking (using warrantycodeid)
+                    const uniqueKey = generateUniqueKey(cleanedRecord);
+
                     // Check for duplicates within the file
-                    if (processedMaterialCodes.has(cleanedRecord.materialcode)) {
+                    if (processedUniqueKeys.has(uniqueKey)) {
                         recordResult.status = 'Skipped';
-                        recordResult.error = 'Duplicate Material Code in file';
+                        recordResult.error = 'Duplicate Warranty Code ID in file';
                         recordResult.action = 'Skipped due to file duplicate';
-                        recordResult.warnings.push('Material Code already processed in this file');
+                        recordResult.warnings.push('Warranty Code ID already processed in this file');
                         batchResults.push(recordResult);
                         batchSkipped++;
                         continue;
                     }
 
-                    processedMaterialCodes.add(cleanedRecord.materialcode);
-                    validRecords.push({ cleanedRecord, recordResult, providedFields });
+                    processedUniqueKeys.add(uniqueKey);
+                    validRecords.push({ cleanedRecord, recordResult, providedFields, uniqueKey });
 
                 } catch (err) {
                     recordResult.status = 'Failed';
@@ -386,15 +456,16 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
             // Process valid records in bulk
             if (validRecords.length > 0) {
-                // Find existing records in bulk
-                const materialCodes = validRecords.map(r => r.cleanedRecord.materialcode);
-                const existingRecords = await Aerb.find({
-                    materialcode: { $in: materialCodes }
+                // Find existing records in bulk using warrantycodeid
+                const warrantyCodeIds = validRecords.map(r => r.cleanedRecord.warrantycodeid);
+                const existingRecords = await WarrantyCode.find({
+                    warrantycodeid: { $in: warrantyCodeIds }
                 }).lean();
 
                 const existingRecordsMap = new Map();
                 existingRecords.forEach(rec => {
-                    existingRecordsMap.set(rec.materialcode, rec);
+                    const key = generateUniqueKey(rec);
+                    existingRecordsMap.set(key, rec);
                 });
 
                 // Prepare bulk operations
@@ -402,8 +473,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 const bulkUpdateOps = [];
                 const now = new Date();
 
-                for (const { cleanedRecord, recordResult, providedFields } of validRecords) {
-                    const existingRecord = existingRecordsMap.get(cleanedRecord.materialcode);
+                for (const { cleanedRecord, recordResult, providedFields, uniqueKey } of validRecords) {
+                    const existingRecord = existingRecordsMap.get(uniqueKey);
 
                     if (existingRecord) {
                         response.summary.existingRecords++;
@@ -412,13 +483,13 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
                         if (comparisonResult.hasChanges) {
                             const updateData = {
-                                materialdescription: cleanedRecord.materialdescription,
+                                ...cleanedRecord,
                                 modifiedAt: now
                             };
 
                             bulkUpdateOps.push({
                                 updateOne: {
-                                    filter: { materialcode: cleanedRecord.materialcode },
+                                    filter: { _id: existingRecord._id },
                                     update: { $set: updateData }
                                 }
                             });
@@ -470,22 +541,23 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     for (let i = 0; i < operations.length; i += BULK_WRITE_BATCH_SIZE) {
                         const chunk = operations.slice(i, i + BULK_WRITE_BATCH_SIZE);
                         try {
-                            await Aerb.bulkWrite(chunk, { ordered: false });
+                            await WarrantyCode.bulkWrite(chunk, { ordered: false });
                         } catch (bulkError) {
                             // Handle bulk errors by marking affected records as failed
                             if (bulkError.writeErrors) {
                                 bulkError.writeErrors.forEach(error => {
-                                    const failedRecord = batchResults.find(r =>
-                                        r.materialcode === error.op?.materialcode ||
-                                        r.materialcode === error.op?.updateOne?.filter?.materialcode
-                                    );
+                                    const failedRecord = batchResults.find(r => {
+                                        const errorDoc = error.op?.insertOne?.document || error.op?.updateOne?.update?.$set;
+                                        return errorDoc && r.warrantycodeid === errorDoc.warrantycodeid;
+                                    });
                                     if (failedRecord) {
+                                        const previousStatus = failedRecord.status;
                                         failedRecord.status = 'Failed';
                                         failedRecord.action = 'Bulk operation failed';
                                         failedRecord.error = error.errmsg;
                                         batchFailed++;
-                                        if (failedRecord.status === 'Created') batchCreated--;
-                                        if (failedRecord.status === 'Updated') batchUpdated--;
+                                        if (previousStatus === 'Created') batchCreated--;
+                                        if (previousStatus === 'Updated') batchUpdated--;
                                     }
                                 });
                             }
@@ -539,7 +611,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 response.summary.failed += completedBatch.batchFailed;
                 response.summary.skippedTotal += completedBatch.batchSkipped;
                 response.summary.duplicatesInFile += completedBatch.batchResults.filter(
-                    r => r.status === 'Skipped' && r.error === 'Duplicate Material Code in file'
+                    r => r.status === 'Skipped' && r.error === 'Duplicate Warranty Code ID in file'
                 ).length;
                 response.summary.noChangesSkipped += completedBatch.batchResults.filter(
                     r => r.status === 'Skipped' && r.action === 'No changes detected'
@@ -576,7 +648,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             response.summary.failed += completedBatch.batchFailed;
             response.summary.skippedTotal += completedBatch.batchSkipped;
             response.summary.duplicatesInFile += completedBatch.batchResults.filter(
-                r => r.status === 'Skipped' && r.error === 'Duplicate Material Code in file'
+                r => r.status === 'Skipped' && r.error === 'Duplicate Warranty Code ID in file'
             ).length;
             response.summary.noChangesSkipped += completedBatch.batchResults.filter(
                 r => r.status === 'Skipped' && r.action === 'No changes detected'
@@ -615,7 +687,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('AERB bulk upload error:', error);
+        console.error('WarrantyCode bulk upload error:', error);
         response.status = 'failed';
         response.endTime = new Date();
         response.errors.push(`System error: ${error.message}`);
