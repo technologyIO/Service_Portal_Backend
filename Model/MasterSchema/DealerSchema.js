@@ -9,7 +9,6 @@ const DealerSchema = new mongoose.Schema({
         name: { type: String, required: true },
         employeeid: { type: String, required: true }
     }],
-
     email: {
         type: String,
         required: true,
@@ -33,23 +32,21 @@ const DealerSchema = new mongoose.Schema({
         unique: true
     },
     state: {
-        type: String,
+        type: [String], // Array of state names (multi-select)
+        required: true
+    },
+    city: {
+        type: [String], // Array of city names (multi-select)
         required: true
     },
     address: {
         type: String,
         required: true
     },
-    city: {
-        type: String,
-        required: true
-    },
     pincode: {
         type: String,
         required: true
-    },
-
-
+    }
 });
 
 module.exports = mongoose.model('Dealer', DealerSchema);

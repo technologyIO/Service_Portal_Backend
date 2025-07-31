@@ -47,7 +47,6 @@ const PMSchema = new mongoose.Schema(
     },
     pmStatus: {
       type: String,
-      enum: ["Completed", "Due", "Overdue", "Lapse"],
     },
     partNumber: {
       type: String,

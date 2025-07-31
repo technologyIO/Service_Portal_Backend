@@ -736,7 +736,7 @@ router.post("/equipment/bulk", async (req, res) => {
 
 
 // UPDATE equipment
-router.put('/equipment/:id', getEquipmentById, checkDuplicateSerialNumber, async (req, res) => {
+router.put('/equipment/:id', getEquipmentById, async (req, res) => {
     if (req.body.name != null) {
         res.equipment.name = req.body.name;
     }

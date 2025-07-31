@@ -60,41 +60,41 @@ router.get('/allpms/:employeeid?', async (req, res) => {
   try {
     const { employeeid } = req.params;
 
+    // Calculate allowed pmDueMonth values: current and next month
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth(); // 0-based
+    const currentYear = currentDate.getFullYear();
+
+    const thisMonth = `${(currentMonth + 1).toString().padStart(2, '0')}/${currentYear}`;
+    const nextMonthDate = new Date(currentDate);
+    nextMonthDate.setMonth(currentMonth + 1);
+    const nextMonth = `${(nextMonthDate.getMonth() + 1).toString().padStart(2, '0')}/${nextMonthDate.getFullYear()}`;
+
+    const allowedDueMonths = new Set([thisMonth, nextMonth]);
+
+    const isDueWithinWindow = pm =>
+      pm.pmStatus === "Due" && allowedDueMonths.has((pm.pmDueMonth || "").trim());
+
+    const isOverdue = pm => pm.pmStatus === "Overdue";
+
     if (employeeid) {
       const user = await User.findOne({ employeeid });
+      if (!user) return res.status(404).json({ message: 'User not found' });
 
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      // Get user's branch codes
+      // Extract user's branch codes
       const branchDemographic = user.demographics.find(d => d.type === 'branch');
       let userBranchShortCodes = [];
 
       if (branchDemographic) {
         if (branchDemographic.values.some(v => v.branchShortCode)) {
-          userBranchShortCodes = branchDemographic.values
-            .map(v => v.branchShortCode)
-            .filter(Boolean);
-        }
-        else if (branchDemographic.values.some(v => v.id)) {
-          const branchIds = branchDemographic.values
-            .map(v => v.id)
-            .filter(Boolean);
-
-          const branches = await Branch.find({ _id: { $in: branchIds } })
-            .select('branchShortCode -_id');
-
+          userBranchShortCodes = branchDemographic.values.map(v => v.branchShortCode).filter(Boolean);
+        } else if (branchDemographic.values.some(v => v.id)) {
+          const branchIds = branchDemographic.values.map(v => v.id).filter(Boolean);
+          const branches = await Branch.find({ _id: { $in: branchIds } }).select('branchShortCode -_id');
           userBranchShortCodes = branches.map(b => b.branchShortCode);
-        }
-        else if (branchDemographic.values.some(v => v.name)) {
-          const branchNames = branchDemographic.values
-            .map(v => v.name)
-            .filter(Boolean);
-
-          const branches = await Branch.find({ name: { $in: branchNames } })
-            .select('branchShortCode -_id');
-
+        } else if (branchDemographic.values.some(v => v.name)) {
+          const branchNames = branchDemographic.values.map(v => v.name).filter(Boolean);
+          const branches = await Branch.find({ name: { $in: branchNames } }).select('branchShortCode -_id');
           userBranchShortCodes = branches.map(b => b.branchShortCode);
         }
       }
@@ -103,48 +103,38 @@ router.get('/allpms/:employeeid?', async (req, res) => {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
-      // Get user's part numbers
-      const partNumbers = user.skills.flatMap(skill =>
-        skill.partNumbers || []
-      ).filter(pn => pn);
-
+      const partNumbers = user.skills.flatMap(skill => skill.partNumbers || []).filter(Boolean);
       if (partNumbers.length === 0) {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
-      // Modified PM query to only include Due or Overdue status
       const pms = await PM.find({
         partNumber: { $in: partNumbers },
-        pmStatus: { $in: ["Due", "Overdue"] } // Only these statuses
+        pmStatus: { $in: ["Due", "Overdue"] }
       });
 
-      if (pms.length === 0) {
+      const filteredPMs = pms.filter(pm => isOverdue(pm) || isDueWithinWindow(pm));
+      if (filteredPMs.length === 0) {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
-      // Get customer data
-      const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
+      const customerCodes = [...new Set(filteredPMs.map(pm => pm.customerCode).filter(Boolean))];
       const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
         .select('customercodeid customername hospitalname street city region email');
 
-      // Create customer lookup map for better performance
       const customerMap = {};
-      customers.forEach(customer => {
-        customerMap[customer.customercodeid] = customer;
-      });
+      customers.forEach(c => customerMap[c.customercodeid] = c);
 
       const customerRegions = [...new Set(customers.map(c => c.region).filter(Boolean))];
       const states = await State.find({ stateId: { $in: customerRegions } });
       const stateNames = states.map(s => s.name);
       const branches = await Branch.find({ state: { $in: stateNames } });
 
-      // Filter branches by user's branch codes
       const allowedBranches = branches.filter(b =>
         userBranchShortCodes.includes(b.branchShortCode)
       );
 
-      // Final PM filtering with customer data integration
-      const finalPMs = pms.filter(pm => {
+      const finalPMs = filteredPMs.filter(pm => {
         const customer = customers.find(c => c.customercodeid === pm.customerCode);
         if (!customer) return false;
 
@@ -153,20 +143,17 @@ router.get('/allpms/:employeeid?', async (req, res) => {
 
         return allowedBranches.some(b => b.state === state.name);
       }).map(pm => {
-        // Integrate essential customer data directly into PM object
         const customer = customerMap[pm.customerCode];
-        const pmObject = pm.toObject();
-
+        const pmObj = pm.toObject();
         if (customer) {
-          pmObject.email = customer.email;
-          pmObject.customername = customer.customername;
-          pmObject.hospitalname = customer.hospitalname;
-          pmObject.street = customer.street;
-          pmObject.city = customer.city;
-          pmObject.region = customer.region;
+          pmObj.email = customer.email?.trim();
+          pmObj.customername = customer.customername;
+          pmObj.hospitalname = customer.hospitalname;
+          pmObj.street = customer.street;
+          pmObj.city = customer.city;
+          pmObj.region = customer.region;
         }
-
-        return pmObject;
+        return pmObj;
       });
 
       return res.json({
@@ -176,43 +163,35 @@ router.get('/allpms/:employeeid?', async (req, res) => {
       });
     }
 
-    // If no employeeid provided, return all PMs with Due/Overdue status and customer data
-    const allPMs = await PM.find({
-      pmStatus: { $in: ["Due", "Overdue"] } // Only these statuses
-    });
+    // If no employeeid is passed
+    const allPMs = await PM.find({ pmStatus: { $in: ["Due", "Overdue"] } });
 
-    // Get customer data for all PMs (only essential fields)
-    const allCustomerCodes = [...new Set(allPMs.map(pm => pm.customerCode).filter(Boolean))];
-    const allCustomers = await Customer.find({ customercodeid: { $in: allCustomerCodes } })
+    const filteredAll = allPMs.filter(pm => isOverdue(pm) || isDueWithinWindow(pm));
+    const customerCodes = [...new Set(filteredAll.map(pm => pm.customerCode).filter(Boolean))];
+    const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
       .select('customercodeid customername hospitalname street city region email');
 
-    // Create customer lookup map
-    const allCustomerMap = {};
-    allCustomers.forEach(customer => {
-      allCustomerMap[customer.customercodeid] = customer;
-    });
+    const customerMap = {};
+    customers.forEach(c => customerMap[c.customercodeid] = c);
 
-    // Integrate customer data directly into PM objects
-    const enrichedAllPMs = allPMs.map(pm => {
-      const customer = allCustomerMap[pm.customerCode];
-      const pmObject = pm.toObject();
-
+    const enrichedAll = filteredAll.map(pm => {
+      const customer = customerMap[pm.customerCode];
+      const pmObj = pm.toObject();
       if (customer) {
-        pmObject.email = customer.email;
-        pmObject.customercodeid = customer.customercodeid;
-        pmObject.customername = customer.customername;
-        pmObject.hospitalname = customer.hospitalname;
-        pmObject.street = customer.street;
-        pmObject.city = customer.city;
-        pmObject.region = customer.region;
+        pmObj.email = customer.email?.trim();
+        pmObj.customercodeid = customer.customercodeid;
+        pmObj.customername = customer.customername;
+        pmObj.hospitalname = customer.hospitalname;
+        pmObj.street = customer.street;
+        pmObj.city = customer.city;
+        pmObj.region = customer.region;
       }
-
-      return pmObject;
+      return pmObj;
     });
 
     return res.json({
-      pms: enrichedAllPMs,
-      count: enrichedAllPMs.length,
+      pms: enrichedAll,
+      count: enrichedAll.length,
       filteredByEmployee: false
     });
 
@@ -346,14 +325,23 @@ router.get('/pmsearch', async (req, res) => {
       return res.status(400).json({ message: 'Query parameter is required' });
     }
 
-    // Convert page and limit to numbers
     const pageNumber = parseInt(page);
     const limitNumber = parseInt(limit);
-
-    // Calculate skip value for pagination
     const skip = (pageNumber - 1) * limitNumber;
 
-    // First, search for customers by name to get their codes
+    // Current and next month values
+    const now = new Date();
+    const thisMonth = `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+    const next = new Date(now);
+    next.setMonth(now.getMonth() + 1);
+    const nextMonth = `${(next.getMonth() + 1).toString().padStart(2, '0')}/${next.getFullYear()}`;
+    const allowedDueMonths = new Set([thisMonth, nextMonth]);
+
+    const isAllowedPM = pm =>
+      (pm.pmStatus === "Overdue") ||
+      (pm.pmStatus === "Due" && allowedDueMonths.has((pm.pmDueMonth || "").trim()));
+
+    // First get customer matches
     const matchingCustomers = await Customer.find({
       $or: [
         { customername: { $regex: q, $options: 'i' } },
@@ -364,7 +352,7 @@ router.get('/pmsearch', async (req, res) => {
 
     const matchingCustomerCodes = matchingCustomers.map(c => c.customercodeid);
 
-    // Build the PM search query
+    // Build OR query
     const query = {
       $or: [
         { pmType: { $regex: q, $options: 'i' } },
@@ -381,58 +369,49 @@ router.get('/pmsearch', async (req, res) => {
       ]
     };
 
-    // Add customer code search if we found matching customers
     if (matchingCustomerCodes.length > 0) {
       query.$or.push({ customerCode: { $in: matchingCustomerCodes } });
     }
 
-    // Get total count for pagination calculation
-    const totalRecords = await PM.countDocuments(query);
+    // First fetch ALL matches
+    const allMatchingPMs = await PM.find(query).sort({ createdAt: -1 });
 
-    // Get paginated results
-    const pms = await PM.find(query)
-      .skip(skip)
-      .limit(limitNumber)
-      .sort({ createdAt: -1 }); // Sort by creation date, newest first
+    // Apply Due/Overdue filter in-memory
+    const filteredPMs = allMatchingPMs.filter(isAllowedPM);
 
-    // Get customer data for the found PMs
-    const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
+    const totalRecords = filteredPMs.length;
+    const totalPages = Math.ceil(totalRecords / limitNumber);
+    const paginatedPMs = filteredPMs.slice(skip, skip + limitNumber);
+
+    const customerCodes = [...new Set(paginatedPMs.map(pm => pm.customerCode).filter(Boolean))];
     const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
       .select('customercodeid customername hospitalname street city region email');
 
-    // Create customer lookup map
     const customerMap = {};
-    customers.forEach(customer => {
-      customerMap[customer.customercodeid] = customer;
-    });
+    customers.forEach(c => customerMap[c.customercodeid] = c);
 
-    // Integrate customer data directly into PM objects
-    const enrichedPMs = pms.map(pm => {
+    const enrichedPMs = paginatedPMs.map(pm => {
       const customer = customerMap[pm.customerCode];
-      const pmObject = pm.toObject();
+      const pmObj = pm.toObject();
 
       if (customer) {
-        pmObject.email = customer.email;
-        pmObject.customercodeid = customer.customercodeid;
-        pmObject.customername = customer.customername;
-        pmObject.hospitalname = customer.hospitalname;
-        pmObject.street = customer.street;
-        pmObject.city = customer.city;
-        pmObject.region = customer.region;
+        pmObj.email = customer.email?.trim();
+        pmObj.customercodeid = customer.customercodeid;
+        pmObj.customername = customer.customername;
+        pmObj.hospitalname = customer.hospitalname;
+        pmObj.street = customer.street;
+        pmObj.city = customer.city;
+        pmObj.region = customer.region;
       }
 
-      return pmObject;
+      return pmObj;
     });
 
-    // Calculate total pages
-    const totalPages = Math.ceil(totalRecords / limitNumber);
-
-    // Return paginated response that matches your frontend expectations
     res.json({
       pms: enrichedPMs,
-      totalPages: totalPages,
+      totalPages,
       currentPage: pageNumber,
-      totalRecords: totalRecords,
+      totalRecords,
       hasNextPage: pageNumber < totalPages,
       hasPrevPage: pageNumber > 1
     });

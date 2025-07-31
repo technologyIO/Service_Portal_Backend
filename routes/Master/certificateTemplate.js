@@ -25,7 +25,7 @@ module.exports = function getCertificateHTML(data) {
     firstName = userInfo.firstName || "",
     lastName = userInfo.lastName || "",
     employeeId = userInfo.employeeId || "",
-    userName = userInfo.userName || "",
+    dealerCode = userInfo.dealerCode || "",
   } = data;
 
   // Destructure your voltageData object
@@ -265,11 +265,12 @@ module.exports = function getCertificateHTML(data) {
               width: 25%;
               vertical-align: top;
               font-weight: bold;
+              font-size: 13px;
             "
           >
-            Installed by #${employeeId}<br />
+            Installed by: ${employeeId}<br />
             Engineer: ${firstName} ${lastName}<br />
-            Dealer: ${userName}
+            Dealer: ${dealerCode}
           </td>
           <td
             style="

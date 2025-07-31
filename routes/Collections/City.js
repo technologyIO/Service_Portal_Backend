@@ -2,7 +2,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
 const City = require("../../Model/CollectionSchema/CitySchema");
-
+const Branch = require('../../Model/CollectionSchema/BranchSchema');
+const State = require('../../Model/CollectionSchema/StateSchema');
 // Middleware: Get City by ID
 async function getCity(req, res, next) {
     try {
@@ -30,6 +31,59 @@ async function getCity(req, res, next) {
 //         return res.status(500).json({ message: err.message });
 //     }
 // }
+
+
+router.get('/allcitybystate', async (req, res) => {
+    try {
+        const cities = await City.aggregate([
+            {
+                $lookup: {
+                    from: 'branches',
+                    localField: 'branch',
+                    foreignField: 'name',
+                    as: 'branchData'
+                }
+            },
+            {
+                $unwind: {
+                    path: '$branchData',
+                    preserveNullAndEmptyArrays: false
+                }
+            },
+            {
+                $lookup: {
+                    from: 'states',
+                    localField: 'branchData.state',
+                    foreignField: 'name', // match State.name, NOT stateId
+                    as: 'stateData'
+                }
+            },
+            {
+                $unwind: {
+                    path: '$stateData',
+                    preserveNullAndEmptyArrays: false
+                }
+            },
+            {
+                $project: {
+                    _id: 1,
+                    name: 1,
+                    status: 1,
+                    cityID: 1,
+                    createdAt: 1,
+                    modifiedAt: 1,
+                    branch: 1,
+                    state: '$stateData.name' // include state name as "state"
+                }
+            }
+        ]);
+
+        res.json(cities);
+    } catch (err) {
+        console.error("Error fetching city-state data:", err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 // Create City
 router.post('/city', async (req, res) => {
@@ -105,6 +159,14 @@ router.get('/city/:id', getCity, (req, res) => {
 });
 
 router.get('/allcity', async (req, res) => {
+    try {
+        const city = await City.find(); // Fetch all countries
+        res.json(city); // Return all countries as JSON
+    } catch (err) {
+        res.status(500).json({ message: err.message }); // Handle error and return JSON response
+    }
+});
+router.get('/allcitybystate', async (req, res) => {
     try {
         const city = await City.find(); // Fetch all countries
         res.json(city); // Return all countries as JSON
