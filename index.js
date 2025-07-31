@@ -82,7 +82,7 @@ const app = express();
 
 
 const corsOptions = {
-  origin: ['*'],
+  origin: ["https://serviceapp-eight.vercel.app", "http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://127.0.0.1", "http://localhost", "capacitor://localhost", "https://service-portal-admin.vercel.app"],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
