@@ -92,21 +92,37 @@ const corsOptions = {
       "http://127.0.0.1:3001",
       "http://127.0.0.1",
       "http://localhost",
-      "capacitor://localhost"
+      "capacitor://localhost",
+      "http://10.0.2.2:3000", // Android emulator
+      "http://10.0.2.2:3001",
+      "http://192.168.0.100:3000", // your local IP for device testing (change accordingly)
+      "http://192.168.1.100:3000"
     ];
 
-    if (!origin || allowedOrigins.includes(origin)) {
+    // OPTIONAL: Allow wildcard subdomains
+    const allowSubdomains = (origin) => {
+      try {
+        const url = new URL(origin);
+        return url.hostname.endsWith('.vercel.app');
+      } catch (err) {
+        return false;
+      }
+    };
+
+    if (!origin || allowedOrigins.includes(origin) || allowSubdomains(origin)) {
       callback(null, true);
     } else {
-      console.error("Blocked Origin:", origin);
+      console.error("CORS Blocked Origin:", origin);
       callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  exposedHeaders: ['Content-Disposition'],
   optionsSuccessStatus: 200
 };
+
 
 
 const uploadsDir = path.join(__dirname, 'uploads');
