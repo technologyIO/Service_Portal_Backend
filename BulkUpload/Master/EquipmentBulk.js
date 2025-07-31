@@ -48,7 +48,14 @@ function buildNormalizedCustomerMap(customers) {
 }
 // Field mapping to match exact frontend field names
 const FIELD_MAPPINGS = {
-  equipmentid: ['equipment', 'equipmentid', 'equipment_id', 'equipment id'],
+  materialcode: [
+    'material code',
+    'materialcode',
+    'material_code',
+    'part_number',
+    'partnumber',
+    'part number'
+  ],
   materialdescription: [
     'material description',
     'materialdescription',
@@ -63,13 +70,11 @@ const FIELD_MAPPINGS = {
     'serial',
     'sn'
   ],
-  materialcode: [
-    'material code',
-    'materialcode',
-    'material_code',
-    'part_number',
-    'partnumber',
-    'part number'
+  equipmentid: [
+    'equipment',
+    'equipmentid',
+    'equipment_id',
+    'equipment id'
   ],
   currentcustomer: [
     'current customer',
@@ -375,7 +380,7 @@ function calculatePMStatus(dueDateStr) {
   if (diffMonths === 1) return 'Overdue';          // 1 month past
   if (diffMonths >= 2) return 'Lapsed';            // 2+ months past
 
-  return 'Due';  
+  return 'Due';
 }
 
 /** Generate PM due date and month */

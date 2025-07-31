@@ -23,19 +23,21 @@ const upload = multer({
             file.mimetype === 'application/vnd.ms-excel' || // .xls
             file.mimetype === 'text/csv' || // .csv
             file.mimetype === 'application/csv' ||
+            file.mimetype === 'application/vnd.oasis.opendocument.spreadsheet' || // .ods
             ext === '.csv' ||
             ext === '.xlsx' ||
-            ext === '.xls'
+            ext === '.xls' ||
+            ext === '.ods'
         ) {
             cb(null, true);
         } else {
-            cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
+            cb(new Error('Only Excel (.xlsx, .xls, .ods) and CSV files are allowed'), false);
         }
     },
-    limits: {
-        fileSize: 50 * 1024 * 1024 // 50MB limit
-    }
+    limits: { fileSize: 50 * 1024 * 1024 }
 });
+
+
 
 // Optimized: Predefined field mappings for faster access
 const FIELD_MAPPINGS = {
@@ -252,12 +254,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Parse file with optimized method selection
         let jsonData;
         const fileName = req.file.originalname.toLowerCase();
-        const fileExt = fileName.slice(-4);
 
         try {
-            if (fileExt === '.csv') {
+            if (fileName.endsWith('.csv')) {
                 jsonData = await parseCSVFile(req.file.buffer);
-            } else if (fileExt === '.xlsx' || fileExt === '.xls') {
+            } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
                 jsonData = parseExcelFile(req.file.buffer);
             } else {
                 throw new Error('Unsupported file format');
@@ -445,7 +446,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         // Handle bulk errors by marking affected records as failed
                         if (bulkError.writeErrors) {
                             bulkError.writeErrors.forEach(error => {
-                                const failedRecord = batchResults.find(r => 
+                                const failedRecord = batchResults.find(r =>
                                     r.customercodeid === error.op?.customercodeid ||
                                     r.customercodeid === error.op?.updateOne?.filter?.customercodeid
                                 );
