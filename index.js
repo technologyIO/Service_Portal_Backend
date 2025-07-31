@@ -81,8 +81,21 @@ require('dotenv').config();
 const app = express();
 
 
+const allowedOrigins = [
+  'https://service-portal-admin.vercel.app',
+  'http://localhost:3000'
+];
+
 const corsOptions = {
-  origin: true,
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps, curl, postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
