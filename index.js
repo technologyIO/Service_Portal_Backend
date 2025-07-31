@@ -82,12 +82,32 @@ const app = express();
 
 
 const corsOptions = {
-  origin: ["https://serviceapp-eight.vercel.app", "http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://127.0.0.1", "http://localhost", "capacitor://localhost", "https://service-portal-admin.vercel.app"],
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      "https://serviceapp-eight.vercel.app",
+      "https://service-portal-admin.vercel.app",
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "http://127.0.0.1:3000",
+      "http://127.0.0.1:3001",
+      "http://127.0.0.1",
+      "http://localhost",
+      "capacitor://localhost"
+    ];
+
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.error("Blocked Origin:", origin);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200
 };
+
 
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
