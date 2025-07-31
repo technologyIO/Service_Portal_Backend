@@ -90,26 +90,13 @@ const corsOptions = {
       "http://localhost:3001",
       "http://127.0.0.1:3000",
       "http://127.0.0.1:3001",
-      "http://127.0.0.1",
       "http://localhost",
+      "http://127.0.0.1",
       "capacitor://localhost",
-      "http://10.0.2.2:3000", // Android emulator
-      "http://10.0.2.2:3001",
-      "http://192.168.0.100:3000", // your local IP for device testing (change accordingly)
-      "http://192.168.1.100:3000"
+      "https://localhost"  // ✅ ONLY IF HTTPS is actually configured locally
     ];
 
-    // OPTIONAL: Allow wildcard subdomains
-    const allowSubdomains = (origin) => {
-      try {
-        const url = new URL(origin);
-        return url.hostname.endsWith('.vercel.app');
-      } catch (err) {
-        return false;
-      }
-    };
-
-    if (!origin || allowedOrigins.includes(origin) || allowSubdomains(origin)) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.error("CORS Blocked Origin:", origin);
@@ -118,10 +105,10 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-  exposedHeaders: ['Content-Disposition'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200
 };
+
 
 
 
