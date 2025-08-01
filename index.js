@@ -89,6 +89,7 @@ const corsOptions = {
       "https://serviceapp-eight.vercel.app",
       "https://service-portal-admin.vercel.app",
       "https://servicep.insideoutprojects.in",
+      "https://serviceportal.shvx.dev",
       "http://localhost:3000",
       "http://localhost:3001",
       "http://127.0.0.1:3000",
