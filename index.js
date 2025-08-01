@@ -86,6 +86,7 @@ const corsOptions = {
     const allowedOrigins = [
       "https://serviceapp-eight.vercel.app",
       "https://service-portal-admin.vercel.app",
+      "https://servicep.insideoutprojects.in",
       "http://localhost:3000",
       "http://localhost:3001",
       "http://127.0.0.1:3000",
@@ -93,7 +94,7 @@ const corsOptions = {
       "http://localhost",
       "http://127.0.0.1",
       "capacitor://localhost",
-      "https://localhost"  // ✅ ONLY IF HTTPS is actually configured locally
+      "https://localhost"   
     ];
 
     if (!origin || allowedOrigins.includes(origin)) {
