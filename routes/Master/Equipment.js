@@ -276,18 +276,44 @@ router.post('/abort-installation', async (req, res) => {
     });
 
     const mailOptions = {
-        from: '"Installation Team" <your-email@example.com>',   
-        to: 'shivamt2023@gmail.com',          
+        from: 'webadmin@skanray-access.com',
+        to: 'shivamt2023@gmail.com',
         subject: 'Aborted Installation',
-        text: `Dear Team,
+        html: `
+        <div style="font-family: Arial, sans-serif; font-size: 14px;">
+            <p>Dear Team,</p>
+            <p>Installation <span style="background-color: #d8f2dc;">aborted</span> for below products:</p>
 
-Installation aborted for below products
-No     Product                              Slno
-${productListText}
-by (User id & Name) ${userId} - ${userName}
-Skanray branch or Dealer code, Name, City: ${branchOrDealerCode}, ${branchOrDealerName}, ${city}
-`,
+            <table style="border-collapse: collapse; width: 70%; margin-bottom: 18px; font-size: 14px; font-family: Arial, sans-serif;">
+                <thead>
+                    <tr>
+                        <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">No</th>
+                        <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">Product</th>
+                        <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">Slno</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${products.map((item, index) => `
+                        <tr>
+                            <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888; text-align: center;">${index + 1}</td>
+                            <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888;">${item.name}</td>
+                            <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888;">${item.slno}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+
+            <p style="background-color: #ffff00; padding: 8px 12px; display: inline-block; border-radius: 4px;">
+                by ( <span style="background-color: #d7f0fd; padding: 2px 6px; border-radius: 3px;">User id</span> &amp; <span style="background-color: #d7f0fd; padding: 2px 6px; border-radius: 3px;">Name</span> ) 
+                <strong>${userId}</strong> - <strong>${userName}</strong><br>
+                Skanray branch or Dealer code, Name, city: <strong>${branchOrDealerCode}</strong>, <strong>${branchOrDealerName}</strong>, <strong>${city}</strong>
+            </p>
+        </div>
+    `,
     };
+
+
+
 
     try {
         await transporter.sendMail(mailOptions);
