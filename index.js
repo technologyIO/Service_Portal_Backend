@@ -79,7 +79,9 @@ const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
-
+app.use(bodyParser.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const corsOptions = {
   origin: function (origin, callback) {
@@ -94,13 +96,14 @@ const corsOptions = {
       "http://localhost",
       "http://127.0.0.1",
       "capacitor://localhost",
-      "https://localhost"   
+      "https://localhost"
     ];
 
     if (!origin || allowedOrigins.includes(origin)) {
+      console.log("✅ Allowed Origin:", origin);
       callback(null, true);
     } else {
-      console.error("CORS Blocked Origin:", origin);
+      console.error("❌ CORS Blocked Origin:", origin);
       callback(new Error("Not allowed by CORS"));
     }
   },
@@ -109,7 +112,6 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200
 };
-
 
 
 
@@ -123,15 +125,8 @@ if (!fs.existsSync(uploadsDir)) {
 app.use('/uploads', express.static(uploadsDir));
 console.log(`Serving static files from: ${uploadsDir}`);
 app.use(cors(corsOptions));
-
-// app.use(compression());
-// Handle preflight for all routes
 app.options('*', cors(corsOptions));
 
-// Middleware
-app.use(bodyParser.json());
-app.use(express.json({ limit: '50mb' })); // Increase JSON body parser limit
-app.use(express.urlencoded({ limit: '50mb', extended: true })); // Increase URL-encoded body parser limit
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
