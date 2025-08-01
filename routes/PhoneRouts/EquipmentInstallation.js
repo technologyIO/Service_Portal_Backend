@@ -15,7 +15,51 @@ router.post('/', async (req, res) => {
         res.status(500).json({ message: 'Internal Server Error' });
     }
 });
+router.post('/abort-installation', async (req, res) => {
+    const {
+        products,
+        userId,
+        userName,
+        branchOrDealerCode,
+        branchOrDealerName,
+        city,
+    } = req.body;
 
+    if (!products || !Array.isArray(products) || products.length === 0) {
+        return res.status(400).send({ error: 'Products list is required' });
+    }
+
+    if (!userId || !userName || !branchOrDealerCode || !branchOrDealerName || !city) {
+        return res.status(400).send({ error: 'User and branch/dealer details are required' });
+    }
+
+    let productListText = '';
+    products.forEach((product, index) => {
+        productListText += `${index + 1}  ${product.name}  ${product.slno}\n`;
+    });
+
+    const mailOptions = {
+        from: '"Installation Team" <your-email@example.com>',  // sender address
+        to: 'CIC@skanray.com, dinsha.kp@skanray.com',         // list of receivers
+        subject: 'Aborted Installation',
+        text: `Dear Team,
+
+Installation aborted for below products
+No     Product                              Slno
+${productListText}
+by (User id & Name) ${userId} - ${userName}
+Skanray branch or Dealer code, Name, City: ${branchOrDealerCode}, ${branchOrDealerName}, ${city}
+`,
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        res.send({ message: 'Aborted installation email sent successfully' });
+    } catch (error) {
+        console.error('Error sending email:', error);
+        res.status(500).send({ error: 'Failed to send email' });
+    }
+});
 router.get('/serial/:serialNumber', async (req, res) => {
     try {
         const { serialNumber } = req.params;
@@ -36,12 +80,12 @@ router.get('/equipment-ids', async (req, res) => {
     try {
         // Find all documents and only return the equipmentId field
         const equipmentIds = await Installation.find({}, 'equipmentId');
-        
+
         // Check if there are any equipment IDs found
         if (!equipmentIds.length) {
             return res.status(404).json({ message: 'No equipment IDs found' });
         }
-        
+
         // Send the array of equipment IDs
         res.status(200).json(equipmentIds);
     } catch (error) {

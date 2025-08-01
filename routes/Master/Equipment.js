@@ -252,7 +252,51 @@ router.get('/checkequipments/:customerCode', async (req, res) => {
 });
 
 
+router.post('/abort-installation', async (req, res) => {
+    const {
+        products,
+        userId,
+        userName,
+        branchOrDealerCode,
+        branchOrDealerName,
+        city,
+    } = req.body;
 
+    if (!products || !Array.isArray(products) || products.length === 0) {
+        return res.status(400).send({ error: 'Products list is required' });
+    }
+
+    if (!userId || !userName || !branchOrDealerCode || !branchOrDealerName || !city) {
+        return res.status(400).send({ error: 'User and branch/dealer details are required' });
+    }
+
+    let productListText = '';
+    products.forEach((product, index) => {
+        productListText += `${index + 1}  ${product.name}  ${product.slno}\n`;
+    });
+
+    const mailOptions = {
+        from: '"Installation Team" <your-email@example.com>',   
+        to: 'shivamt2023@gmail.com',          
+        subject: 'Aborted Installation',
+        text: `Dear Team,
+
+Installation aborted for below products
+No     Product                              Slno
+${productListText}
+by (User id & Name) ${userId} - ${userName}
+Skanray branch or Dealer code, Name, City: ${branchOrDealerCode}, ${branchOrDealerName}, ${city}
+`,
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        res.send({ message: 'Aborted installation email sent successfully' });
+    } catch (error) {
+        console.error('Error sending email:', error);
+        res.status(500).send({ error: 'Failed to send email' });
+    }
+});
 
 router.get('/getbyserialno/:serialnumber', async (req, res) => {
     try {
