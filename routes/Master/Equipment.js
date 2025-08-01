@@ -257,6 +257,7 @@ router.post('/abort-installation', async (req, res) => {
         products,
         userId,
         userName,
+        employeeId,
         branchOrDealerCode,
         branchOrDealerName,
         city,
@@ -274,42 +275,45 @@ router.post('/abort-installation', async (req, res) => {
     products.forEach((product, index) => {
         productListText += `${index + 1}  ${product.name}  ${product.slno}\n`;
     });
+    const dealerCodeHtml = branchOrDealerCode
+        ? `Dealer code - <strong>${branchOrDealerCode}</strong>, `
+        : '';
 
     const mailOptions = {
         from: 'webadmin@skanray-access.com',
         to: 'shivamt2023@gmail.com',
         subject: 'Aborted Installation',
         html: `
-        <div style="font-family: Arial, sans-serif; font-size: 14px;">
-            <p>Dear Team,</p>
-            <p>Installation <span style="background-color: #d8f2dc;">aborted</span> for below products:</p>
+    <div style="font-family: Arial, sans-serif; font-size: 14px;">
+        <p>Dear Team,</p>
+        <p>Installation <span style="background-color: #d8f2dc;">aborted</span> for below products:</p>
 
-            <table style="border-collapse: collapse; width: 70%; margin-bottom: 18px; font-size: 14px; font-family: Arial, sans-serif;">
-                <thead>
+        <table style="border-collapse: collapse; width: 70%; margin-bottom: 18px; font-size: 14px; font-family: Arial, sans-serif;">
+            <thead>
+                <tr>
+                    <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">No</th>
+                    <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">Product</th>
+                    <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">Slno</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${products.map((item, index) => `
                     <tr>
-                        <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">No</th>
-                        <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">Product</th>
-                        <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">Slno</th>
+                        <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888; text-align: center;">${index + 1}</td>
+                        <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888;">${item.name}</td>
+                        <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888;">${item.slno}</td>
                     </tr>
-                </thead>
-                <tbody>
-                    ${products.map((item, index) => `
-                        <tr>
-                            <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888; text-align: center;">${index + 1}</td>
-                            <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888;">${item.name}</td>
-                            <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888;">${item.slno}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+                `).join('')}
+            </tbody>
+        </table>
 
-            <p style="background-color: #ffff00; padding: 8px 12px; display: inline-block; border-radius: 4px;">
-                by ( <span style="background-color: #d7f0fd; padding: 2px 6px; border-radius: 3px;">User id</span> &amp; <span style="background-color: #d7f0fd; padding: 2px 6px; border-radius: 3px;">Name</span> ) 
-                <strong>${userId}</strong> - <strong>${userName}</strong><br>
-                Skanray branch or Dealer code, Name, city: <strong>${branchOrDealerCode}</strong>, <strong>${branchOrDealerName}</strong>, <strong>${city}</strong>
-            </p>
-        </div>
-    `,
+        <p style="background-color: #ffff00; padding: 8px 12px; display: inline-block; border-radius: 4px;">
+            by (<strong>${employeeId}</strong> - <strong>${userName}</strong><br>)
+            ${dealerCodeHtml}
+            <strong>${city}</strong>
+        </p>
+    </div>
+  `,
     };
 
 
