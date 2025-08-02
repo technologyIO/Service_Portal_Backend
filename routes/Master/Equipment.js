@@ -286,7 +286,7 @@ router.post('/abort-installation', async (req, res) => {
         html: `
     <div style="font-family: Arial, sans-serif; font-size: 14px;">
         <p>Dear Team,</p>
-        <p>Installation <span style="background-color: #d8f2dc;">aborted</span> for below products:</p>
+        <p>Installation aborted for below products:</p>
 
         <table style="border-collapse: collapse; width: 70%; margin-bottom: 18px; font-size: 14px; font-family: Arial, sans-serif;">
             <thead>
@@ -308,9 +308,7 @@ router.post('/abort-installation', async (req, res) => {
         </table>
 
         <p style="background-color: #ffff00; padding: 8px 12px; display: inline-block; border-radius: 4px;">
-            by (<strong>${employeeId}</strong> - <strong>${userName}</strong><br>)
-            ${dealerCodeHtml}
-            <strong>${city}</strong>
+            by (<strong>${employeeId}</strong> - <strong>${userName}</strong><br>)${dealerCodeHtml}<strong>${city}</strong>
         </p>
     </div>
   `,
