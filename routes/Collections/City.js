@@ -73,14 +73,15 @@ router.get('/allcitybystate', async (req, res) => {
                     createdAt: 1,
                     modifiedAt: 1,
                     branch: 1,
-                    state: '$stateData.name' // include state name as "state"
+                    state: '$stateData.name',   // Include state name
+                    region: '$stateData.region' // Include region from state
                 }
             }
         ]);
 
         res.json(cities);
     } catch (err) {
-        console.error("Error fetching city-state data:", err);
+        console.error("Error fetching city-state-region data:", err);
         res.status(500).json({ message: err.message });
     }
 });
@@ -166,7 +167,7 @@ router.get('/allcity', async (req, res) => {
         res.status(500).json({ message: err.message }); // Handle error and return JSON response
     }
 });
-router.get('/allcitybystate', async (req, res) => {
+router.get('/allcitybystates', async (req, res) => {
     try {
         const city = await City.find(); // Fetch all countries
         res.json(city); // Return all countries as JSON
