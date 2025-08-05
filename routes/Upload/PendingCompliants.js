@@ -949,6 +949,7 @@ function generateIncidentReportHTML(injuryDetails = {}) {
 }
 
 // (B) Your POST route:
+
 router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
   try {
     const {
@@ -964,7 +965,8 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       voltageLN_RY,
       voltageLG_YB,
       voltageNG_BR,
-      sparesReplaced = [],          // Array of replaced parts
+      sparesReplaced = [],
+      customerCode,
       userInfo,
       injuryDetails,
       customerDetails,
@@ -1033,7 +1035,6 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       const year = date.getFullYear();
       return `${day}-${month}-${year}`;
     }
-
 
     // 4) Build the Service Report HTML with compact styling
     const serviceReportHTML = `
@@ -1124,13 +1125,13 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         <tr class="compact-row">
           <td style="width: 16%;">Notification No:</td>
           <td style="width: 17%;">${complaintNumber || "N/A"}</td>
-          <td style="width: 16%;">Date:</td>
+          <td style="width: 16%;">Notification Date:</td>
           <td style="width: 17%;">
-  ${currentDate}
+  ${notificationDate}
 </td>
 
           <td style="width: 17%;">Service Type:</td>
-          <td style="width: 17%;">${notificationDate || "N/A"}</td>
+          <td style="width: 17%;">${notificationType || "N/A"}</td>
         </tr>
       </table>
 
@@ -1138,8 +1139,8 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       <table>
         <tr>
           <td style="width: 50%;">
-            <strong>Customer Code:</strong> ${customerDetails?.customerCode || "N/A"}<br/>
-            <strong>Name:</strong> ${customerDetails?.hospitalName || "N/A"}<br/>
+            <strong>Customer Code:</strong> ${customerCode || "N/A"}<br/>
+            <strong>Name:</strong> ${customerDetails?.customername || "N/A"}<br/>
             <strong>Address:</strong> ${customerDetails?.street || "N/A"}<br/>
             <strong>City:</strong> ${customerDetails?.city || "N/A"}<br/>
             <strong>Telephone:</strong> ${customerDetails?.phone || "N/A"}<br/>
@@ -1442,8 +1443,32 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
 
         await transporter.sendMail(mailOptions);
 
+        // 8) DELETE the pending complaint after successful email send
+        let deletedComplaint = null;
+        let deletionError = null;
+
+        try {
+          // Try to find and delete the pending complaint using complaint number
+          deletedComplaint = await PendingComplaints.findOneAndDelete({
+            notification_complaintid: complaintNumber
+          });
+
+          if (deletedComplaint) {
+            console.log(`Successfully deleted pending complaint: ${complaintNumber}`);
+          } else {
+            console.log(`No pending complaint found with ID: ${complaintNumber}`);
+          }
+        } catch (deleteErr) {
+          console.error("Error deleting pending complaint:", deleteErr);
+          deletionError = deleteErr.message;
+        }
+
         return res.status(200).json({
           message: "OTP verified, email sent successfully with PDF attached!",
+          complaintClosed: true,
+          pendingComplaintDeleted: deletedComplaint ? true : false,
+          deletedComplaintId: deletedComplaint ? deletedComplaint.notification_complaintid : null,
+          deletionError: deletionError,
           finalData: req.body,
         });
       } catch (emailErr) {

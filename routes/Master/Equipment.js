@@ -701,7 +701,8 @@ router.post("/equipment/bulk", async (req, res) => {
                             reportNo,
                             date: pdfData.dateOfInstallation || new Date().toLocaleDateString("en-GB"),
                             customer: {
-                                hospitalname: pdfData.customerName || "",
+                                hospitalname: pdfData.hospitalName || "",
+                                customername: pdfData.customerName || "",
                                 customercodeid: pdfData.customerId || "",
                                 street: pdfData.street || "",
                                 city: pdfData.city || "",

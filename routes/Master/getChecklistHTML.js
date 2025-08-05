@@ -4,6 +4,7 @@ const getChecklistHTML = ({
   customer,
   machine,
   checklistItems,
+  customername,
   serviceEngineer,
   remarkglobal,
   documentChlNo,
@@ -191,11 +192,19 @@ const getChecklistHTML = ({
             <td class="cell section-title">Date:</td>
             <td class="cell">${date || "DD/MM/YYYY"}</td>
           </tr>
+        <tr>
+  <td class="cell section-title">Customer Code:</td>
+  <td class="cell">${customer?.customercodeid || "NA"}</td>
+
+
+  <td class="cell section-title">Hospital Name:</td>
+  <td class="cell">${customer?.hospitalname || "NA"}</td>
+</tr>
+
           <tr>
-            <td class="cell section-title">Customer Code:</td>
-            <td class="cell">${customer?.customercodeid || ""}</td>
-            <td class="cell section-title">Name:</td>
-            <td class="cell">${customer?.hospitalname || ""}</td>
+             <td class="cell section-title">Customer Name:</td>
+  <td class="cell">${customer?.customername || "NA"}</td>
+
           </tr>
           <tr>
             <td class="cell section-title">Address:</td>

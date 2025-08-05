@@ -182,10 +182,11 @@ module.exports = function getCertificateHTML(data) {
           <td colspan="3">Customer Details: ${customerId}</td>
         </tr>
         <tr>
-          <td>Name : ${customerName}</td>
-          <td>Hospital Name:</td>
-          <td>${hospitalName}</td>
-        </tr>
+  <td>Name :<span style=" font-size: 13px;"> ${customerName || "NA"}</span></td>
+  <td>Hospital Name:</td>
+  <td>${hospitalName || "NA"}</td>
+</tr>
+
         <tr>
           <td>Address 1 : ${street}</td>
           <td>Telephone</td>
