@@ -334,38 +334,74 @@ router.delete('/customer/:id', async (req, res) => {
 
 router.get('/searchcustomer', async (req, res) => {
     try {
-        const { q } = req.query;
-        if (!q) {
-            return res.status(400).json({ message: 'Query parameter is required' })
+        const { q = '', page = 1, limit = 10 } = req.query;
+        const searchTerm = q.trim();
+
+        // Pagination math
+        const pageInt = Math.max(1, parseInt(page, 10) || 1);
+        const limitInt = Math.max(1, parseInt(limit, 10) || 10);
+        const skip = (pageInt - 1) * limitInt;
+
+        let query = {};
+
+        // Build search query only if search term exists
+        if (searchTerm) {
+            // Escape regex meta-characters
+            const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+            query = {
+                $or: [
+                    { customercodeid: { $regex: escaped, $options: 'i' } },
+                    { customername: { $regex: escaped, $options: 'i' } },
+                    { hospitalname: { $regex: escaped, $options: 'i' } },
+                    { street: { $regex: escaped, $options: 'i' } },
+                    { city: { $regex: escaped, $options: 'i' } },
+                    { postalcode: { $regex: escaped, $options: 'i' } },
+                    { district: { $regex: escaped, $options: 'i' } },
+                    { state: { $regex: escaped, $options: 'i' } },
+                    { region: { $regex: escaped, $options: 'i' } },
+                    { country: { $regex: escaped, $options: 'i' } },
+                    { telephone: { $regex: escaped, $options: 'i' } },
+                    { taxnumber1: { $regex: escaped, $options: 'i' } },
+                    { taxnumber2: { $regex: escaped, $options: 'i' } },
+                    { email: { $regex: escaped, $options: 'i' } },
+                    { status: { $regex: escaped, $options: 'i' } },
+                    { customertype: { $regex: escaped, $options: 'i' } },
+                ]
+            };
         }
 
-        const query = {
-            $or: [
-                { customercodeid: { $regex: q, $options: 'i' } },
-                { customername: { $regex: q, $options: 'i' } },
-                { hospitalname: { $regex: q, $options: 'i' } },
-                { street: { $regex: q, $options: 'i' } },
-                { city: { $regex: q, $options: 'i' } },
-                { postalcode: { $regex: q, $options: 'i' } },
-                { district: { $regex: q, $options: 'i' } },
-                { state: { $regex: q, $options: 'i' } },
-                { region: { $regex: q, $options: 'i' } },
-                { country: { $regex: q, $options: 'i' } },
-                { telephone: { $regex: q, $options: 'i' } },
-                { taxnumber1: { $regex: q, $options: 'i' } },
-                { taxnumber2: { $regex: q, $options: 'i' } },
-                { email: { $regex: q, $options: 'i' } },
-                { status: { $regex: q, $options: 'i' } },
-                { customertype: { $regex: q, $options: 'i' } },
-            ]
-        }
-        const customer = await Customer.find(query)
+        // Get total count and paginated results
+        const totalCustomers = await Customer.countDocuments(query);
+        const customers = await Customer.find(query)
+            .skip(skip)
+            .limit(limitInt)
+            .sort({ _id: -1 });
 
-        res.json(customer);
+        const totalPages = Math.ceil(totalCustomers / limitInt);
+
+        res.json({
+            customers,
+            totalPages: totalPages || 1,
+            totalCustomers,
+            currentPage: pageInt,
+            hasNextPage: pageInt < totalPages,
+            hasPrevPage: pageInt > 1
+        });
 
     } catch (err) {
-        res.json(500).json({ message: err.message })
+        console.error('Search customer error:', err);
+        res.status(500).json({
+            message: err.message || 'Internal server error',
+            customers: [],
+            totalPages: 1,
+            totalCustomers: 0,
+            currentPage: 1,
+            hasNextPage: false,
+            hasPrevPage: false
+        });
     }
-})
+});
+
 
 module.exports = router;

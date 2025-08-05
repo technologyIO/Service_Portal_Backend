@@ -125,18 +125,44 @@ async function checkDuplicateSerialNumber(req, res, next) {
 // GET all serial numbers
 router.get('/allequipment/serialnumbers', async (req, res) => {
     try {
-        // Fetch all equipment entries
-        const equipment = await Equipment.find({}, 'serialnumber'); // Select only the serialnumber field
+        const { search, limit = 100 } = req.query;
 
-        // Extract serial numbers into an array
+        const conditions = [];
+
+        // Exclude empty or null serialnumbers
+        conditions.push({ serialnumber: { $ne: "" } });
+
+        // Add search condition if provided
+        if (search && search.trim()) {
+            conditions.push({
+                serialnumber: {
+                    $regex: search.trim(),
+                    $options: 'i' // Case-insensitive
+                }
+            });
+        }
+
+        const query = conditions.length > 0 ? { $and: conditions } : {};
+
+        const equipment = await Equipment
+            .find(query, 'serialnumber')
+            .limit(parseInt(limit))
+            .sort({ serialnumber: 1 });
+
         const serialNumbers = equipment.map(item => item.serialnumber);
 
-        // Return the array of serial numbers
-        res.json(serialNumbers);
+        res.json({
+            serialNumbers,
+            count: serialNumbers.length,
+            hasMore: serialNumbers.length === parseInt(limit)
+        });
+
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
+
 router.post('/equipment', async (req, res) => {
     const {
         materialdescription,

@@ -59,102 +59,128 @@ async function checkDuplicatePMNumber(req, res, next) {
 router.get('/allpms/:employeeid?', async (req, res) => {
   try {
     const { employeeid } = req.params;
-
-    // Calculate allowed pmDueMonth values: current and next month
     const currentDate = new Date();
-    const currentMonth = currentDate.getMonth(); // 0-based
+    const currentMonth = currentDate.getMonth();
     const currentYear = currentDate.getFullYear();
 
+    // Precompute allowed months
     const thisMonth = `${(currentMonth + 1).toString().padStart(2, '0')}/${currentYear}`;
-    const nextMonthDate = new Date(currentDate);
-    nextMonthDate.setMonth(currentMonth + 1);
-    const nextMonth = `${(nextMonthDate.getMonth() + 1).toString().padStart(2, '0')}/${nextMonthDate.getFullYear()}`;
-
-    const allowedDueMonths = new Set([thisMonth, nextMonth]);
-
-    const isDueWithinWindow = pm =>
-      pm.pmStatus === "Due" && allowedDueMonths.has((pm.pmDueMonth || "").trim());
-
-    const isOverdue = pm => pm.pmStatus === "Overdue";
+    const nextMonth = `${(currentMonth + 2).toString().padStart(2, '0')}/${currentYear}`;
+    const allowedDueMonths = [thisMonth, nextMonth];
 
     if (employeeid) {
-      const user = await User.findOne({ employeeid });
+      // Optimized user data retrieval
+      const user = await User.findOne({ employeeid })
+        .select('demographics skills')
+        .lean();
+
       if (!user) return res.status(404).json({ message: 'User not found' });
 
-      // Extract user's branch codes
+      // Extract branch codes efficiently
       const branchDemographic = user.demographics.find(d => d.type === 'branch');
       let userBranchShortCodes = [];
 
       if (branchDemographic) {
-        if (branchDemographic.values.some(v => v.branchShortCode)) {
-          userBranchShortCodes = branchDemographic.values.map(v => v.branchShortCode).filter(Boolean);
-        } else if (branchDemographic.values.some(v => v.id)) {
-          const branchIds = branchDemographic.values.map(v => v.id).filter(Boolean);
-          const branches = await Branch.find({ _id: { $in: branchIds } }).select('branchShortCode -_id');
-          userBranchShortCodes = branches.map(b => b.branchShortCode);
-        } else if (branchDemographic.values.some(v => v.name)) {
-          const branchNames = branchDemographic.values.map(v => v.name).filter(Boolean);
-          const branches = await Branch.find({ name: { $in: branchNames } }).select('branchShortCode -_id');
-          userBranchShortCodes = branches.map(b => b.branchShortCode);
+        const values = branchDemographic.values;
+        if (values.some(v => v.branchShortCode)) {
+          userBranchShortCodes = values.map(v => v.branchShortCode).filter(Boolean);
+        } else {
+          const branchIds = values.filter(v => v.id).map(v => v.id);
+          const branchNames = values.filter(v => v.name && !v.id).map(v => v.name);
+
+          const branchQueries = [];
+          if (branchIds.length) branchQueries.push({ _id: { $in: branchIds } });
+          if (branchNames.length) branchQueries.push({ name: { $in: branchNames } });
+
+          if (branchQueries.length) {
+            const branches = await Branch.find({ $or: branchQueries })
+              .select('branchShortCode')
+              .lean();
+            userBranchShortCodes = branches.map(b => b.branchShortCode);
+          }
         }
       }
 
-      if (userBranchShortCodes.length === 0) {
+      if (!userBranchShortCodes.length) {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
-      const partNumbers = user.skills.flatMap(skill => skill.partNumbers || []).filter(Boolean);
-      if (partNumbers.length === 0) {
+      // Get part numbers
+      const partNumbers = user.skills.flatMap(skill =>
+        (skill.partNumbers || []).filter(Boolean)
+      );
+
+      if (!partNumbers.length) {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
+      // Single optimized query for PM data
       const pms = await PM.find({
         partNumber: { $in: partNumbers },
-        pmStatus: { $in: ["Due", "Overdue"] }
-      });
+        $or: [
+          { pmStatus: "Overdue" },
+          {
+            pmStatus: "Due",
+            pmDueMonth: { $in: allowedDueMonths } // Now includes current + next month
+          }
+        ]
+      }).lean();
 
-      const filteredPMs = pms.filter(pm => isOverdue(pm) || isDueWithinWindow(pm));
-      if (filteredPMs.length === 0) {
+      if (!pms.length) {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
-      const customerCodes = [...new Set(filteredPMs.map(pm => pm.customerCode).filter(Boolean))];
+      // Batch process customer data
+      const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
       const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
-        .select('customercodeid customername hospitalname street city region email');
+        .select('customercodeid customername hospitalname street city region email')
+        .lean();
 
-      const customerMap = {};
-      customers.forEach(c => customerMap[c.customercodeid] = c);
+      const customerMap = customers.reduce((map, customer) => {
+        map[customer.customercodeid] = customer;
+        return map;
+      }, {});
 
+      // Batch process region data
       const customerRegions = [...new Set(customers.map(c => c.region).filter(Boolean))];
-      const states = await State.find({ stateId: { $in: customerRegions } });
-      const stateNames = states.map(s => s.name);
-      const branches = await Branch.find({ state: { $in: stateNames } });
+      const states = await State.find({ stateId: { $in: customerRegions } }).lean();
+      const stateMap = states.reduce((map, state) => {
+        map[state.stateId] = state.name;
+        return map;
+      }, {});
+
+      // Batch process branch data
+      const stateNames = [...new Set(Object.values(stateMap).filter(Boolean))];
+      const branches = await Branch.find({ state: { $in: stateNames } })
+        .select('branchShortCode state')
+        .lean();
 
       const allowedBranches = branches.filter(b =>
         userBranchShortCodes.includes(b.branchShortCode)
       );
+      const allowedStates = [...new Set(allowedBranches.map(b => b.state))];
 
-      const finalPMs = filteredPMs.filter(pm => {
-        const customer = customers.find(c => c.customercodeid === pm.customerCode);
-        if (!customer) return false;
-
-        const state = states.find(s => s.stateId === customer.region);
-        if (!state) return false;
-
-        return allowedBranches.some(b => b.state === state.name);
-      }).map(pm => {
+      // Final filtering and mapping
+      const finalPMs = pms.reduce((result, pm) => {
         const customer = customerMap[pm.customerCode];
-        const pmObj = pm.toObject();
-        if (customer) {
-          pmObj.email = customer.email?.trim();
-          pmObj.customername = customer.customername;
-          pmObj.hospitalname = customer.hospitalname;
-          pmObj.street = customer.street;
-          pmObj.city = customer.city;
-          pmObj.region = customer.region;
-        }
-        return pmObj;
-      });
+        if (!customer) return result;
+
+        const stateName = stateMap[customer.region];
+        if (!stateName || !allowedStates.includes(stateName)) return result;
+
+        const pmObj = {
+          ...pm,
+          email: customer.email?.trim() || null,
+          customername: customer.customername,
+          hospitalname: customer.hospitalname,
+          street: customer.street,
+          city: customer.city,
+          region: customer.region
+        };
+
+        result.push(pmObj);
+        return result;
+      }, []);
 
       return res.json({
         pms: finalPMs,
@@ -163,30 +189,36 @@ router.get('/allpms/:employeeid?', async (req, res) => {
       });
     }
 
-    // If no employeeid is passed
-    const allPMs = await PM.find({ pmStatus: { $in: ["Due", "Overdue"] } });
+    // Non-employee path optimization
+    const pms = await PM.find({
+      $or: [
+        { pmStatus: "Overdue" },
+        { pmStatus: "Due", pmDueMonth: { $in: allowedDueMonths } }
+      ]
+    }).lean();
 
-    const filteredAll = allPMs.filter(pm => isOverdue(pm) || isDueWithinWindow(pm));
-    const customerCodes = [...new Set(filteredAll.map(pm => pm.customerCode).filter(Boolean))];
+    const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
     const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
-      .select('customercodeid customername hospitalname street city region email');
+      .select('customercodeid customername hospitalname street city region email')
+      .lean();
 
-    const customerMap = {};
-    customers.forEach(c => customerMap[c.customercodeid] = c);
+    const customerMap = customers.reduce((map, customer) => {
+      map[customer.customercodeid] = customer;
+      return map;
+    }, {});
 
-    const enrichedAll = filteredAll.map(pm => {
+    const enrichedAll = pms.map(pm => {
       const customer = customerMap[pm.customerCode];
-      const pmObj = pm.toObject();
-      if (customer) {
-        pmObj.email = customer.email?.trim();
-        pmObj.customercodeid = customer.customercodeid;
-        pmObj.customername = customer.customername;
-        pmObj.hospitalname = customer.hospitalname;
-        pmObj.street = customer.street;
-        pmObj.city = customer.city;
-        pmObj.region = customer.region;
-      }
-      return pmObj;
+      return customer ? {
+        ...pm,
+        email: customer.email?.trim() || null,
+        customercodeid: customer.customercodeid,
+        customername: customer.customername,
+        hospitalname: customer.hospitalname,
+        street: customer.street,
+        city: customer.city,
+        region: customer.region
+      } : pm;
     });
 
     return res.json({
