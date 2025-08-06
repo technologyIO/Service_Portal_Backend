@@ -71,6 +71,12 @@ const replacedPartCodeUpload = require('./BulkUpload/Master/ReplacePartCodeBulk'
 const WarrantyCodeBulk = require('./BulkUpload/Master/WarrantyCodeBulk');
 const ReportedProblemBulk = require('./BulkUpload/Master/ReportedProblemBulk');
 const mobilecomponentRoutes = require('./routes/Role/MobileComponent');
+const userExcelRoutes = require('./routes/Master/ExcelDownload/UserExcel');
+const aerbExcelRoutes = require('./routes/Master/ExcelDownload/AerbExcel');
+const dealerExcelRoutes = require('./routes/Master/ExcelDownload/DealerExcel');
+const branchExcelRoutes = require('./routes/Master/ExcelDownload/BranchExcel');
+const productExcelRoutes = require('./routes/Master/ExcelDownload/ProductExcel');
+const checklistExcelRoutes = require('./routes/Master/ExcelDownload/CheckListExcel');
 const path = require('path');
 const fs = require('fs');
 
@@ -214,6 +220,16 @@ app.use('/bulk/replaced-part-codes', replacedPartCodeUpload);
 app.use('/bulk/reported-problem', ReportedProblemBulk);
 app.use('/bulk/warranty-code', WarrantyCodeBulk);
 
+
+
+// Excel Download 
+
+app.use('/excel/users', userExcelRoutes);
+app.use('/excel/aerb', aerbExcelRoutes);
+app.use('/excel/dealers', dealerExcelRoutes);
+app.use('/excel/branches', branchExcelRoutes);
+app.use('/excel/products', productExcelRoutes);
+app.use('/excel/checklists', checklistExcelRoutes);
 
 // Routes
 app.get('/', (req, res) => {
