@@ -1,36 +1,32 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Product = require('../../../Model/MasterSchema/ProductSchema'); 
+const ReplacedPartCode = require('../../../Model/MasterSchema/ReplacedPartCodeSchema'); 
 const router = express.Router();
 
-// Product Excel export API
-router.get('/export-products', async (req, res) => {
+// ReplacedPartCode Excel export API
+router.get('/export-replacedpartcodes', async (req, res) => {
     try {
-        // Sabhi product records fetch kariye
-        const productData = await Product.find({}).lean();
+        // Sabhi replaced part code records fetch kariye
+        const replacedPartCodeData = await ReplacedPartCode.find({}).lean();
 
-        if (!productData || productData.length === 0) {
-            return res.status(404).json({ message: 'No product data found' });
+        if (!replacedPartCodeData || replacedPartCodeData.length === 0) {
+            return res.status(404).json({ message: 'No replaced part code data found' });
         }
 
         // Nyi Excel workbook banayiye
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Products Data');
+        const worksheet = workbook.addWorksheet('Replaced Part Codes Data');
 
         // Headers define kariye
         worksheet.columns = [
             { header: 'S.No', key: 'sno', width: 8 },
-            { header: 'Product Group', key: 'productgroup', width: 20 },
-            { header: 'Part No ID', key: 'partnoid', width: 18 },
-            { header: 'Product', key: 'product', width: 25 },
-            { header: 'Sub Group', key: 'subgrp', width: 18 },
-            { header: 'Frequency', key: 'frequency', width: 15 },
-            { header: 'Date of Launch', key: 'dateoflaunch', width: 18 },
-            { header: 'End of Sale Date', key: 'endofsaledate', width: 18 },
-            { header: 'End of Support Date', key: 'endofsupportdate', width: 20 },
-            { header: 'Ex Support Available', key: 'exsupportavlb', width: 20 },
-            { header: 'Installation Checklist Status', key: 'installationcheckliststatusboolean', width: 30 },
-            { header: 'PM Checklist Status', key: 'pmcheckliststatusboolean', width: 25 },
+            { header: 'Catalog', key: 'catalog', width: 20 },
+            { header: 'Code Group', key: 'codegroup', width: 18 },
+            { header: 'Name', key: 'name', width: 25 },
+            { header: 'Code', key: 'code', width: 18 },
+            { header: 'Short Text For Code', key: 'shorttextforcode', width: 30 },
+            { header: 'Serial No', key: 'slno', width: 15 },
+            { header: 'Status', key: 'status', width: 12 },
             { header: 'Created At', key: 'createdAt', width: 18 },
             { header: 'Modified At', key: 'modifiedAt', width: 18 }
         ];
@@ -53,22 +49,18 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Data rows add kariye
-        productData.forEach((product, index) => {
+        replacedPartCodeData.forEach((partCode, index) => {
             const row = worksheet.addRow({
                 sno: index + 1,
-                productgroup: product.productgroup || '',
-                partnoid: product.partnoid || '',
-                product: product.product || '',
-                subgrp: product.subgrp || '',
-                frequency: product.frequency || '',
-                dateoflaunch: product.dateoflaunch ? new Date(product.dateoflaunch).toLocaleDateString('en-IN') : '',
-                endofsaledate: product.endofsaledate ? new Date(product.endofsaledate).toLocaleDateString('en-IN') : '',
-                endofsupportdate: product.endofsupportdate ? new Date(product.endofsupportdate).toLocaleDateString('en-IN') : '',
-                exsupportavlb: product.exsupportavlb ? new Date(product.exsupportavlb).toLocaleDateString('en-IN') : '',
-                installationcheckliststatusboolean: product.installationcheckliststatusboolean || '',
-                pmcheckliststatusboolean: product.pmcheckliststatusboolean || '',
-                createdAt: product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-IN') : '',
-                modifiedAt: product.modifiedAt ? new Date(product.modifiedAt).toLocaleDateString('en-IN') : ''
+                catalog: partCode.catalog || '',
+                codegroup: partCode.codegroup || '',
+                name: partCode.name || '',
+                code: partCode.code || '',
+                shorttextforcode: partCode.shorttextforcode || '',
+                slno: partCode.slno || '',
+                status: partCode.status || '',
+                createdAt: partCode.createdAt ? new Date(partCode.createdAt).toLocaleDateString('en-IN') : '',
+                modifiedAt: partCode.modifiedAt ? new Date(partCode.modifiedAt).toLocaleDateString('en-IN') : ''
             });
 
             // Row styling
@@ -89,9 +81,11 @@ router.get('/export-products', async (req, res) => {
                     };
                 }
 
-                // Center align S.No column
-                if (colNumber === 1) {
+                // Center align S.No, Code, and Serial No columns
+                if (colNumber === 1 || colNumber === 5 || colNumber === 7) {
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                } else if (colNumber === 6) { // Short Text For Code column - wrap text
+                    cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
                 } else {
                     cell.alignment = { vertical: 'middle', horizontal: 'left' };
                 }
@@ -111,7 +105,7 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Response headers set kariye
-        const fileName = `products_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const fileName = `replaced_part_codes_data_${new Date().toISOString().split('T')[0]}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -120,9 +114,9 @@ router.get('/export-products', async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('Product Excel export error:', error);
+        console.error('ReplacedPartCode Excel export error:', error);
         res.status(500).json({
-            message: 'Error exporting product data to Excel',
+            message: 'Error exporting replaced part code data to Excel',
             error: error.message
         });
     }

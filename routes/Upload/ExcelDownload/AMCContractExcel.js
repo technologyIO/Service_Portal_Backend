@@ -1,36 +1,32 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Product = require('../../../Model/MasterSchema/ProductSchema'); 
+const AMCContract = require('../../../Model/UploadSchema/AMCContractSchema');
 const router = express.Router();
 
-// Product Excel export API
-router.get('/export-products', async (req, res) => {
+// AMCContract Excel export API - Clean version
+router.get('/export-amccontracts', async (req, res) => {
     try {
-        // Sabhi product records fetch kariye
-        const productData = await Product.find({}).lean();
+        // Sabhi AMC contract records fetch kariye
+        const amcContractData = await AMCContract.find({}).lean();
 
-        if (!productData || productData.length === 0) {
-            return res.status(404).json({ message: 'No product data found' });
+        if (!amcContractData || amcContractData.length === 0) {
+            return res.status(404).json({ message: 'No AMC contract data found' });
         }
 
         // Nyi Excel workbook banayiye
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Products Data');
+        const worksheet = workbook.addWorksheet('AMC Contracts Data');
 
         // Headers define kariye
         worksheet.columns = [
             { header: 'S.No', key: 'sno', width: 8 },
-            { header: 'Product Group', key: 'productgroup', width: 20 },
-            { header: 'Part No ID', key: 'partnoid', width: 18 },
-            { header: 'Product', key: 'product', width: 25 },
-            { header: 'Sub Group', key: 'subgrp', width: 18 },
-            { header: 'Frequency', key: 'frequency', width: 15 },
-            { header: 'Date of Launch', key: 'dateoflaunch', width: 18 },
-            { header: 'End of Sale Date', key: 'endofsaledate', width: 18 },
-            { header: 'End of Support Date', key: 'endofsupportdate', width: 20 },
-            { header: 'Ex Support Available', key: 'exsupportavlb', width: 20 },
-            { header: 'Installation Checklist Status', key: 'installationcheckliststatusboolean', width: 30 },
-            { header: 'PM Checklist Status', key: 'pmcheckliststatusboolean', width: 25 },
+            { header: 'Sales Doc', key: 'salesdoc', width: 18 },
+            { header: 'Start Date', key: 'startdate', width: 15 },
+            { header: 'End Date', key: 'enddate', width: 15 },
+            { header: 'SA Type (ZDRC/ZDRN)', key: 'satypeZDRC_ZDRN', width: 20 },
+            { header: 'Serial Number', key: 'serialnumber', width: 20 },
+            { header: 'Material Code', key: 'materialcode', width: 18 },
+            { header: 'Status', key: 'status', width: 15 },
             { header: 'Created At', key: 'createdAt', width: 18 },
             { header: 'Modified At', key: 'modifiedAt', width: 18 }
         ];
@@ -53,25 +49,21 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Data rows add kariye
-        productData.forEach((product, index) => {
+        amcContractData.forEach((contract, index) => {
             const row = worksheet.addRow({
                 sno: index + 1,
-                productgroup: product.productgroup || '',
-                partnoid: product.partnoid || '',
-                product: product.product || '',
-                subgrp: product.subgrp || '',
-                frequency: product.frequency || '',
-                dateoflaunch: product.dateoflaunch ? new Date(product.dateoflaunch).toLocaleDateString('en-IN') : '',
-                endofsaledate: product.endofsaledate ? new Date(product.endofsaledate).toLocaleDateString('en-IN') : '',
-                endofsupportdate: product.endofsupportdate ? new Date(product.endofsupportdate).toLocaleDateString('en-IN') : '',
-                exsupportavlb: product.exsupportavlb ? new Date(product.exsupportavlb).toLocaleDateString('en-IN') : '',
-                installationcheckliststatusboolean: product.installationcheckliststatusboolean || '',
-                pmcheckliststatusboolean: product.pmcheckliststatusboolean || '',
-                createdAt: product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-IN') : '',
-                modifiedAt: product.modifiedAt ? new Date(product.modifiedAt).toLocaleDateString('en-IN') : ''
+                salesdoc: contract.salesdoc || '',
+                startdate: contract.startdate ? new Date(contract.startdate).toLocaleDateString('en-IN') : '',
+                enddate: contract.enddate ? new Date(contract.enddate).toLocaleDateString('en-IN') : '',
+                satypeZDRC_ZDRN: contract.satypeZDRC_ZDRN || '',
+                serialnumber: contract.serialnumber || '',
+                materialcode: contract.materialcode || '',
+                status: contract.status || '',
+                createdAt: contract.createdAt ? new Date(contract.createdAt).toLocaleDateString('en-IN') : '',
+                modifiedAt: contract.modifiedAt ? new Date(contract.modifiedAt).toLocaleDateString('en-IN') : ''
             });
 
-            // Row styling
+            // Basic row styling
             row.eachCell((cell, colNumber) => {
                 cell.border = {
                     top: { style: 'thin' },
@@ -89,8 +81,8 @@ router.get('/export-products', async (req, res) => {
                     };
                 }
 
-                // Center align S.No column
-                if (colNumber === 1) {
+                // Center align S.No and Date columns
+                if (colNumber === 1 || colNumber === 3 || colNumber === 4) {
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
                 } else {
                     cell.alignment = { vertical: 'middle', horizontal: 'left' };
@@ -111,7 +103,7 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Response headers set kariye
-        const fileName = `products_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const fileName = `amc_contracts_data_${new Date().toISOString().split('T')[0]}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -120,9 +112,9 @@ router.get('/export-products', async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('Product Excel export error:', error);
+        console.error('AMCContract Excel export error:', error);
         res.status(500).json({
-            message: 'Error exporting product data to Excel',
+            message: 'Error exporting AMC contract data to Excel',
             error: error.message
         });
     }

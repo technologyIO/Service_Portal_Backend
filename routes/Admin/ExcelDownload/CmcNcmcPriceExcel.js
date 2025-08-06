@@ -1,36 +1,33 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Product = require('../../../Model/MasterSchema/ProductSchema'); 
+const CmcNcmcPrice = require('../../../Model/AdminSchema/CmcNcmcPriceSchema'); 
 const router = express.Router();
 
-// Product Excel export API
-router.get('/export-products', async (req, res) => {
+// CmcNcmcPrice Excel export API - Clean version
+router.get('/export-cmcncmcprices', async (req, res) => {
     try {
-        // Sabhi product records fetch kariye
-        const productData = await Product.find({}).lean();
+        // Sabhi CMC/NCMC price records fetch kariye
+        const cmcNcmcPriceData = await CmcNcmcPrice.find({}).lean();
 
-        if (!productData || productData.length === 0) {
-            return res.status(404).json({ message: 'No product data found' });
+        if (!cmcNcmcPriceData || cmcNcmcPriceData.length === 0) {
+            return res.status(404).json({ message: 'No CMC/NCMC price data found' });
         }
 
         // Nyi Excel workbook banayiye
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Products Data');
+        const worksheet = workbook.addWorksheet('CMC NCMC Prices Data');
 
         // Headers define kariye
         worksheet.columns = [
             { header: 'S.No', key: 'sno', width: 8 },
-            { header: 'Product Group', key: 'productgroup', width: 20 },
-            { header: 'Part No ID', key: 'partnoid', width: 18 },
+            { header: 'Part Number', key: 'partNumber', width: 18 },
+            { header: 'Description', key: 'description', width: 35 },
             { header: 'Product', key: 'product', width: 25 },
-            { header: 'Sub Group', key: 'subgrp', width: 18 },
-            { header: 'Frequency', key: 'frequency', width: 15 },
-            { header: 'Date of Launch', key: 'dateoflaunch', width: 18 },
-            { header: 'End of Sale Date', key: 'endofsaledate', width: 18 },
-            { header: 'End of Support Date', key: 'endofsupportdate', width: 20 },
-            { header: 'Ex Support Available', key: 'exsupportavlb', width: 20 },
-            { header: 'Installation Checklist Status', key: 'installationcheckliststatusboolean', width: 30 },
-            { header: 'PM Checklist Status', key: 'pmcheckliststatusboolean', width: 25 },
+            { header: 'CMC Price (With GST)', key: 'cmcPriceWithGst', width: 20 },
+            { header: 'NCMC Price (With GST)', key: 'ncmcPriceWithGst', width: 20 },
+            { header: 'Service Tax', key: 'serviceTax', width: 15 },
+            { header: 'Remarks', key: 'remarks', width: 30 },
+            { header: 'Status', key: 'status', width: 12 },
             { header: 'Created At', key: 'createdAt', width: 18 },
             { header: 'Modified At', key: 'modifiedAt', width: 18 }
         ];
@@ -53,25 +50,22 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Data rows add kariye
-        productData.forEach((product, index) => {
+        cmcNcmcPriceData.forEach((priceData, index) => {
             const row = worksheet.addRow({
                 sno: index + 1,
-                productgroup: product.productgroup || '',
-                partnoid: product.partnoid || '',
-                product: product.product || '',
-                subgrp: product.subgrp || '',
-                frequency: product.frequency || '',
-                dateoflaunch: product.dateoflaunch ? new Date(product.dateoflaunch).toLocaleDateString('en-IN') : '',
-                endofsaledate: product.endofsaledate ? new Date(product.endofsaledate).toLocaleDateString('en-IN') : '',
-                endofsupportdate: product.endofsupportdate ? new Date(product.endofsupportdate).toLocaleDateString('en-IN') : '',
-                exsupportavlb: product.exsupportavlb ? new Date(product.exsupportavlb).toLocaleDateString('en-IN') : '',
-                installationcheckliststatusboolean: product.installationcheckliststatusboolean || '',
-                pmcheckliststatusboolean: product.pmcheckliststatusboolean || '',
-                createdAt: product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-IN') : '',
-                modifiedAt: product.modifiedAt ? new Date(product.modifiedAt).toLocaleDateString('en-IN') : ''
+                partNumber: priceData.partNumber || '',
+                description: priceData.description || '',
+                product: priceData.product || '',
+                cmcPriceWithGst: priceData.cmcPriceWithGst || 0,
+                ncmcPriceWithGst: priceData.ncmcPriceWithGst || 0,
+                serviceTax: priceData.serviceTax || '',
+                remarks: priceData.remarks || '',
+                status: priceData.status || '',
+                createdAt: priceData.createdAt ? new Date(priceData.createdAt).toLocaleDateString('en-IN') : '',
+                modifiedAt: priceData.modifiedAt ? new Date(priceData.modifiedAt).toLocaleDateString('en-IN') : ''
             });
 
-            // Row styling
+            // Basic row styling
             row.eachCell((cell, colNumber) => {
                 cell.border = {
                     top: { style: 'thin' },
@@ -92,6 +86,11 @@ router.get('/export-products', async (req, res) => {
                 // Center align S.No column
                 if (colNumber === 1) {
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                } else if (colNumber === 3 || colNumber === 8) { // Description and Remarks - wrap text
+                    cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+                } else if (colNumber === 5 || colNumber === 6) { // Price columns - right align and currency format
+                    cell.alignment = { vertical: 'middle', horizontal: 'right' };
+                    cell.numFmt = '₹#,##0.00'; // Indian currency format
                 } else {
                     cell.alignment = { vertical: 'middle', horizontal: 'left' };
                 }
@@ -111,7 +110,7 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Response headers set kariye
-        const fileName = `products_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const fileName = `cmc_ncmc_prices_data_${new Date().toISOString().split('T')[0]}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -120,9 +119,9 @@ router.get('/export-products', async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('Product Excel export error:', error);
+        console.error('CmcNcmcPrice Excel export error:', error);
         res.status(500).json({
-            message: 'Error exporting product data to Excel',
+            message: 'Error exporting CMC/NCMC price data to Excel',
             error: error.message
         });
     }

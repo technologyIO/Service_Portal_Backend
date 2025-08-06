@@ -1,36 +1,27 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Product = require('../../../Model/MasterSchema/ProductSchema'); 
+const CmcNcmcYear = require('../../../Model/AdminSchema/CmcNcmcYearsSchema'); 
 const router = express.Router();
 
-// Product Excel export API
-router.get('/export-products', async (req, res) => {
+// CmcNcmcYear Excel export API - Clean version
+router.get('/export-cmcncmcyears', async (req, res) => {
     try {
-        // Sabhi product records fetch kariye
-        const productData = await Product.find({}).lean();
+        // Sabhi CMC/NCMC year records fetch kariye
+        const cmcNcmcYearData = await CmcNcmcYear.find({}).lean();
 
-        if (!productData || productData.length === 0) {
-            return res.status(404).json({ message: 'No product data found' });
+        if (!cmcNcmcYearData || cmcNcmcYearData.length === 0) {
+            return res.status(404).json({ message: 'No CMC/NCMC year data found' });
         }
 
         // Nyi Excel workbook banayiye
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Products Data');
+        const worksheet = workbook.addWorksheet('CMC NCMC Years Data');
 
         // Headers define kariye
         worksheet.columns = [
             { header: 'S.No', key: 'sno', width: 8 },
-            { header: 'Product Group', key: 'productgroup', width: 20 },
-            { header: 'Part No ID', key: 'partnoid', width: 18 },
-            { header: 'Product', key: 'product', width: 25 },
-            { header: 'Sub Group', key: 'subgrp', width: 18 },
-            { header: 'Frequency', key: 'frequency', width: 15 },
-            { header: 'Date of Launch', key: 'dateoflaunch', width: 18 },
-            { header: 'End of Sale Date', key: 'endofsaledate', width: 18 },
-            { header: 'End of Support Date', key: 'endofsupportdate', width: 20 },
-            { header: 'Ex Support Available', key: 'exsupportavlb', width: 20 },
-            { header: 'Installation Checklist Status', key: 'installationcheckliststatusboolean', width: 30 },
-            { header: 'PM Checklist Status', key: 'pmcheckliststatusboolean', width: 25 },
+            { header: 'Year', key: 'year', width: 15 },
+            { header: 'Status', key: 'status', width: 15 },
             { header: 'Created At', key: 'createdAt', width: 18 },
             { header: 'Modified At', key: 'modifiedAt', width: 18 }
         ];
@@ -53,25 +44,16 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Data rows add kariye
-        productData.forEach((product, index) => {
+        cmcNcmcYearData.forEach((yearData, index) => {
             const row = worksheet.addRow({
                 sno: index + 1,
-                productgroup: product.productgroup || '',
-                partnoid: product.partnoid || '',
-                product: product.product || '',
-                subgrp: product.subgrp || '',
-                frequency: product.frequency || '',
-                dateoflaunch: product.dateoflaunch ? new Date(product.dateoflaunch).toLocaleDateString('en-IN') : '',
-                endofsaledate: product.endofsaledate ? new Date(product.endofsaledate).toLocaleDateString('en-IN') : '',
-                endofsupportdate: product.endofsupportdate ? new Date(product.endofsupportdate).toLocaleDateString('en-IN') : '',
-                exsupportavlb: product.exsupportavlb ? new Date(product.exsupportavlb).toLocaleDateString('en-IN') : '',
-                installationcheckliststatusboolean: product.installationcheckliststatusboolean || '',
-                pmcheckliststatusboolean: product.pmcheckliststatusboolean || '',
-                createdAt: product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-IN') : '',
-                modifiedAt: product.modifiedAt ? new Date(product.modifiedAt).toLocaleDateString('en-IN') : ''
+                year: yearData.year || '',
+                status: yearData.status || '',
+                createdAt: yearData.createdAt ? new Date(yearData.createdAt).toLocaleDateString('en-IN') : '',
+                modifiedAt: yearData.modifiedAt ? new Date(yearData.modifiedAt).toLocaleDateString('en-IN') : ''
             });
 
-            // Row styling
+            // Basic row styling
             row.eachCell((cell, colNumber) => {
                 cell.border = {
                     top: { style: 'thin' },
@@ -89,8 +71,8 @@ router.get('/export-products', async (req, res) => {
                     };
                 }
 
-                // Center align S.No column
-                if (colNumber === 1) {
+                // Center align S.No and Year columns
+                if (colNumber === 1 || colNumber === 2) {
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
                 } else {
                     cell.alignment = { vertical: 'middle', horizontal: 'left' };
@@ -111,7 +93,7 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Response headers set kariye
-        const fileName = `products_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const fileName = `cmc_ncmc_years_data_${new Date().toISOString().split('T')[0]}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -120,9 +102,9 @@ router.get('/export-products', async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('Product Excel export error:', error);
+        console.error('CmcNcmcYear Excel export error:', error);
         res.status(500).json({
-            message: 'Error exporting product data to Excel',
+            message: 'Error exporting CMC/NCMC year data to Excel',
             error: error.message
         });
     }

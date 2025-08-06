@@ -1,36 +1,30 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Product = require('../../../Model/MasterSchema/ProductSchema'); 
+const PMDocMaster = require('../../../Model/MasterSchema/pmDocMasterSchema'); 
 const router = express.Router();
 
-// Product Excel export API
-router.get('/export-products', async (req, res) => {
+// PMDocMaster Excel export API
+router.get('/export-pmdocmaster', async (req, res) => {
     try {
-        // Sabhi product records fetch kariye
-        const productData = await Product.find({}).lean();
+        // Sabhi PM doc master records fetch kariye
+        const pmDocMasterData = await PMDocMaster.find({}).lean();
 
-        if (!productData || productData.length === 0) {
-            return res.status(404).json({ message: 'No product data found' });
+        if (!pmDocMasterData || pmDocMasterData.length === 0) {
+            return res.status(404).json({ message: 'No PM doc master data found' });
         }
 
         // Nyi Excel workbook banayiye
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Products Data');
+        const worksheet = workbook.addWorksheet('PM Doc Master Data');
 
         // Headers define kariye
         worksheet.columns = [
             { header: 'S.No', key: 'sno', width: 8 },
-            { header: 'Product Group', key: 'productgroup', width: 20 },
-            { header: 'Part No ID', key: 'partnoid', width: 18 },
-            { header: 'Product', key: 'product', width: 25 },
-            { header: 'Sub Group', key: 'subgrp', width: 18 },
-            { header: 'Frequency', key: 'frequency', width: 15 },
-            { header: 'Date of Launch', key: 'dateoflaunch', width: 18 },
-            { header: 'End of Sale Date', key: 'endofsaledate', width: 18 },
-            { header: 'End of Support Date', key: 'endofsupportdate', width: 20 },
-            { header: 'Ex Support Available', key: 'exsupportavlb', width: 20 },
-            { header: 'Installation Checklist Status', key: 'installationcheckliststatusboolean', width: 30 },
-            { header: 'PM Checklist Status', key: 'pmcheckliststatusboolean', width: 25 },
+            { header: 'Product Group', key: 'productGroup', width: 20 },
+            { header: 'CHL No', key: 'chlNo', width: 15 },
+            { header: 'Rev No', key: 'revNo', width: 15 },
+            { header: 'Type', key: 'type', width: 20 },
+            { header: 'Status', key: 'status', width: 12 },
             { header: 'Created At', key: 'createdAt', width: 18 },
             { header: 'Modified At', key: 'modifiedAt', width: 18 }
         ];
@@ -53,22 +47,16 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Data rows add kariye
-        productData.forEach((product, index) => {
+        pmDocMasterData.forEach((pmDoc, index) => {
             const row = worksheet.addRow({
                 sno: index + 1,
-                productgroup: product.productgroup || '',
-                partnoid: product.partnoid || '',
-                product: product.product || '',
-                subgrp: product.subgrp || '',
-                frequency: product.frequency || '',
-                dateoflaunch: product.dateoflaunch ? new Date(product.dateoflaunch).toLocaleDateString('en-IN') : '',
-                endofsaledate: product.endofsaledate ? new Date(product.endofsaledate).toLocaleDateString('en-IN') : '',
-                endofsupportdate: product.endofsupportdate ? new Date(product.endofsupportdate).toLocaleDateString('en-IN') : '',
-                exsupportavlb: product.exsupportavlb ? new Date(product.exsupportavlb).toLocaleDateString('en-IN') : '',
-                installationcheckliststatusboolean: product.installationcheckliststatusboolean || '',
-                pmcheckliststatusboolean: product.pmcheckliststatusboolean || '',
-                createdAt: product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-IN') : '',
-                modifiedAt: product.modifiedAt ? new Date(product.modifiedAt).toLocaleDateString('en-IN') : ''
+                productGroup: pmDoc.productGroup || '',
+                chlNo: pmDoc.chlNo || '',
+                revNo: pmDoc.revNo || '',
+                type: pmDoc.type || '',
+                status: pmDoc.status || '',
+                createdAt: pmDoc.createdAt ? new Date(pmDoc.createdAt).toLocaleDateString('en-IN') : '',
+                modifiedAt: pmDoc.modifiedAt ? new Date(pmDoc.modifiedAt).toLocaleDateString('en-IN') : ''
             });
 
             // Row styling
@@ -111,7 +99,7 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Response headers set kariye
-        const fileName = `products_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const fileName = `pm_doc_master_data_${new Date().toISOString().split('T')[0]}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -120,9 +108,9 @@ router.get('/export-products', async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('Product Excel export error:', error);
+        console.error('PMDocMaster Excel export error:', error);
         res.status(500).json({
-            message: 'Error exporting product data to Excel',
+            message: 'Error exporting PM doc master data to Excel',
             error: error.message
         });
     }

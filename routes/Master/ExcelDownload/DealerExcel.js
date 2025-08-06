@@ -1,6 +1,6 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Dealer = require('../../../Model/MasterSchema/DealerSchema'); // Apna correct path daaliye
+const Dealer = require('../../../Model/MasterSchema/DealerSchema'); 
 const router = express.Router();
 
 // Dealer Excel export API

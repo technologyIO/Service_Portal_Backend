@@ -1,38 +1,32 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Product = require('../../../Model/MasterSchema/ProductSchema'); 
+const HubStock = require('../../../Model/UploadSchema/HubStockSchema'); 
 const router = express.Router();
 
-// Product Excel export API
-router.get('/export-products', async (req, res) => {
+// HubStock Excel export API
+router.get('/export-hubstock', async (req, res) => {
     try {
-        // Sabhi product records fetch kariye
-        const productData = await Product.find({}).lean();
+        // Sabhi hub stock records fetch kariye
+        const hubStockData = await HubStock.find({}).lean();
 
-        if (!productData || productData.length === 0) {
-            return res.status(404).json({ message: 'No product data found' });
+        if (!hubStockData || hubStockData.length === 0) {
+            return res.status(404).json({ message: 'No hub stock data found' });
         }
 
         // Nyi Excel workbook banayiye
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Products Data');
+        const worksheet = workbook.addWorksheet('Hub Stock Data');
 
         // Headers define kariye
         worksheet.columns = [
             { header: 'S.No', key: 'sno', width: 8 },
-            { header: 'Product Group', key: 'productgroup', width: 20 },
-            { header: 'Part No ID', key: 'partnoid', width: 18 },
-            { header: 'Product', key: 'product', width: 25 },
-            { header: 'Sub Group', key: 'subgrp', width: 18 },
-            { header: 'Frequency', key: 'frequency', width: 15 },
-            { header: 'Date of Launch', key: 'dateoflaunch', width: 18 },
-            { header: 'End of Sale Date', key: 'endofsaledate', width: 18 },
-            { header: 'End of Support Date', key: 'endofsupportdate', width: 20 },
-            { header: 'Ex Support Available', key: 'exsupportavlb', width: 20 },
-            { header: 'Installation Checklist Status', key: 'installationcheckliststatusboolean', width: 30 },
-            { header: 'PM Checklist Status', key: 'pmcheckliststatusboolean', width: 25 },
+            { header: 'Material Code', key: 'materialcode', width: 18 },
+            { header: 'Material Description', key: 'materialdescription', width: 35 },
+            { header: 'Quantity', key: 'quantity', width: 12 },
+            { header: 'Storage Location', key: 'storagelocation', width: 20 },
+            { header: 'Status', key: 'status', width: 15 },
             { header: 'Created At', key: 'createdAt', width: 18 },
-            { header: 'Modified At', key: 'modifiedAt', width: 18 }
+            { header: 'Updated At', key: 'updatedAt', width: 18 }
         ];
 
         // Header row styling
@@ -53,22 +47,16 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Data rows add kariye
-        productData.forEach((product, index) => {
+        hubStockData.forEach((stock, index) => {
             const row = worksheet.addRow({
                 sno: index + 1,
-                productgroup: product.productgroup || '',
-                partnoid: product.partnoid || '',
-                product: product.product || '',
-                subgrp: product.subgrp || '',
-                frequency: product.frequency || '',
-                dateoflaunch: product.dateoflaunch ? new Date(product.dateoflaunch).toLocaleDateString('en-IN') : '',
-                endofsaledate: product.endofsaledate ? new Date(product.endofsaledate).toLocaleDateString('en-IN') : '',
-                endofsupportdate: product.endofsupportdate ? new Date(product.endofsupportdate).toLocaleDateString('en-IN') : '',
-                exsupportavlb: product.exsupportavlb ? new Date(product.exsupportavlb).toLocaleDateString('en-IN') : '',
-                installationcheckliststatusboolean: product.installationcheckliststatusboolean || '',
-                pmcheckliststatusboolean: product.pmcheckliststatusboolean || '',
-                createdAt: product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-IN') : '',
-                modifiedAt: product.modifiedAt ? new Date(product.modifiedAt).toLocaleDateString('en-IN') : ''
+                materialcode: stock.materialcode || '',
+                materialdescription: stock.materialdescription || '',
+                quantity: stock.quantity || 0,
+                storagelocation: stock.storagelocation || '',
+                status: stock.status || '',
+                createdAt: stock.createdAt ? new Date(stock.createdAt).toLocaleDateString('en-IN') : '',
+                updatedAt: stock.updatedAt ? new Date(stock.updatedAt).toLocaleDateString('en-IN') : ''
             });
 
             // Row styling
@@ -89,11 +77,19 @@ router.get('/export-products', async (req, res) => {
                     };
                 }
 
-                // Center align S.No column
-                if (colNumber === 1) {
+                // Center align S.No and Quantity columns
+                if (colNumber === 1 || colNumber === 4) {
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                } else if (colNumber === 3) { // Material Description - wrap text
+                    cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
                 } else {
                     cell.alignment = { vertical: 'middle', horizontal: 'left' };
+                }
+
+                // Quantity column formatting (right align for numbers)
+                if (colNumber === 4 && cell.value !== '') {
+                    cell.numFmt = '#,##0'; // Number formatting with commas
+                    cell.alignment = { vertical: 'middle', horizontal: 'right' };
                 }
             });
         });
@@ -111,7 +107,7 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Response headers set kariye
-        const fileName = `products_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const fileName = `hub_stock_data_${new Date().toISOString().split('T')[0]}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -120,9 +116,9 @@ router.get('/export-products', async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('Product Excel export error:', error);
+        console.error('HubStock Excel export error:', error);
         res.status(500).json({
-            message: 'Error exporting product data to Excel',
+            message: 'Error exporting hub stock data to Excel',
             error: error.message
         });
     }

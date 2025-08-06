@@ -1,6 +1,6 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Branch = require('../../../Model/CollectionSchema/BranchSchema'); // Apna correct path daaliye
+const Branch = require('../../../Model/CollectionSchema/BranchSchema'); 
 const router = express.Router();
 
 // Branch Excel export API

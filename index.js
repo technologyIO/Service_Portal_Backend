@@ -77,6 +77,37 @@ const dealerExcelRoutes = require('./routes/Master/ExcelDownload/DealerExcel');
 const branchExcelRoutes = require('./routes/Master/ExcelDownload/BranchExcel');
 const productExcelRoutes = require('./routes/Master/ExcelDownload/ProductExcel');
 const checklistExcelRoutes = require('./routes/Master/ExcelDownload/CheckListExcel');
+const equipmentExcelRoutes = require('./routes/Master/ExcelDownload/EquipmentExcel');
+const complaintTypeExcelRoutes = require('./routes/Master/ExcelDownload/ComplaintTypeExcel');
+const spareMasterExcelRoutes = require('./routes/Master/ExcelDownload/SpareMasterExcel');
+const pmDocMasterExcelRoutes = require('./routes/Master/ExcelDownload/PMDocMasterExcel');
+const formatMasterExcelRoutes = require('./routes/Master/ExcelDownload/FormatMasterExcel');
+const warrantyCodeExcelRoutes = require('./routes/Master/ExcelDownload/WarrantyCodeExcel');
+const reportedProblemExcelRoutes = require('./routes/Master/ExcelDownload/ReportedProblemExcel');
+const replacedPartCodeExcelRoutes = require('./routes/Master/ExcelDownload/ReplacedPartCodeExcel');
+const pmExcelRoutes = require('./routes/Master/ExcelDownload/PMExcel');
+const customerExcelRoutes = require('./routes/Upload/ExcelDownload/CustomerExcel');
+const hubStockExcelRoutes = require('./routes/Upload/ExcelDownload/HubStockExcel');
+const dealerStockExcelRoutes = require('./routes/Upload/ExcelDownload/DealerStockExcel');
+const amcContractExcelRoutes = require('./routes/Upload/ExcelDownload/AMCContractExcel');
+const pendingComplaintsExcelRoutes = require('./routes/Upload/ExcelDownload/PendingComplaintsExcel');
+const pendingInstallationExcelRoutes = require('./routes/Upload/ExcelDownload/PendingInstallationExcel');
+const geoExcelRoutes = require('./routes/Admin/ExcelDownload/GeoExcel');
+const countryExcelRoutes = require('./routes/Admin/ExcelDownload/CountryExcel');
+const regionExcelRoutes = require('./routes/Admin/ExcelDownload/RegionExcel');
+const stateExcelRoutes = require('./routes/Admin/ExcelDownload/StateExcel');
+const cityExcelRoutes = require('./routes/Admin/ExcelDownload/CityExcel');
+const departmentExcelRoutes = require('./routes/Admin/ExcelDownload/DepartmentExcel');
+const productGroupExcelRoutes = require('./routes/Admin/ExcelDownload/ProductGroupExcel');
+const checklistTypeExcelRoutes = require('./routes/Admin/ExcelDownload/CheckListTypeExcel');
+const checkpointTypeExcelRoutes = require('./routes/Admin/ExcelDownload/CheckPointTypeExcel');
+const cmcNcmcYearExcelRoutes = require('./routes/Admin/ExcelDownload/CmcNcmcYearExcel');
+const cmcNcmcPriceExcelRoutes = require('./routes/Admin/ExcelDownload/CmcNcmcPriceExcel');
+const cmcNcmcTdsExcelRoutes = require('./routes/Admin/ExcelDownload/CmcNcmcTdsExcel');
+const gstExcelRoutes = require('./routes/Admin/ExcelDownload/GstExcelExport');
+const discountExcelRoutes = require('./routes/Admin/ExcelDownload/DiscountExcel');
+const serviceChargeExcelRoutes = require('./routes/Admin/ExcelDownload/ServiceChargeExcel');
+
 const path = require('path');
 const fs = require('fs');
 
@@ -107,7 +138,7 @@ const corsOptions = {
     ];
 
     if (!origin || allowedOrigins.includes(origin)) {
-      console.log("✅ Allowed Origin:", origin);
+      // console.log("✅ Allowed Origin:", origin);
       callback(null, true);
     } else {
       console.error("❌ CORS Blocked Origin:", origin);
@@ -223,14 +254,45 @@ app.use('/bulk/warranty-code', WarrantyCodeBulk);
 
 
 // Excel Download 
-
+// Master Excel
 app.use('/excel/users', userExcelRoutes);
 app.use('/excel/aerb', aerbExcelRoutes);
 app.use('/excel/dealers', dealerExcelRoutes);
 app.use('/excel/branches', branchExcelRoutes);
 app.use('/excel/products', productExcelRoutes);
 app.use('/excel/checklists', checklistExcelRoutes);
-
+app.use('/excel/equipments', equipmentExcelRoutes)
+app.use('/excel/complainttypes', complaintTypeExcelRoutes);
+app.use('/excel/sparemaster', spareMasterExcelRoutes);
+app.use('/excel/pmdocmaster', pmDocMasterExcelRoutes);
+app.use('/excel/formatmaster', formatMasterExcelRoutes);
+app.use('/excel/warrantycodes', warrantyCodeExcelRoutes);
+app.use('/excel/reportedproblems', reportedProblemExcelRoutes);
+app.use('/excel/replacedpartcodes', replacedPartCodeExcelRoutes);
+app.use('/excel/pm', pmExcelRoutes);
+// Upload Excel
+app.use('/excel/customers', customerExcelRoutes);
+app.use('/excel/hubstock', hubStockExcelRoutes);
+app.use('/excel/dealerstock', dealerStockExcelRoutes);
+app.use('/excel/amccontracts', amcContractExcelRoutes);
+app.use('/excel/pendingcomplaints', pendingComplaintsExcelRoutes);
+app.use('/excel/pendinginstallations', pendingInstallationExcelRoutes);
+// Admin Excel
+app.use('/excel/geo', geoExcelRoutes);
+app.use('/excel/countries', countryExcelRoutes);
+app.use('/excel/regions', regionExcelRoutes);
+app.use('/excel/states', stateExcelRoutes);
+app.use('/excel/cities', cityExcelRoutes);
+app.use('/excel/departments', departmentExcelRoutes);
+app.use('/excel/productgroups', productGroupExcelRoutes);
+app.use('/excel/checklisttypes', checklistTypeExcelRoutes);
+app.use('/excel/checkpointtypes', checkpointTypeExcelRoutes);
+app.use('/excel/cmcncmcyears', cmcNcmcYearExcelRoutes);
+app.use('/excel/cmcncmcprices', cmcNcmcPriceExcelRoutes);
+app.use('/excel/cmcncmctds', cmcNcmcTdsExcelRoutes);
+app.use('/excel/gst', gstExcelRoutes);
+app.use('/excel/discounts', discountExcelRoutes);
+app.use('/excel/servicecharges', serviceChargeExcelRoutes);
 // Routes
 app.get('/', (req, res) => {
   res.send('Hello World!');

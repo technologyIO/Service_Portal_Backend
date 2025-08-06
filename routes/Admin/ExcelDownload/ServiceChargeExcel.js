@@ -1,38 +1,33 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Product = require('../../../Model/MasterSchema/ProductSchema'); 
+const ServiceCharge = require('../../../Model/AdminSchema/ServiceChargeSchema'); 
 const router = express.Router();
 
-// Product Excel export API
-router.get('/export-products', async (req, res) => {
+// ServiceCharge Excel export API - Clean version
+router.get('/export-servicecharges', async (req, res) => {
     try {
-        // Sabhi product records fetch kariye
-        const productData = await Product.find({}).lean();
+        // Sabhi service charge records fetch kariye
+        const serviceChargeData = await ServiceCharge.find({}).lean();
 
-        if (!productData || productData.length === 0) {
-            return res.status(404).json({ message: 'No product data found' });
+        if (!serviceChargeData || serviceChargeData.length === 0) {
+            return res.status(404).json({ message: 'No service charge data found' });
         }
 
         // Nyi Excel workbook banayiye
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Products Data');
+        const worksheet = workbook.addWorksheet('Service Charges Data');
 
         // Headers define kariye
         worksheet.columns = [
             { header: 'S.No', key: 'sno', width: 8 },
-            { header: 'Product Group', key: 'productgroup', width: 20 },
-            { header: 'Part No ID', key: 'partnoid', width: 18 },
-            { header: 'Product', key: 'product', width: 25 },
-            { header: 'Sub Group', key: 'subgrp', width: 18 },
-            { header: 'Frequency', key: 'frequency', width: 15 },
-            { header: 'Date of Launch', key: 'dateoflaunch', width: 18 },
-            { header: 'End of Sale Date', key: 'endofsaledate', width: 18 },
-            { header: 'End of Support Date', key: 'endofsupportdate', width: 20 },
-            { header: 'Ex Support Available', key: 'exsupportavlb', width: 20 },
-            { header: 'Installation Checklist Status', key: 'installationcheckliststatusboolean', width: 30 },
-            { header: 'PM Checklist Status', key: 'pmcheckliststatusboolean', width: 25 },
-            { header: 'Created At', key: 'createdAt', width: 18 },
-            { header: 'Modified At', key: 'modifiedAt', width: 18 }
+            { header: 'Part Number', key: 'partNumber', width: 18 },
+            { header: 'Description', key: 'description', width: 35 },
+            { header: 'Product', key: 'Product', width: 25 },
+            { header: 'CMC Price', key: 'cmcPrice', width: 15 },
+            { header: 'NCMC Price', key: 'ncmcPrice', width: 15 },
+            { header: 'Within City Charge', key: 'withinCityCharge', width: 18 },
+            { header: 'Outside City Charge', key: 'outsideCityCharge', width: 18 },
+            { header: 'Remarks', key: 'remarks', width: 30 }
         ];
 
         // Header row styling
@@ -53,25 +48,20 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Data rows add kariye
-        productData.forEach((product, index) => {
+        serviceChargeData.forEach((serviceCharge, index) => {
             const row = worksheet.addRow({
                 sno: index + 1,
-                productgroup: product.productgroup || '',
-                partnoid: product.partnoid || '',
-                product: product.product || '',
-                subgrp: product.subgrp || '',
-                frequency: product.frequency || '',
-                dateoflaunch: product.dateoflaunch ? new Date(product.dateoflaunch).toLocaleDateString('en-IN') : '',
-                endofsaledate: product.endofsaledate ? new Date(product.endofsaledate).toLocaleDateString('en-IN') : '',
-                endofsupportdate: product.endofsupportdate ? new Date(product.endofsupportdate).toLocaleDateString('en-IN') : '',
-                exsupportavlb: product.exsupportavlb ? new Date(product.exsupportavlb).toLocaleDateString('en-IN') : '',
-                installationcheckliststatusboolean: product.installationcheckliststatusboolean || '',
-                pmcheckliststatusboolean: product.pmcheckliststatusboolean || '',
-                createdAt: product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-IN') : '',
-                modifiedAt: product.modifiedAt ? new Date(product.modifiedAt).toLocaleDateString('en-IN') : ''
+                partNumber: serviceCharge.partNumber || '',
+                description: serviceCharge.description || '',
+                Product: serviceCharge.Product || '',
+                cmcPrice: serviceCharge.cmcPrice || 0,
+                ncmcPrice: serviceCharge.ncmcPrice || 0,
+                withinCityCharge: serviceCharge.onCallVisitCharge?.withinCity || 0,
+                outsideCityCharge: serviceCharge.onCallVisitCharge?.outsideCity || 0,
+                remarks: serviceCharge.remarks || ''
             });
 
-            // Row styling
+            // Basic row styling
             row.eachCell((cell, colNumber) => {
                 cell.border = {
                     top: { style: 'thin' },
@@ -92,6 +82,11 @@ router.get('/export-products', async (req, res) => {
                 // Center align S.No column
                 if (colNumber === 1) {
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                } else if (colNumber === 3 || colNumber === 9) { // Description and Remarks - wrap text
+                    cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+                } else if (colNumber >= 5 && colNumber <= 8) { // Price columns - right align and currency format
+                    cell.alignment = { vertical: 'middle', horizontal: 'right' };
+                    cell.numFmt = '₹#,##0.00'; // Indian currency format
                 } else {
                     cell.alignment = { vertical: 'middle', horizontal: 'left' };
                 }
@@ -111,7 +106,7 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Response headers set kariye
-        const fileName = `products_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const fileName = `service_charges_data_${new Date().toISOString().split('T')[0]}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -120,9 +115,9 @@ router.get('/export-products', async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('Product Excel export error:', error);
+        console.error('ServiceCharge Excel export error:', error);
         res.status(500).json({
-            message: 'Error exporting product data to Excel',
+            message: 'Error exporting service charge data to Excel',
             error: error.message
         });
     }

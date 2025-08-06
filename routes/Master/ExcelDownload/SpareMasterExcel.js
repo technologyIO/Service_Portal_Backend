@@ -1,38 +1,35 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Product = require('../../../Model/MasterSchema/ProductSchema'); 
+const SpareMaster = require('../../../Model/MasterSchema/SpareMasterSchema'); 
 const router = express.Router();
 
-// Product Excel export API
-router.get('/export-products', async (req, res) => {
+// SpareMaster Excel export API
+router.get('/export-sparemaster', async (req, res) => {
     try {
-        // Sabhi product records fetch kariye
-        const productData = await Product.find({}).lean();
+        // Sabhi spare master records fetch kariye
+        const spareMasterData = await SpareMaster.find({}).lean();
 
-        if (!productData || productData.length === 0) {
-            return res.status(404).json({ message: 'No product data found' });
+        if (!spareMasterData || spareMasterData.length === 0) {
+            return res.status(404).json({ message: 'No spare master data found' });
         }
 
         // Nyi Excel workbook banayiye
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Products Data');
+        const worksheet = workbook.addWorksheet('Spare Master Data');
 
         // Headers define kariye
         worksheet.columns = [
             { header: 'S.No', key: 'sno', width: 8 },
-            { header: 'Product Group', key: 'productgroup', width: 20 },
-            { header: 'Part No ID', key: 'partnoid', width: 18 },
-            { header: 'Product', key: 'product', width: 25 },
-            { header: 'Sub Group', key: 'subgrp', width: 18 },
-            { header: 'Frequency', key: 'frequency', width: 15 },
-            { header: 'Date of Launch', key: 'dateoflaunch', width: 18 },
-            { header: 'End of Sale Date', key: 'endofsaledate', width: 18 },
-            { header: 'End of Support Date', key: 'endofsupportdate', width: 20 },
-            { header: 'Ex Support Available', key: 'exsupportavlb', width: 20 },
-            { header: 'Installation Checklist Status', key: 'installationcheckliststatusboolean', width: 30 },
-            { header: 'PM Checklist Status', key: 'pmcheckliststatusboolean', width: 25 },
+            { header: 'Sub Group', key: 'Sub_grp', width: 20 },
+            { header: 'Part Number', key: 'PartNumber', width: 20 },
+            { header: 'Description', key: 'Description', width: 35 },
+            { header: 'Type', key: 'Type', width: 15 },
+            { header: 'Rate (MRP)', key: 'Rate', width: 15 },
+            { header: 'DP (Dealer Price)', key: 'DP', width: 18 },
+            { header: 'Charges (Exchange Price)', key: 'Charges', width: 22 },
+            { header: 'Spare Image URL', key: 'spareiamegUrl', width: 30 },
             { header: 'Created At', key: 'createdAt', width: 18 },
-            { header: 'Modified At', key: 'modifiedAt', width: 18 }
+            { header: 'Updated At', key: 'updatedAt', width: 18 }
         ];
 
         // Header row styling
@@ -53,22 +50,24 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Data rows add kariye
-        productData.forEach((product, index) => {
+        spareMasterData.forEach((spare, index) => {
+            // Charges field ko safely handle kariye (Mixed type hai)
+            const chargesValue = spare.Charges !== null && spare.Charges !== undefined 
+                ? (typeof spare.Charges === 'object' ? JSON.stringify(spare.Charges) : spare.Charges.toString())
+                : '';
+
             const row = worksheet.addRow({
                 sno: index + 1,
-                productgroup: product.productgroup || '',
-                partnoid: product.partnoid || '',
-                product: product.product || '',
-                subgrp: product.subgrp || '',
-                frequency: product.frequency || '',
-                dateoflaunch: product.dateoflaunch ? new Date(product.dateoflaunch).toLocaleDateString('en-IN') : '',
-                endofsaledate: product.endofsaledate ? new Date(product.endofsaledate).toLocaleDateString('en-IN') : '',
-                endofsupportdate: product.endofsupportdate ? new Date(product.endofsupportdate).toLocaleDateString('en-IN') : '',
-                exsupportavlb: product.exsupportavlb ? new Date(product.exsupportavlb).toLocaleDateString('en-IN') : '',
-                installationcheckliststatusboolean: product.installationcheckliststatusboolean || '',
-                pmcheckliststatusboolean: product.pmcheckliststatusboolean || '',
-                createdAt: product.createdAt ? new Date(product.createdAt).toLocaleDateString('en-IN') : '',
-                modifiedAt: product.modifiedAt ? new Date(product.modifiedAt).toLocaleDateString('en-IN') : ''
+                Sub_grp: spare.Sub_grp || '',
+                PartNumber: spare.PartNumber || '',
+                Description: spare.Description || '',
+                Type: spare.Type || '',
+                Rate: spare.Rate || '',
+                DP: spare.DP || '',
+                Charges: chargesValue,
+                spareiamegUrl: spare.spareiamegUrl || '',
+                createdAt: spare.createdAt ? new Date(spare.createdAt).toLocaleDateString('en-IN') : '',
+                updatedAt: spare.updatedAt ? new Date(spare.updatedAt).toLocaleDateString('en-IN') : ''
             });
 
             // Row styling
@@ -92,6 +91,12 @@ router.get('/export-products', async (req, res) => {
                 // Center align S.No column
                 if (colNumber === 1) {
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                } else if (colNumber === 4) { // Description column - wrap text
+                    cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+                } else if (colNumber === 9) { // Image URL column - wrap text
+                    cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+                } else if ([6, 7, 8].includes(colNumber)) { // Price columns - right align
+                    cell.alignment = { vertical: 'middle', horizontal: 'right' };
                 } else {
                     cell.alignment = { vertical: 'middle', horizontal: 'left' };
                 }
@@ -111,7 +116,7 @@ router.get('/export-products', async (req, res) => {
         });
 
         // Response headers set kariye
-        const fileName = `products_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const fileName = `spare_master_data_${new Date().toISOString().split('T')[0]}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -120,9 +125,9 @@ router.get('/export-products', async (req, res) => {
         res.end();
 
     } catch (error) {
-        console.error('Product Excel export error:', error);
+        console.error('SpareMaster Excel export error:', error);
         res.status(500).json({
-            message: 'Error exporting product data to Excel',
+            message: 'Error exporting spare master data to Excel',
             error: error.message
         });
     }
