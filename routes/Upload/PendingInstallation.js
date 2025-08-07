@@ -343,6 +343,9 @@ router.delete('/pendinginstallations/:id', getPendingInstallationById, async (re
 router.get('/pendinginstallationsearch', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -374,14 +377,31 @@ router.get('/pendinginstallationsearch', async (req, res) => {
                 { mtl_grp4: { $regex: q, $options: 'i' } },
                 { palnumber: { $regex: q, $options: 'i' } },
                 { key: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
             ]
         };
 
-        const pendinginstallations = await PendingInstallation.find(query);
-        res.json(pendinginstallations);
+        const pendingInstallations = await PendingInstallation.find(query).skip(skip).limit(limit);
+        const totalPendingInstallations = await PendingInstallation.countDocuments(query);
+        const totalPages = Math.ceil(totalPendingInstallations / limit);
+
+        res.json({
+            pendingInstallations,
+            totalPages,
+            totalPendingInstallations,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({
+            message: err.message,
+            pendingInstallations: [],
+            totalPages: 1,
+            totalPendingInstallations: 0,
+            currentPage: 1
+        });
     }
 });
+
 
 module.exports = router;

@@ -81,7 +81,7 @@ router.post('/replacedpartcodes', checkDuplicateReplacedPartCode, async (req, re
 
 router.get('/searchreplacedpartcodes', async (req, res) => {
     try {
-        const { q } = req.query;
+        const { q, page = 1, limit = 10 } = req.query;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -94,16 +94,33 @@ router.get('/searchreplacedpartcodes', async (req, res) => {
                 { name: { $regex: q, $options: 'i' } },
                 { code: { $regex: q, $options: 'i' } },
                 { shorttextforcode: { $regex: q, $options: 'i' } },
+                { slno: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
             ]
         };
 
-        const users = await ReplacedPartCode.find(query);
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const totalReplacedPartCodes = await ReplacedPartCode.countDocuments(query);
+        const totalPages = Math.ceil(totalReplacedPartCodes / limit);
 
-        res.json(users);
+        const replacedPartCodes = await ReplacedPartCode.find(query)
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        res.json({
+            replacedPartCodes,
+            totalReplacedPartCodes,
+            totalPages,
+            currentPage: parseInt(page),
+            isSearch: true
+        });
     } catch (err) {
+        console.error(err);
         res.status(500).json({ message: err.message });
     }
 });
+
+
 
 // UPDATE a replaced part code
 router.put('/replacedpartcodes/:id', getReplacedPartCodeById, checkDuplicateReplacedPartCode, async (req, res) => {

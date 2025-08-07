@@ -110,35 +110,38 @@ router.delete('/aerb/:id', async (req, res) => {
 router.get('/searchaerb', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
-        // Check if the query parameter is missing
         if (!q) {
             return res.status(400).json({ message: 'Query parameter "q" is required' });
         }
 
         const query = {
             $or: [
-                { materialcode: { $regex: q, $options: 'i' } },  
-                { materialdescription: { $regex: q, $options: 'i' } } 
+                { materialcode: { $regex: q, $options: 'i' } },
+                { materialdescription: { $regex: q, $options: 'i' } }
             ]
         };
 
-        // Fetch the results from the database
-        const aerb = await Aerb.find(query);
+        const aerb = await Aerb.find(query).skip(skip).limit(limit);
+        const totalAerb = await Aerb.countDocuments(query);
+        const totalPages = Math.ceil(totalAerb / limit);
 
-        // If no results found, send a 404 response
-        if (!aerb || aerb.length === 0) {
-            return res.status(404).json({ message: 'No results found' });
-        }
-
-        // Return the found data
-        res.json(aerb);
+        res.json({
+            aerbEntries: aerb,
+            totalPages,
+            totalAerb,
+            currentPage: page,
+            isSearch: true
+        });
 
     } catch (err) {
-        // Handle unexpected errors and send a detailed message
         res.status(500).json({ message: 'Server error: ' + err.message });
     }
 });
+
 
 
 module.exports = router;

@@ -84,27 +84,27 @@ router.get('/hubstocks/material-list', async (req, res) => {
 // Example route: /collections/hubstocks/check-material/:materialcode
 router.get('/hubstocks/check-material/:materialcode', async (req, res) => {
     try {
-      const { materialcode } = req.params;
-  
-      // 1) Fetch matching documents from HubStock
-      const hubStockData = await HubStock.find(
-        { materialcode },
-        { storagelocation: 1, quantity: 1, _id: 0 }
-      );
-  
-      // 2) Fetch matching documents from DealerStock
-      const dealerStockData = await DealerStock.find(
-        { materialcode },
-        { dealercity: 1, unrestrictedquantity: 1, _id: 0 }
-      );
-  
-      // 3) Send both results back
-      res.json({ hubStockData, dealerStockData });
+        const { materialcode } = req.params;
+
+        // 1) Fetch matching documents from HubStock
+        const hubStockData = await HubStock.find(
+            { materialcode },
+            { storagelocation: 1, quantity: 1, _id: 0 }
+        );
+
+        // 2) Fetch matching documents from DealerStock
+        const dealerStockData = await DealerStock.find(
+            { materialcode },
+            { dealercity: 1, unrestrictedquantity: 1, _id: 0 }
+        );
+
+        // 3) Send both results back
+        res.json({ hubStockData, dealerStockData });
     } catch (err) {
-      res.status(500).json({ message: err.message });
+        res.status(500).json({ message: err.message });
     }
-  });
-  
+});
+
 // GET HubStock by ID
 router.get('/hubstocks/:id', getHubStockById, (req, res) => {
     res.json(res.hubStock);
@@ -169,6 +169,9 @@ router.delete('/hubstocks/:id', getHubStockById, async (req, res) => {
 router.get('/hubstocksearch', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -186,13 +189,23 @@ router.get('/hubstocksearch', async (req, res) => {
             ]
         };
 
-        const hubstocks = await HubStock.find(query);
-        res.json(hubstocks);
+        const hubStocks = await HubStock.find(query).skip(skip).limit(limit);
+        const totalHubStocks = await HubStock.countDocuments(query);
+        const totalPages = Math.ceil(totalHubStocks / limit);
+
+        res.json({
+            hubStocks,
+            totalPages,
+            totalHubStocks,
+            currentPage: page,
+            isSearch: true
+        });
 
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 
 module.exports = router;

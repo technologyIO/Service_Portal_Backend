@@ -168,12 +168,15 @@ router.delete("/spare/:id", async (req, res) => {
 router.get('/searched/spare', async (req, res) => {
   try {
     const { q } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
     if (!q || q.trim() === '') {
       return res.status(400).json({ message: 'Query is required' });
     }
 
-    const result = await SpareMaster.find({
+    const query = {
       $or: [
         { Sub_grp: { $regex: q, $options: 'i' } },
         { PartNumber: { $regex: q, $options: 'i' } },
@@ -207,9 +210,19 @@ router.get('/searched/spare', async (req, res) => {
           }
         }
       ]
-    });
+    };
 
-    res.status(200).json(result);
+    const spareMasters = await SpareMaster.find(query).skip(skip).limit(limit);
+    const totalSpareMasters = await SpareMaster.countDocuments(query);
+    const totalPages = Math.ceil(totalSpareMasters / limit);
+
+    res.status(200).json({
+      spareMasters,
+      totalPages,
+      totalSpareMasters,
+      currentPage: page,
+      isSearch: true
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

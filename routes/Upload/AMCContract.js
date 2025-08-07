@@ -126,8 +126,12 @@ router.delete('/amccontracts/:id', getAMCContractById, async (req, res) => {
 router.get('/amcsearch', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
         if (!q) {
-            return res.status(400).json({ message: 'Query parameter is required' })
+            return res.status(400).json({ message: 'Query parameter is required' });
         }
 
         const query = {
@@ -136,14 +140,32 @@ router.get('/amcsearch', async (req, res) => {
                 { satypeZDRC_ZDRN: { $regex: q, $options: 'i' } },
                 { serialnumber: { $regex: q, $options: 'i' } },
                 { materialcode: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
             ]
-        }
-        const amc = await AMCContract.find(query);
-        res.json(amc)
+        };
+
+        const amcContracts = await AMCContract.find(query).skip(skip).limit(limit);
+        const totalAMCContracts = await AMCContract.countDocuments(query);
+        const totalPages = Math.ceil(totalAMCContracts / limit);
+
+        res.json({
+            amcContracts,
+            totalPages,
+            totalAMCContracts,
+            currentPage: page,
+            isSearch: true
+        });
 
     } catch (err) {
-        res.status(500).json({ message: err.message })
+        res.status(500).json({
+            message: err.message,
+            amcContracts: [],
+            totalPages: 1,
+            totalAMCContracts: 0,
+            currentPage: 1
+        });
     }
-})
+});
+
 
 module.exports = router;

@@ -147,6 +147,9 @@ router.delete('/country/:id', async (req, res) => {
 router.get('/searchCountry', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -155,17 +158,32 @@ router.get('/searchCountry', async (req, res) => {
         const query = {
             $or: [
                 { name: { $regex: q, $options: 'i' } },
-                { status: { $regex: q, $options: 'i' } },
-
+                { geo: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
             ]
         };
 
-        const country = await Country.find(query);
+        const countries = await Country.find(query).skip(skip).limit(limit);
+        const totalCountries = await Country.countDocuments(query);
+        const totalPages = Math.ceil(totalCountries / limit);
 
-        res.json(country);
+        res.json({
+            countries,
+            totalPages,
+            totalCountries,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({
+            message: err.message,
+            countries: [],
+            totalPages: 1,
+            totalCountries: 0,
+            currentPage: 1
+        });
     }
 });
+
 
 module.exports = router;

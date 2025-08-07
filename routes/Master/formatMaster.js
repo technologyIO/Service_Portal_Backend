@@ -86,6 +86,9 @@ router.delete("/format/:id", async (req, res) => {
 router.get('/searchformat', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -105,12 +108,22 @@ router.get('/searchformat', async (req, res) => {
             query.$or.push({ revNo: Number(q) });
         }
 
-        const users = await FormatMaster.find(query);
-        res.json(users);
+        const formatMasters = await FormatMaster.find(query).skip(skip).limit(limit);
+        const totalFormatMasters = await FormatMaster.countDocuments(query);
+        const totalPages = Math.ceil(totalFormatMasters / limit);
+
+        res.json({
+            data: formatMasters,
+            totalPages,
+            totalFormatMasters,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 
 

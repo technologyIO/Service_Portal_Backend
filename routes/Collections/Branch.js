@@ -138,6 +138,9 @@ router.delete('/branch/:id', async (req, res) => {
 router.get('/searchbranch', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -150,17 +153,25 @@ router.get('/searchbranch', async (req, res) => {
                 { city: { $regex: q, $options: 'i' } },
                 { branchShortCode: { $regex: q, $options: 'i' } },
                 { state: { $regex: q, $options: 'i' } },
-
             ]
         };
 
-        const branch = await Branch.find(query);
+        const branch = await Branch.find(query).skip(skip).limit(limit);
+        const totalBranches = await Branch.countDocuments(query);
+        const totalPages = Math.ceil(totalBranches / limit);
 
-        res.json(branch);
+        res.json({
+            branches: branch,
+            totalPages,
+            totalBranches,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 
 

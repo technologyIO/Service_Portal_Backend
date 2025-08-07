@@ -1097,9 +1097,13 @@ router.delete('/user/:id', async (req, res) => {
     }
 });
 
-router.get('/search', async (req, res) => {
+router.get('/usersearch', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
         }
@@ -1133,10 +1137,20 @@ router.get('/search', async (req, res) => {
             ]
         };
 
-        const users = await User.find(query);
-        res.json(users);
+        const users = await User.find(query, { password: 0 }).skip(skip).limit(limit);
+        const totalUsers = await User.countDocuments(query);
+        const totalPages = Math.ceil(totalUsers / limit);
+
+        res.json({
+            users,
+            totalPages,
+            totalUsers,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
 module.exports = router;

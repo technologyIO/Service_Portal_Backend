@@ -209,6 +209,9 @@ router.delete('/api/region/:id', async (req, res) => {
 router.get('/searchregion', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         // Check if the query parameter is missing
         if (!q) {
@@ -217,25 +220,35 @@ router.get('/searchregion', async (req, res) => {
 
         const query = {
             $or: [
-                { regionName: { $regex: q, $options: 'i' } },  
-                { country: { $regex: q, $options: 'i' } } 
+                { regionName: { $regex: q, $options: 'i' } },
+                { country: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
             ]
         };
 
-        // Fetch the results from the database
-        const region = await Region.find(query);
+        // Fetch the results from the database with pagination
+        const regions = await Region.find(query).skip(skip).limit(limit);
+        const totalRegions = await Region.countDocuments(query);
+        const totalPages = Math.ceil(totalRegions / limit);
 
-        // If no results found, send a 404 response
-        if (!region || region.length === 0) {
-            return res.status(404).json({ message: 'No results found' });
-        }
-
-        // Return the found data
-        res.json(region);
+        // Return the found data with pagination info
+        res.json({
+            regions,
+            totalPages,
+            totalRegions,
+            currentPage: page,
+            isSearch: true
+        });
 
     } catch (err) {
         // Handle unexpected errors and send a detailed message
-        res.status(500).json({ message: 'Server error: ' + err.message });
+        res.status(500).json({
+            message: 'Server error: ' + err.message,
+            regions: [],
+            totalPages: 1,
+            totalRegions: 0,
+            currentPage: 1
+        });
     }
 });
 

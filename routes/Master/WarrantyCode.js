@@ -79,6 +79,9 @@ router.post('/warrantycode', checkDuplicateWarrantyCode, async (req, res) => {
 router.get('/searchwarrantycode', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -87,17 +90,32 @@ router.get('/searchwarrantycode', async (req, res) => {
         const query = {
             $or: [
                 { warrantycodeid: { $regex: q, $options: 'i' } },
-                { description: { $regex: q, $options: 'i' } }
+                { description: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
             ]
         };
 
-        const users = await WarrantyCode.find(query);
+        // If q is a number, also search by months
+        if (!isNaN(q)) {
+            query.$or.push({ months: Number(q) });
+        }
 
-        res.json(users);
+        const warrantyCodes = await WarrantyCode.find(query).skip(skip).limit(limit);
+        const totalWarrantyCodes = await WarrantyCode.countDocuments(query);
+        const totalPages = Math.ceil(totalWarrantyCodes / limit);
+
+        res.json({
+            warrantyCodes,
+            totalPages,
+            totalWarrantyCodes,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 // UPDATE a warranty code
 router.put('/warrantycode/:id', getWarrantyCodeById, checkDuplicateWarrantyCode, async (req, res) => {
@@ -124,10 +142,10 @@ router.put('/warrantycode/:id', getWarrantyCodeById, checkDuplicateWarrantyCode,
 // DELETE a warranty code
 router.delete('/warrantycode/:id', getWarrantyCodeById, async (req, res) => {
     try {
-       const deletedWarranty = await WarrantyCode.deleteOne({_id:req.params.id})
-       if(deletedWarranty.deletedCount===0){
-        res.status(404).json({message:'WarrantyCode Not Found'})
-       }
+        const deletedWarranty = await WarrantyCode.deleteOne({ _id: req.params.id })
+        if (deletedWarranty.deletedCount === 0) {
+            res.status(404).json({ message: 'WarrantyCode Not Found' })
+        }
         res.json({ message: 'Deleted warranty code' });
     } catch (err) {
         res.status(500).json({ message: err.message });

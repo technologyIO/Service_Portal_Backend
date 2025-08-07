@@ -696,15 +696,20 @@ router.delete('/pendingcomplaints/:id', getPendingComplaintById, async (req, res
 router.get('/pendingcomplaintsearch', async (req, res) => {
   try {
     const { q } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
     if (!q) {
-      return res.status(400).json({ message: 'query parameter is required' })
+      return res.status(400).json({ message: 'query parameter is required' });
     }
 
     const query = {
       $or: [
         { notificationtype: { $regex: q, $options: 'i' } },
         { notification_complaintid: { $regex: q, $options: 'i' } },
+        { notificationdate: { $regex: q, $options: 'i' } },
+        { userstatus: { $regex: q, $options: 'i' } },
         { materialdescription: { $regex: q, $options: 'i' } },
         { serialnumber: { $regex: q, $options: 'i' } },
         { devicedata: { $regex: q, $options: 'i' } },
@@ -714,15 +719,36 @@ router.get('/pendingcomplaintsearch', async (req, res) => {
         { dealercode: { $regex: q, $options: 'i' } },
         { customercode: { $regex: q, $options: 'i' } },
         { partnerresp: { $regex: q, $options: 'i' } },
+        { sparerequest: { $regex: q, $options: 'i' } },
+        { remark: { $regex: q, $options: 'i' } },
+        { breakdown: { $regex: q, $options: 'i' } },
+        { status: { $regex: q, $options: 'i' } }
       ]
-    }
-    const pendingComplaint = await PendingComplaints.find(query)
-    res.json(pendingComplaint)
+    };
+
+    const pendingComplaints = await PendingComplaints.find(query).skip(skip).limit(limit);
+    const totalPendingComplaints = await PendingComplaints.countDocuments(query);
+    const totalPages = Math.ceil(totalPendingComplaints / limit);
+
+    res.json({
+      pendingComplaints,
+      totalPages,
+      totalPendingComplaints,
+      currentPage: page,
+      isSearch: true
+    });
 
   } catch (err) {
-    res.status(500).json({ message: err.message })
+    res.status(500).json({
+      message: err.message,
+      pendingComplaints: [],
+      totalPages: 1,
+      totalPendingComplaints: 0,
+      currentPage: 1
+    });
   }
-})
+});
+
 
 
 

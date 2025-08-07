@@ -172,6 +172,9 @@ router.delete('/checklist/:id', async (req, res) => {
 router.get('/searchchecklist', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -186,16 +189,24 @@ router.get('/searchchecklist', async (req, res) => {
                 { prodGroup: { $regex: q, $options: 'i' } },
                 { result: { $regex: q, $options: 'i' } },
                 { resulttype: { $regex: q, $options: 'i' } },
-
             ]
         };
 
-        const checklist = await CheckList.find(query);
+        const checklist = await CheckList.find(query).skip(skip).limit(limit);
+        const totalChecklists = await CheckList.countDocuments(query);
+        const totalPages = Math.ceil(totalChecklists / limit);
 
-        res.json(checklist);
+        res.json({
+            checklists: checklist,
+            totalPages,
+            totalChecklists,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 module.exports = router;

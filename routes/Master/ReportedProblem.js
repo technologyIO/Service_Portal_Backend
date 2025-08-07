@@ -86,6 +86,9 @@ router.post('/reportedproblem', checkDuplicateReportedProblem, async (req, res) 
 router.get('/searchreportedproblem', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -97,17 +100,27 @@ router.get('/searchreportedproblem', async (req, res) => {
                 { codegroup: { $regex: q, $options: 'i' } },
                 { prodgroup: { $regex: q, $options: 'i' } },
                 { name: { $regex: q, $options: 'i' } },
-                { shorttextforcode: { $regex: q, $options: 'i' } }
+                { shorttextforcode: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
             ]
         };
 
-        const users = await ReportedProblem.find(query);
+        const reportedProblems = await ReportedProblem.find(query).skip(skip).limit(limit);
+        const totalReportedProblems = await ReportedProblem.countDocuments(query);
+        const totalPages = Math.ceil(totalReportedProblems / limit);
 
-        res.json(users);
+        res.json({
+            reportedProblems,
+            totalPages,
+            totalReportedProblems,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 // UPDATE a reported problem
 router.put('/reportedproblem/:id', getReportedProblemById, checkDuplicateReportedProblem, async (req, res) => {
@@ -140,10 +153,10 @@ router.put('/reportedproblem/:id', getReportedProblemById, checkDuplicateReporte
 // DELETE a reported problem
 router.delete('/reportedproblem/:id', async (req, res) => {
     try {
-     const deletedreportedproblem = await ReportedProblem.deleteOne({_id:req.params.id})
-     if(deletedreportedproblem.deletedCount===0){
-        res.status(404).json({message:'ReportedProblem Not found'})
-     }
+        const deletedreportedproblem = await ReportedProblem.deleteOne({ _id: req.params.id })
+        if (deletedreportedproblem.deletedCount === 0) {
+            res.status(404).json({ message: 'ReportedProblem Not found' })
+        }
 
         res.json({ message: 'Deleted reported problem' });
     } catch (err) {

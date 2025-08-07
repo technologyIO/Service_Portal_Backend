@@ -67,31 +67,31 @@ router.get('/productbypage', async (req, res) => {
 
 
 router.get('/skillbyproductgroup', async (req, res) => {
-  try {
-    const groupedProducts = await Product.aggregate([
-      {
-        $group: {
-          _id: '$productgroup',
-          products: { $push: '$$ROOT' }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          productgroup: '$_id',
-          products: 1
-        }
-      },
-      {
-        $sort: { productgroup: 1 }
-      }
-    ]);
+    try {
+        const groupedProducts = await Product.aggregate([
+            {
+                $group: {
+                    _id: '$productgroup',
+                    products: { $push: '$$ROOT' }
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    productgroup: '$_id',
+                    products: 1
+                }
+            },
+            {
+                $sort: { productgroup: 1 }
+            }
+        ]);
 
-    res.status(200).json(groupedProducts);
-  } catch (error) {
-    console.error('Error fetching grouped products:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
+        res.status(200).json(groupedProducts);
+    } catch (error) {
+        console.error('Error fetching grouped products:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
 });
 
 
@@ -170,23 +170,26 @@ router.put('/product/:id', getProductById, checkDuplicatePartNoId, async (req, r
 // DELETE product
 router.delete('/product/:id', async (req, res) => {
     try {
-      const deleteProduct = await Product.deleteOne({ _id: req.params.id });
-  
-      if (deleteProduct.deletedCount === 0) {
-        return res.status(404).json({ message: "Product Not Found" });
-      }
-  
-      return res.json({ message: 'Deleted Product' });
+        const deleteProduct = await Product.deleteOne({ _id: req.params.id });
+
+        if (deleteProduct.deletedCount === 0) {
+            return res.status(404).json({ message: "Product Not Found" });
+        }
+
+        return res.json({ message: 'Deleted Product' });
     } catch (err) {
-      return res.status(500).json({ message: err.message });
+        return res.status(500).json({ message: err.message });
     }
-  });
-  
+});
+
 
 
 router.get('/searchProduct', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -202,12 +205,21 @@ router.get('/searchProduct', async (req, res) => {
             ]
         };
 
-        const users = await Product.find(query);
+        const products = await Product.find(query).skip(skip).limit(limit);
+        const totalProducts = await Product.countDocuments(query);
+        const totalPages = Math.ceil(totalProducts / limit);
 
-        res.json(users);
+        res.json({
+            product: products,
+            totalPages,
+            totalProducts,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 module.exports = router;

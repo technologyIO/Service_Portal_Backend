@@ -138,6 +138,9 @@ router.put('/api/geo/:id', async (req, res) => {
 router.get('/api/searchgeo', async (req, res) => {
     try {
         const keyword = req.query.keyword;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!keyword) {
             return res.status(400).json({
@@ -146,24 +149,42 @@ router.get('/api/searchgeo', async (req, res) => {
             });
         }
 
-        const geoResults = await Geo.find({
-            geoName: { $regex: keyword, $options: 'i' }
-        });
+        const query = {
+            $or: [
+                { geoName: { $regex: keyword, $options: 'i' } },
+                { status: { $regex: keyword, $options: 'i' } }
+            ]
+        };
+
+        const geoResults = await Geo.find(query).skip(skip).limit(limit);
+        const totalGeoEntries = await Geo.countDocuments(query);
+        const totalPages = Math.ceil(totalGeoEntries / limit);
 
         res.status(200).json({
             status: 200,
             data: {
-                geoDropdown: geoResults
+                GeoEntries: geoResults,
+                totalPages,
+                totalGeoEntries,
+                currentPage: page,
+                isSearch: true
             }
         });
     } catch (err) {
         res.status(500).json({
             status: 500,
             message: 'Server error',
-            error: err.message
+            error: err.message,
+            data: {
+                GeoEntries: [],
+                totalPages: 1,
+                totalGeoEntries: 0,
+                currentPage: 1
+            }
         });
     }
 });
+
 
 
 // Delete geo entry

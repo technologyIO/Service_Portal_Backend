@@ -36,6 +36,9 @@ router.get("/complainttype/paginated", async (req, res) => {
 router.get("/complainttype/search", async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ success: false, message: "Query parameter 'q' is required" });
@@ -55,12 +58,23 @@ router.get("/complainttype/search", async (req, res) => {
             query.$or.push({ status: q.toLowerCase() === 'true' });
         }
 
-        const results = await ComplaintType.find(query);
-        res.status(200).json({ success: true, data: results });
+        const results = await ComplaintType.find(query).skip(skip).limit(limit);
+        const totalComplaintTypes = await ComplaintType.countDocuments(query);
+        const totalPages = Math.ceil(totalComplaintTypes / limit);
+
+        res.status(200).json({
+            success: true,
+            data: results,
+            totalPages,
+            totalComplaintTypes,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
 });
+
 // READ ALL
 router.get('/complainttype', async (req, res) => {
     try {

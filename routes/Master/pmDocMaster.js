@@ -38,6 +38,10 @@ router.get('/all', async (req, res) => {
 router.get('/search-pmdocmaster', async (req, res) => {
   try {
     const { q } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
     if (!q || typeof q !== 'string') {
       return res.status(400).json({ message: 'Query parameter "q" is required and must be a string' });
     }
@@ -52,12 +56,24 @@ router.get('/search-pmdocmaster', async (req, res) => {
       ],
     };
 
-    const results = await PMDocMaster.find(query).sort({ createdAt: -1 });
-    res.json({ success: true, count: results.length, data: results });
+    const results = await PMDocMaster.find(query).skip(skip).limit(limit).sort({ createdAt: -1 });
+    const totalPMDocMasters = await PMDocMaster.countDocuments(query);
+    const totalPages = Math.ceil(totalPMDocMasters / limit);
+
+    res.json({
+      success: true,
+      count: results.length,
+      data: results,
+      totalPages,
+      totalPMDocMasters,
+      currentPage: page,
+      isSearch: true
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
+
 // 🔹 READ ONE BY ID
 router.get('/:id', async (req, res) => {
   try {

@@ -103,25 +103,25 @@ router.get('/dealerstocks/count/:dealercodeid', async (req, res) => {
 
 router.get('/dealerstocks/materials/:dealercodeid', async (req, res) => {
     try {
-      const { dealercodeid } = req.params;
-  
-      // Query DealerStock where dealercodeid matches
-      // Only return materialcode, materialdescription, and unrestrictedquantity
-      const results = await DealerStock.find(
-        { dealercodeid },
-        {
-          materialcode: 1,
-          materialdescription: 1,
-          unrestrictedquantity: 1,
-          _id: 0
-        }
-      );
-  
-      res.json(results);
+        const { dealercodeid } = req.params;
+
+        // Query DealerStock where dealercodeid matches
+        // Only return materialcode, materialdescription, and unrestrictedquantity
+        const results = await DealerStock.find(
+            { dealercodeid },
+            {
+                materialcode: 1,
+                materialdescription: 1,
+                unrestrictedquantity: 1,
+                _id: 0
+            }
+        );
+
+        res.json(results);
     } catch (err) {
-      res.status(500).json({ message: err.message });
+        res.status(500).json({ message: err.message });
     }
-  });
+});
 
 
 // GET DealerStock by ID
@@ -199,6 +199,9 @@ router.delete('/dealerstocks/:id', getDealerStockById, async (req, res) => {
 router.get('/dealerstocksearch', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         // Check if query parameter 'q' exists
         if (!q || q.trim() === '') {
@@ -217,21 +220,37 @@ router.get('/dealerstocksearch', async (req, res) => {
                 { materialcode: { $regex: q, $options: 'i' } },
                 { materialdescription: { $regex: q, $options: 'i' } },
                 { plant: { $regex: q, $options: 'i' } },
-                ...(numericQuery !== null ? [{ unrestrictedquantity: numericQuery }] : []),  
+                ...(numericQuery !== null ? [{ unrestrictedquantity: numericQuery }] : []),
                 { status: { $regex: q, $options: 'i' } },
             ]
         };
 
-        // Fetch the matching dealer stocks
-        const dealerstocks = await DealerStock.find(query);
+        // Fetch the matching dealer stocks with pagination
+        const dealerstocks = await DealerStock.find(query).skip(skip).limit(limit);
+        const totalDealerStocks = await DealerStock.countDocuments(query);
+        const totalPages = Math.ceil(totalDealerStocks / limit);
 
         // Respond with the fetched data
-        res.json(dealerstocks);
+        res.json({
+            dealerstocks,
+            totalPages,
+            totalDealerStocks,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
         console.error(err); // Log the error for debugging
-        res.status(500).json({ message: 'An error occurred while processing your request.', error: err.message });
+        res.status(500).json({
+            message: 'An error occurred while processing your request.',
+            error: err.message,
+            dealerstocks: [],
+            totalPages: 1,
+            totalDealerStocks: 0,
+            currentPage: 1
+        });
     }
 });
+
 
 
 
