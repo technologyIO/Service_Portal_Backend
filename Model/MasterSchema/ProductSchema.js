@@ -8,11 +8,15 @@ const ProductSchema = new mongoose.Schema({
   partnoid: {
     type: String,
     required: true,
-    unique: true  
+    unique: true
   },
   product: {
     type: String,
     required: true
+  },
+  status: {
+    type: String,
+    default: "Active"
   },
   subgrp: {
     type: String,

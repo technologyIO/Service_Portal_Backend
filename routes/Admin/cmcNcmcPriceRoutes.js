@@ -43,6 +43,56 @@ router.get('/', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+// Add this search route to your existing CMC/NCMC price routes
+router.get('/searchprices', async (req, res) => {
+    try {
+        const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { partNumber: { $regex: q, $options: 'i' } },
+                { description: { $regex: q, $options: 'i' } },
+                { product: { $regex: q, $options: 'i' } },
+                { cmcPriceWithGst: isNaN(q) ? undefined : parseFloat(q) },
+                { ncmcPriceWithGst: isNaN(q) ? undefined : parseFloat(q) },
+                { serviceTax: { $regex: q, $options: 'i' } },
+                { remarks: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
+            ].filter(condition => condition !== undefined)
+        };
+
+        const cmcNcmcPrices = await CmcNcmcPrice.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const totalCmcNcmcPrices = await CmcNcmcPrice.countDocuments(query);
+        const totalPages = Math.ceil(totalCmcNcmcPrices / limit);
+
+        res.json({
+            records: cmcNcmcPrices,
+            totalPages,
+            totalCmcNcmcPrices,
+            currentPage: page,
+            isSearch: true
+        });
+    } catch (err) {
+        res.status(500).json({
+            message: err.message,
+            records: [],
+            totalPages: 1,
+            totalCmcNcmcPrices: 0,
+            currentPage: 1
+        });
+    }
+});
 
 // GET by ID
 router.get('/:id', getPriceById, (req, res) => {

@@ -49,6 +49,49 @@ router.get('/', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+router.get('/searchyears', async (req, res) => {
+    try {
+        const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { year: isNaN(q) ? undefined : parseInt(q) },
+                { status: { $regex: q, $options: 'i' } }
+            ].filter(condition => condition !== undefined)
+        };
+
+        const cmcNcmcYears = await CmcNcmcYear.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const totalCmcNcmcYears = await CmcNcmcYear.countDocuments(query);
+        const totalPages = Math.ceil(totalCmcNcmcYears / limit);
+
+        res.json({
+            data: cmcNcmcYears,
+            totalPages,
+            totalCmcNcmcYears,
+            currentPage: page,
+            isSearch: true
+        });
+    } catch (err) {
+        res.status(500).json({
+            message: err.message,
+            data: [],
+            totalPages: 1,
+            totalCmcNcmcYears: 0,
+            currentPage: 1
+        });
+    }
+});
 
 // GET by ID
 router.get('/:id', getCmcNcmcYearById, (req, res) => {
@@ -82,31 +125,31 @@ router.get('/cmcncmyears', async (req, res) => {
     }
 });
 router.get('/search', async (req, res) => {
-  try {
-    const { query } = req.query;
+    try {
+        const { query } = req.query;
 
-    if (!query) {
-      return res.status(400).json({ error: 'Search query is required' });
+        if (!query) {
+            return res.status(400).json({ error: 'Search query is required' });
+        }
+
+        // Build search query
+        const searchQuery = {
+            $or: [
+                { status: { $regex: query, $options: 'i' } } // Case-insensitive status search
+            ]
+        };
+
+        // Add year search if query is a number
+        if (!isNaN(query)) {
+            searchQuery.$or.push({ year: parseInt(query) });
+        }
+
+        const results = await CmcNcmcYear.find(searchQuery);
+        res.json(results);
+    } catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
-
-    // Build search query
-    const searchQuery = {
-      $or: [
-        { status: { $regex: query, $options: 'i' } } // Case-insensitive status search
-      ]
-    };
-
-    // Add year search if query is a number
-    if (!isNaN(query)) {
-      searchQuery.$or.push({ year: parseInt(query) });
-    }
-
-    const results = await CmcNcmcYear.find(searchQuery);
-    res.json(results);
-  } catch (error) {
-    console.error('Search error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
 });
 
 
@@ -148,5 +191,6 @@ router.delete('/:id', getCmcNcmcYearById, async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+ 
 
 module.exports = router;

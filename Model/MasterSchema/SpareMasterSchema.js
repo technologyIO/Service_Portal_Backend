@@ -8,6 +8,10 @@ const SpareMasterSchema = new mongoose.Schema(
     Type: { type: String, trim: true },
     Rate: { type: Number }, // MRP
     DP: { type: Number }, // Dealer Price
+    status: {
+      type: String,
+      default: "Active"
+    },
     Charges: {
       type: mongoose.Schema.Types.Mixed, // Allows both numbers and strings
       required: false // Make it optional

@@ -152,6 +152,9 @@ router.put('/product/:id', getProductById, checkDuplicatePartNoId, async (req, r
     if (req.body.exsupportavlb != null) {
         res.product.exsupportavlb = req.body.exsupportavlb;
     }
+    if (req.body.status != null) {
+        res.product.status = req.body.status;
+    }
     if (req.body.installationcheckliststatusboolean != null) {
         res.product.installationcheckliststatusboolean = req.body.installationcheckliststatusboolean;
     }

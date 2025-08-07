@@ -120,10 +120,11 @@ router.delete('/productgroup/:id', async (req, res) => {
     }
 })
 router.get('/searchproductgroupy', async (req, res) => {
-
     try {
-
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -137,15 +138,28 @@ router.get('/searchproductgroupy', async (req, res) => {
                 { RevNo: { $regex: q, $options: 'i' } },
                 { type: { $regex: q, $options: 'i' } },
                 { ChlNo: { $regex: q, $options: 'i' } },
-
             ]
         };
 
-        const productgroup = await ProductGroup.find(query);
+        const productGroups = await ProductGroup.find(query).skip(skip).limit(limit);
+        const totalProductGroups = await ProductGroup.countDocuments(query);
+        const totalPages = Math.ceil(totalProductGroups / limit);
 
-        res.json(productgroup);
+        res.json({
+            productGroups,
+            totalPages,
+            totalProductGroups,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({
+            message: err.message,
+            productGroups: [],
+            totalPages: 1,
+            totalProductGroups: 0,
+            currentPage: 1
+        });
     }
 });
 

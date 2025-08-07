@@ -100,6 +100,9 @@ router.delete('/CheckListType/:id', async (req, res) => {
 router.get('/searchCheckListType', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -112,13 +115,28 @@ router.get('/searchCheckListType', async (req, res) => {
             ]
         };
 
-        const checkListTypes = await CheckListType.find(query); // Use a different variable name
+        const checkListTypes = await CheckListType.find(query).skip(skip).limit(limit);
+        const totalCheckListTypes = await CheckListType.countDocuments(query);
+        const totalPages = Math.ceil(totalCheckListTypes / limit);
 
-        res.json(checkListTypes); // Return the result
+        res.json({
+            checkListTypes,
+            totalPages,
+            totalCheckListTypes,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({
+            message: err.message,
+            checkListTypes: [],
+            totalPages: 1,
+            totalCheckListTypes: 0,
+            currentPage: 1
+        });
     }
 });
+
 
 
 module.exports = router;

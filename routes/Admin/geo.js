@@ -86,15 +86,33 @@ router.put('/api/geo/:id', async (req, res) => {
     try {
         const { geoName, status } = req.body;
 
-        if (!geoName) {
-            return res.status(400).json({
-                status: 400,
-                message: 'geoName is required'
-            });
-        }
+        // If only status is being updated, fetch existing geoName
+        let updateFields = {};
 
-        const updateFields = { geoName };
-        if (status) updateFields.status = status;
+        if (status && !geoName) {
+            // Status-only update - fetch existing record
+            const existingGeo = await Geo.findById(req.params.id);
+            if (!existingGeo) {
+                return res.status(404).json({
+                    status: 404,
+                    message: 'Geo entry not found'
+                });
+            }
+            updateFields = {
+                geoName: existingGeo.geoName, // Keep existing geoName
+                status
+            };
+        } else {
+            // Full update
+            if (!geoName) {
+                return res.status(400).json({
+                    status: 400,
+                    message: 'geoName is required'
+                });
+            }
+            updateFields = { geoName };
+            if (status) updateFields.status = status;
+        }
 
         const updatedGeo = await Geo.findByIdAndUpdate(
             req.params.id,
@@ -132,6 +150,7 @@ router.put('/api/geo/:id', async (req, res) => {
         });
     }
 });
+
 
 
 // Search geo entries by geoName

@@ -1,15 +1,31 @@
 const express = require('express');
 const router = express.Router();
 const Region = require('../../Model/AdminSchema/RegionSchema');
-
-// Get all regions
+const State = require('../../Model/CollectionSchema/StateSchema');
 router.get('/api/region', async (req, res) => {
     try {
-        const regions = await Region.find();
+        const regions = await Region.find().lean();
+        const states = await State.find().lean();
+
+        const enrichedRegions = regions.map(region => {
+            // Match the FULL region name, not just the prefix
+            const matchingState = states.find(state =>
+                state.region && state.region === region.regionName
+            );
+
+            console.log(`Looking for regionName: "${region.regionName}"`);
+            console.log(`Match found:`, matchingState ? { stateId: matchingState.stateId, region: matchingState.region } : 'No match');
+
+            return {
+                ...region,
+                stateId: matchingState ? matchingState.stateId : null
+            };
+        });
+
         res.status(200).json({
             status: 200,
             data: {
-                regionDropdown: regions
+                regionDropdown: enrichedRegions
             }
         });
     } catch (err) {
@@ -20,6 +36,11 @@ router.get('/api/region', async (req, res) => {
         });
     }
 });
+
+
+
+
+
 
 router.get('/api/allregion', async (req, res) => {
     try {
@@ -124,34 +145,57 @@ router.post('/api/region', async (req, res) => {
 // Update region
 router.put('/api/region/:id', async (req, res) => {
     try {
-        const { regionName, country } = req.body;
+        const { regionName, country, status } = req.body;
 
-        if (!regionName) {
-            return res.status(400).json({
-                status: 400,
-                message: 'regionName is required'
+        // If only status is being updated, fetch existing data
+        let updateFields = {};
+
+        if (status && !regionName) {
+            // Status-only update - fetch existing record
+            const existingRegion = await Region.findById(req.params.id);
+            if (!existingRegion) {
+                return res.status(404).json({
+                    status: 404,
+                    message: 'Region not found'
+                });
+            }
+            updateFields = {
+                regionName: existingRegion.regionName, // Keep existing regionName
+                country: existingRegion.country, // Keep existing country
+                status
+            };
+        } else {
+            // Full update
+            if (!regionName) {
+                return res.status(400).json({
+                    status: 400,
+                    message: 'regionName is required'
+                });
+            }
+
+            // Check if another region with the same name exists (excluding current one)
+            const existingRegion = await Region.findOne({
+                regionName,
+                _id: { $ne: req.params.id }
             });
-        }
 
-        // Check if another region with the same name exists (excluding current one)
-        const existingRegion = await Region.findOne({
-            regionName,
-            _id: { $ne: req.params.id }
-        });
+            if (existingRegion) {
+                return res.status(409).json({
+                    status: 409,
+                    message: 'Region with this name already exists'
+                });
+            }
 
-        if (existingRegion) {
-            return res.status(409).json({
-                status: 409,
-                message: 'Region with this name already exists'
-            });
+            updateFields = {
+                regionName,
+                country: country || "" // ✅ Changed from [] to "" (empty string)
+            };
+            if (status) updateFields.status = status;
         }
 
         const updatedRegion = await Region.findByIdAndUpdate(
             req.params.id,
-            {
-                regionName,
-                country: country || []
-            },
+            updateFields,
             { new: true, runValidators: true }
         );
 
@@ -177,6 +221,7 @@ router.put('/api/region/:id', async (req, res) => {
         });
     }
 });
+
 
 // Delete region
 router.delete('/api/region/:id', async (req, res) => {

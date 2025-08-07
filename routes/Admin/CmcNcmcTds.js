@@ -43,6 +43,51 @@ router.get('/', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+// Add this search route to your existing CMC/NCMC TDS routes
+router.get('/searchtds', async (req, res) => {
+    try {
+        const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { tds: { $regex: q, $options: 'i' } },
+                { role: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
+            ]
+        };
+
+        const cmcNcmcTds = await CmcNcmcTds.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const totalCmcNcmcTds = await CmcNcmcTds.countDocuments(query);
+        const totalPages = Math.ceil(totalCmcNcmcTds / limit);
+
+        res.json({
+            records: cmcNcmcTds,
+            totalPages,
+            totalCmcNcmcTds,
+            currentPage: page,
+            isSearch: true
+        });
+    } catch (err) {
+        res.status(500).json({
+            message: err.message,
+            records: [],
+            totalPages: 1,
+            totalCmcNcmcTds: 0,
+            currentPage: 1
+        });
+    }
+});
 
 // GET by ID
 router.get('/:id', getTdsById, (req, res) => {

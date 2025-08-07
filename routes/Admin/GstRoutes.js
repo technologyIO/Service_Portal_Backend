@@ -43,6 +43,51 @@ router.get('/', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+// Add this search route to your existing GST routes
+router.get('/searchgst', async (req, res) => {
+    try {
+        const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const query = {
+            $or: [
+                { gst: { $regex: q, $options: 'i' } },
+                { role: { $regex: q, $options: 'i' } },
+                { status: { $regex: q, $options: 'i' } }
+            ]
+        };
+
+        const gstRecords = await Gst.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const totalGstRecords = await Gst.countDocuments(query);
+        const totalPages = Math.ceil(totalGstRecords / limit);
+
+        res.json({
+            records: gstRecords,
+            totalPages,
+            totalGstRecords,
+            currentPage: page,
+            isSearch: true
+        });
+    } catch (err) {
+        res.status(500).json({
+            message: err.message,
+            records: [],
+            totalPages: 1,
+            totalGstRecords: 0,
+            currentPage: 1
+        });
+    }
+});
 
 // GET by ID
 router.get('/:id', getGstById, (req, res) => {

@@ -22,6 +22,58 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+router.get('/searchservice', async (req, res) => {
+    try {
+        const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        if (!q) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const orQuery = [
+            { partNumber: { $regex: q, $options: 'i' } },
+            { description: { $regex: q, $options: 'i' } },
+            { Product: { $regex: q, $options: 'i' } },
+            { remarks: { $regex: q, $options: 'i' } }
+        ];
+
+        // If query is a number, add number fields
+        if (!isNaN(Number(q))) {
+            const num = Number(q);
+            orQuery.push({ cmcPrice: num });
+            orQuery.push({ ncmcPrice: num });
+            orQuery.push({ 'onCallVisitCharge.withinCity': num });
+            orQuery.push({ 'onCallVisitCharge.outsideCity': num });
+        }
+
+        const serviceCharges = await ServiceCharge.find({ $or: orQuery })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const totalServiceCharges = await ServiceCharge.countDocuments({ $or: orQuery });
+        const totalPages = Math.ceil(totalServiceCharges / limit);
+
+        res.json({
+            serviceCharges,
+            totalPages,
+            totalServiceCharges,
+            currentPage: page,
+            isSearch: true
+        });
+    } catch (err) {
+        res.status(500).json({
+            message: err.message,
+            serviceCharges: [],
+            totalPages: 1,
+            totalServiceCharges: 0,
+            currentPage: 1
+        });
+    }
+});
 router.get('/allservicecharge', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -88,29 +140,9 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
-// backend/routes/serviceCharge.js
-router.get('/search/:key', async (req, res) => {
-    try {
-        const key = req.params.key;
-        const orQuery = [
-            { partNumber: { $regex: key, $options: 'i' } },
-            { description: { $regex: key, $options: 'i' } },
-            { Product: { $regex: key, $options: 'i' } }
-        ];
 
-        // If key is a number, add number fields (cmcPrice, ncmcPrice)
-        if (!isNaN(Number(key))) {
-            const num = Number(key);
-            orQuery.push({ cmcPrice: num });
-            orQuery.push({ ncmcPrice: num });
-        }
 
-        const serviceCharges = await ServiceCharge.find({ $or: orQuery });
-        res.json({ serviceCharges });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+
 
 
 

@@ -6,6 +6,10 @@ const ServiceChargeSchema = new mongoose.Schema({
   Product: { type: String, required: true },
   cmcPrice: { type: Number, required: true },
   ncmcPrice: { type: Number, required: true },
+  status: {
+    type: String,
+    default: "Active"
+  },
   onCallVisitCharge: {
     withinCity: { type: Number, required: true },
     outsideCity: { type: Number, required: true }

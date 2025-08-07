@@ -72,10 +72,10 @@ router.get('/depart/:id', getDepartment, (req, res) => {
 
 router.get('/alldepart', async (req, res) => {
     try {
-        const depart = await Department.find();  
-        res.json(depart);  
+        const depart = await Department.find();
+        res.json(depart);
     } catch (err) {
-        res.status(500).json({ message: err.message });  
+        res.status(500).json({ message: err.message });
     }
 });
 router.patch('/depart/:id', getDepartment, async (req, res) => {
@@ -111,25 +111,42 @@ router.delete('/depart/:id', async (req, res) => {
 router.get('/searchdepartment', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
         }
 
         const query = {
-            $or: [ 
+            $or: [
                 { name: { $regex: q, $options: 'i' } },
                 { status: { $regex: q, $options: 'i' } },
-
             ]
         };
 
-        const departments = await Department.find(query);
+        const departments = await Department.find(query).skip(skip).limit(limit);
+        const totalDepartments = await Department.countDocuments(query);
+        const totalPages = Math.ceil(totalDepartments / limit);
 
-        res.json(departments);
+        res.json({
+            departments,
+            totalPages,
+            totalDepartments,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({
+            message: err.message,
+            departments: [],
+            totalPages: 1,
+            totalDepartments: 0,
+            currentPage: 1
+        });
     }
 });
+
 
 module.exports = router;

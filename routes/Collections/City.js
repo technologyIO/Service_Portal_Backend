@@ -245,6 +245,9 @@ router.delete('/city/:id', async (req, res) => {
 router.get('/searchCity', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
@@ -259,11 +262,27 @@ router.get('/searchCity', async (req, res) => {
             ]
         };
 
-        const cities = await City.find(query);
-        res.json(cities);
+        const cities = await City.find(query).skip(skip).limit(limit);
+        const totalCities = await City.countDocuments(query);
+        const totalPages = Math.ceil(totalCities / limit);
+
+        res.json({
+            cities,
+            totalPages,
+            totalCities,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({
+            message: err.message,
+            cities: [],
+            totalPages: 1,
+            totalCities: 0,
+            currentPage: 1
+        });
     }
 });
+
 
 module.exports = router;

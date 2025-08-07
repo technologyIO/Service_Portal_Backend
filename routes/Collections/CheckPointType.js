@@ -101,26 +101,43 @@ router.delete('/CheckPointType/:id', async (req, res) => {
 router.get('/searchCheckPointType', async (req, res) => {
     try {
         const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
         if (!q) {
             return res.status(400).json({ message: 'Query parameter is required' });
         }
 
         const query = {
-            $or: [ 
+            $or: [
                 { name: { $regex: q, $options: 'i' } },
                 { status: { $regex: q, $options: 'i' } },
-
             ]
         };
 
-        const checkPointType = await CheckPointType.find(query);
+        const checkPointTypes = await CheckPointType.find(query).skip(skip).limit(limit);
+        const totalCheckPointTypes = await CheckPointType.countDocuments(query);
+        const totalPages = Math.ceil(totalCheckPointTypes / limit);
 
-        res.json(checkPointType);
+        res.json({
+            checkPointTypes,
+            totalPages,
+            totalCheckPointTypes,
+            currentPage: page,
+            isSearch: true
+        });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({
+            message: err.message,
+            checkPointTypes: [],
+            totalPages: 1,
+            totalCheckPointTypes: 0,
+            currentPage: 1
+        });
     }
 });
+
 
 module.exports = router;
 
