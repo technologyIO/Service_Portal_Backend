@@ -435,7 +435,7 @@ router.post('/send-otp', async (req, res) => {
     otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
 
     const mailOptions = {
-        from: process.env.GMAIL_USER,
+        from: 'webadmin@skanray-access.com',
         to: email,
         subject: 'Your OTP for Equipment Installation',
         text: `Your OTP is: ${otp}. It is valid for 5 minutes.`
@@ -871,6 +871,9 @@ router.put('/equipment/:id', getEquipmentById, async (req, res) => {
     }
     if (req.body.dealerwarrantyenddate != null) {
         res.equipment.dealerwarrantyenddate = req.body.dealerwarrantyenddate;
+    }
+    if (req.body.installationreportno != null) {
+        res.equipment.installationreportno = req.body.installationreportno;
     }
     if (req.body.dealer != null) {
         res.equipment.dealer = req.body.dealer;
