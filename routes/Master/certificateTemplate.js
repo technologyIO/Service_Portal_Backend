@@ -202,11 +202,10 @@ module.exports = function getCertificateHTML(data) {
           <td>Pin Code : ${postalCode}</td>
           <td>State : ${state}</td>
         </tr>
-        <tr>
-          <td>AERB APP No. :</td>
-          <td>For X-Ray Equipments only</td>
-          <td></td>
+         <tr>
+          <td colspan="3">AERB APP No.For X-Ray Equipments only: ${aerbAppNo || "NA"}</td>
         </tr>
+        
       </table>
 
       <!-- Second table: Equipment & Warranty -->
