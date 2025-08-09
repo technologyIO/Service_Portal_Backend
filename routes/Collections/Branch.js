@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router();
-const Branch = require("../../Model/CollectionSchema/BranchSchema")
+const Branch = require("../../Model/CollectionSchema/BranchSchema");
+const User = require("../../Model/MasterSchema/UserSchema");
 
 
 async function getBranch(req, res, next) {
@@ -126,12 +127,61 @@ router.patch('/branch/:id', getBranch, async (req, res) => {
 
 router.delete('/branch/:id', async (req, res) => {
     try {
-        const deletedBranch = await Branch.deleteOne({ _id: req.params.id });
-        if (deletedBranch.deletedCount === 0) {
-            return res.status(404).json({ message: 'Branch Not Found' })
+        console.log(req.params.id);
+        const branch = await Branch.findById(req.params.id);
+        if (!branch) {
+            return res.status(404).json({ message: 'Branch Not Found' });
         }
-        res.json({ message: "Branch Deleted" })
+        console.log(branch);
+
+        const usersWithBranchInDemographics = await User.find({
+            'demographics': {
+                $elemMatch: {
+                    'type': 'branch',
+                    'values.name': branch.branchShortCode
+                }
+            }
+        });
+        console.log(usersWithBranchInDemographics);
+
+        const usersWithBranchInLegacy = await User.find({
+            'branch': branch.branchShortCode
+        });
+        console.log(usersWithBranchInLegacy);
+
+        const linkedUsers = [...usersWithBranchInDemographics, ...usersWithBranchInLegacy];
+
+        const uniqueLinkedUsers = linkedUsers.filter((user, index, self) => 
+            index === self.findIndex(u => u._id.toString() === user._id.toString())
+        );
+
+        if (uniqueLinkedUsers.length > 0) {
+            return res.status(400).json({ 
+                message: 'Branch is linked with user(s) and cannot be deleted',
+                // linkedUsersCount: uniqueLinkedUsers.length,
+                // linkedUsers: uniqueLinkedUsers.map(user => ({
+                //     id: user._id,
+                //     name: `${user.firstname} ${user.lastname}`,
+                //     email: user.email,
+                //     employeeid: user.employeeid
+                // }))
+            });
+        }
+
+        // const deletedBranch = await Branch.deleteOne({ _id: req.params.id });
+        // if (deletedBranch.deletedCount === 0) {
+        //     return res.status(404).json({ message: 'Branch Not Found' });
+        // }
+
+        res.json({ 
+            message: "Branch Deleted Successfully",
+            // deletedBranch: {
+            //     id: branch._id,
+            //     name: branch.name
+            // }
+        });
     } catch (err) {
+        console.error('Error deleting branch:', err);
         res.status(500).json({ message: err.message });
     }
 })
