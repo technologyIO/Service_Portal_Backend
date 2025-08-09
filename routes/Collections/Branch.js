@@ -168,10 +168,10 @@ router.delete('/branch/:id', async (req, res) => {
             });
         }
 
-        // const deletedBranch = await Branch.deleteOne({ _id: req.params.id });
-        // if (deletedBranch.deletedCount === 0) {
-        //     return res.status(404).json({ message: 'Branch Not Found' });
-        // }
+        const deletedBranch = await Branch.deleteOne({ _id: req.params.id });
+        if (deletedBranch.deletedCount === 0) {
+            return res.status(404).json({ message: 'Branch Not Found' });
+        }
 
         res.json({ 
             message: "Branch Deleted Successfully",
