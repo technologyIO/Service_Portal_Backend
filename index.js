@@ -134,7 +134,7 @@ const corsOptions = {
       "http://localhost",
       "http://127.0.0.1",
       "capacitor://localhost",
-      "https://localhost"
+      "https://localhost",
     ];
 
     if (!origin || allowedOrigins.includes(origin)) {
