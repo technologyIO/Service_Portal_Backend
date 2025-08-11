@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Branch = require("../../Model/CollectionSchema/BranchSchema");
 const User = require("../../Model/MasterSchema/UserSchema");
+const City = require("../../Model/CollectionSchema/CitySchema");
 
 async function getBranch(req, res, next) {
   try {
@@ -170,6 +171,7 @@ router.delete("/branch/:id", async (req, res) => {
     }
     console.log(branch);
 
+    // Check if any user has this branch linked
     const usersWithBranchInDemographics = await User.find({
       demographics: {
         $elemMatch: {
@@ -196,16 +198,62 @@ router.delete("/branch/:id", async (req, res) => {
         self.findIndex((u) => u._id.toString() === user._id.toString())
     );
 
-    if (uniqueLinkedUsers.length > 0) {
+    // Check if any city has this branch linked
+    const linkedCities = await City.find({
+      branch: branch.name  // Cities are linked by branch name
+    });
+
+    // If users or cities are linked, prevent deletion
+    if (uniqueLinkedUsers.length > 0 || linkedCities.length > 0) {
+      let message = "Branch cannot be deleted because it is linked with:\n";
+      let details = [];
+
+      if (uniqueLinkedUsers.length > 0) {
+        message += `• ${uniqueLinkedUsers.length} user(s)\n`;
+        details.push({
+          type: "users",
+          count: uniqueLinkedUsers.length,
+          items: uniqueLinkedUsers.map((user) => ({
+            id: user._id,
+            name: `${user.firstname} ${user.lastname}`,
+            email: user.email,
+            employeeid: user.employeeid,
+          }))
+        });
+      }
+
+      if (linkedCities.length > 0) {
+        message += `• ${linkedCities.length} city/cities`;
+        details.push({
+          type: "cities",
+          count: linkedCities.length,
+          items: linkedCities.map((city) => ({
+            id: city._id,
+            name: city.name,
+            cityID: city.cityID,
+            status: city.status
+          }))
+        });
+      }
+
       return res.status(400).json({
-        message: "Branch is linked with user(s) and cannot be deleted",
+        message: message.trim(),
+        details,
         linkedUsersCount: uniqueLinkedUsers.length,
+        linkedCitiesCount: linkedCities.length,
+        // Keep backward compatibility
         linkedUsers: uniqueLinkedUsers.map((user) => ({
           id: user._id,
           name: `${user.firstname} ${user.lastname}`,
           email: user.email,
           employeeid: user.employeeid,
         })),
+        linkedCities: linkedCities.map((city) => ({
+          id: city._id,
+          name: city.name,
+          cityID: city.cityID,
+          status: city.status
+        }))
       });
     }
 
@@ -216,10 +264,6 @@ router.delete("/branch/:id", async (req, res) => {
 
     res.json({
       message: "Branch Deleted Successfully",
-      // deletedBranch: {
-      //     id: branch._id,
-      //     name: branch.name
-      // }
     });
   } catch (err) {
     console.error("Error deleting branch:", err);
