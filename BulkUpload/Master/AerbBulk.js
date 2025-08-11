@@ -26,7 +26,7 @@ const upload = multer({
 
         // Check file extension
         const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-        
+
         // Check MIME type
         const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
 
@@ -44,7 +44,7 @@ const upload = multer({
     }
 });
 
-// Optimized: Predefined field mappings for faster access
+// Optimized: Predefined field mappings for faster access - UPDATED with status
 const FIELD_MAPPINGS = {
     'materialcode': new Set([
         'materialcode', 'material_code', 'partno',
@@ -54,8 +54,13 @@ const FIELD_MAPPINGS = {
         'materialdescription', 'material_description',
         'description', 'desc', 'product_description',
         'item_description', 'material_desc'
+    ]),
+    'status': new Set([
+        'status', 'record_status', 'material_status', 'current_status',
+        'active_status', 'item_status', 'aerb_status'
     ])
 };
+
 
 // Optimized normalizeFieldName with memoization
 const normalizedFieldCache = new Map();
@@ -136,7 +141,7 @@ function parseCSVFile(buffer) {
 // Helper function to determine file type
 function getFileType(fileName, mimeType) {
     const lowerFileName = fileName.toLowerCase();
-    
+
     // Check by extension first
     if (lowerFileName.endsWith('.csv')) {
         return 'csv';
@@ -145,7 +150,7 @@ function getFileType(fileName, mimeType) {
     } else if (lowerFileName.endsWith('.xls')) {
         return 'xls';
     }
-    
+
     // Fallback to MIME type
     switch (mimeType) {
         case 'text/csv':
@@ -168,7 +173,7 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
     for (const field of providedFields) {
         const oldValue = existingRecord[field] || '';
         const newValue = newRecord[field] || '';
-        
+
         if (oldValue !== newValue) {
             hasChanges = true;
             changes.push({
@@ -185,7 +190,7 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
     };
 }
 
-// Optimized record validation with early exits
+// Optimized record validation with early exits - UPDATED with status handling
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
     const providedFields = [];
@@ -202,7 +207,7 @@ function validateRecord(record, headerMapping) {
         providedFields.push(schemaField);
     }
 
-    // Required field validation
+    // Required field validation - status is NOT required
     if (!cleanedRecord.materialcode) {
         errors.push('Material Code is required');
     }
@@ -222,9 +227,18 @@ function validateRecord(record, headerMapping) {
     if (cleanedRecord.materialdescription.length > 500) {
         errors.push('Material Description too long (max 500 characters)');
     }
+    if (cleanedRecord.status && cleanedRecord.status.length > 50) {
+        errors.push('Status too long (max 50 characters)');
+    }
+
+    // Set default status only if not provided
+    if (!cleanedRecord.status || cleanedRecord.status.trim() === '') {
+        cleanedRecord.status = 'Active';
+    }
 
     return { cleanedRecord, errors, providedFields };
 }
+
 
 // MAIN ROUTE - Optimized with parallel processing and bulk operations
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
@@ -232,7 +246,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     const PARALLEL_BATCHES = 3;
     const BULK_WRITE_BATCH_SIZE = 500;
 
-    // Initialize response object with optimized structure
+    // Initialize response object with optimized structure - UPDATED with status tracking
     const response = {
         status: 'processing',
         startTime: new Date(),
@@ -248,7 +262,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             duplicatesInFile: 0,
             existingRecords: 0,
             skippedTotal: 0,
-            noChangesSkipped: 0
+            noChangesSkipped: 0,
+            statusUpdates: {
+                total: 0,
+                byStatus: {}
+            }
         },
         headerMapping: {},
         errors: [],
@@ -260,6 +278,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             currentBatchRecords: 0
         }
     };
+
 
     try {
         if (!req.file) {
@@ -326,6 +345,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         let currentRow = 0;
 
         // Process data in parallel batches
+        // Process data in parallel batches - UPDATED with status handling
         const processBatch = async (batch, batchIndex) => {
             const batchResults = [];
             const validRecords = [];
@@ -333,6 +353,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             let batchUpdated = 0;
             let batchFailed = 0;
             let batchSkipped = 0;
+            let batchStatusUpdates = 0;
 
             // Process each record in the batch
             for (const record of batch) {
@@ -344,13 +365,16 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     status: 'Processing',
                     action: '',
                     error: null,
-                    warnings: []
+                    warnings: [],
+                    assignedStatus: null, // Track assigned status
+                    statusChanged: false // Track if status was changed
                 };
 
                 try {
                     const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
                     recordResult.materialcode = cleanedRecord.materialcode || 'Unknown';
                     recordResult.materialdescription = cleanedRecord.materialdescription || 'N/A';
+                    recordResult.assignedStatus = cleanedRecord.status;
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -408,13 +432,31 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     if (existingRecord) {
                         response.summary.existingRecords++;
 
+                        // Handle status for existing records
+                        const statusFromFile = providedFields.includes('status');
+                        if (!statusFromFile) {
+                            // Keep existing status if not provided in file
+                            cleanedRecord.status = existingRecord.status;
+                            recordResult.assignedStatus = existingRecord.status;
+                        } else if (cleanedRecord.status !== existingRecord.status) {
+                            recordResult.statusChanged = true;
+                            batchStatusUpdates++;
+                        }
+
                         const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields);
 
                         if (comparisonResult.hasChanges) {
-                            const updateData = {
-                                materialdescription: cleanedRecord.materialdescription,
-                                modifiedAt: now
-                            };
+                            const updateData = { modifiedAt: now };
+
+                            // Update all provided fields including status if provided
+                            providedFields.forEach(field => {
+                                updateData[field] = cleanedRecord[field];
+                            });
+
+                            // Ensure status is updated if it changed
+                            if (statusFromFile || cleanedRecord.status !== existingRecord.status) {
+                                updateData.status = cleanedRecord.status;
+                            }
 
                             bulkUpdateOps.push({
                                 updateOne: {
@@ -432,6 +474,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                             recordResult.changeDetails = comparisonResult.changeDetails;
                             recordResult.changesText = changesList;
                             recordResult.warnings.push(`Changes detected: ${changesList}`);
+
+                            if (recordResult.statusChanged) {
+                                recordResult.warnings.push(`Status changed: ${existingRecord.status} → ${cleanedRecord.status}`);
+                            }
 
                             batchUpdated++;
                         } else {
@@ -505,9 +551,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 batchCreated,
                 batchUpdated,
                 batchFailed,
-                batchSkipped
+                batchSkipped,
+                batchStatusUpdates
             };
         };
+
 
         // Process batches in parallel with controlled concurrency
         const batchPromises = [];
@@ -544,6 +592,16 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 response.summary.noChangesSkipped += completedBatch.batchResults.filter(
                     r => r.status === 'Skipped' && r.action === 'No changes detected'
                 ).length;
+
+                const statusChanges = completedBatch.batchResults.filter(r => r.statusChanged);
+                response.summary.statusUpdates.total += statusChanges.length;
+                statusChanges.forEach(change => {
+                    const status = change.assignedStatus;
+                    if (!response.summary.statusUpdates.byStatus[status]) {
+                        response.summary.statusUpdates.byStatus[status] = 0;
+                    }
+                    response.summary.statusUpdates.byStatus[status]++;
+                });
                 response.results.push(...completedBatch.batchResults);
 
                 res.write(JSON.stringify({
@@ -609,7 +667,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             `File Duplicates: ${response.summary.duplicatesInFile}, ` +
             `Existing Records: ${response.summary.existingRecords}, ` +
             `No Changes Skipped: ${response.summary.noChangesSkipped}, ` +
-            `Total Skipped: ${response.summary.skippedTotal}`;
+            `Total Skipped: ${response.summary.skippedTotal}, ` +
+            `Status Updates: ${response.summary.statusUpdates.total}`;
+
 
         res.write(JSON.stringify(response) + '\n');
         res.end();

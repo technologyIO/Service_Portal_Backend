@@ -37,7 +37,7 @@ const upload = multer({
     }
 });
 
-// Optimized: Predefined field mappings for faster access
+// Optimized: Predefined field mappings for faster access - UPDATED with status
 const FIELD_MAPPINGS = {
     'invoiceno': new Set(['invoiceno', 'invoice_no', 'invoicenumber', 'invoice_number', 'billno', 'bill_no']),
     'invoicedate': new Set(['invoicedate', 'invoice_date', 'billdate', 'bill_date', 'date']),
@@ -63,7 +63,8 @@ const FIELD_MAPPINGS = {
     'currentcustomercountry': new Set(['currentcustomercountry', 'current_customer_country', 'currentcountry', 'current_country']),
     'mtl_grp4': new Set(['mtlgrp4', 'mtl_grp4', 'materialgroup4', 'material_group4', 'mtlgroup4', 'mtl_group4']),
     'key': new Set(['key', 'keyfield', 'key_field', 'id']),
-    'palnumber': new Set(['palnumber', 'pal_number', 'pal', 'palletno', 'pallet_no'])
+    'palnumber': new Set(['palnumber', 'pal_number', 'pal', 'palletno', 'pallet_no']),
+    'status': new Set(['status', 'record_status', 'installation_status', 'pending_status', 'current_status', 'equipment_status'])
 };
 
 // Optimized normalizeFieldName with memoization
@@ -202,7 +203,7 @@ function parseCSVFile(buffer) {
     });
 }
 
-// Optimized record validation with early exits
+// Optimized record validation with early exits - UPDATED with status handling
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
     const providedFields = [];
@@ -228,7 +229,7 @@ function validateRecord(record, headerMapping) {
         }
     }
 
-    // Required field validation
+    // Required field validation - status is NOT required
     const requiredFields = [
         'invoiceno', 'distchnl', 'customerid', 'material', 
         'description', 'serialnumber', 'salesdist', 'salesoff', 
@@ -254,13 +255,15 @@ function validateRecord(record, headerMapping) {
         errors.push('Serial Number too long (max 50 characters)');
     }
 
-    // Default status
-    cleanedRecord.status = 'Active';
+    // Set default status only if not provided
+    if (!cleanedRecord.status || cleanedRecord.status.trim() === '') {
+        cleanedRecord.status = 'Pending';
+    }
 
     return { cleanedRecord, errors, providedFields };
 }
 
-// Optimized: Inline simple functions
+// Optimized: Inline simple functions - UPDATED with status field
 function checkForChanges(existingRecord, newRecord, providedFields) {
     let hasAnyChange = false;
     const changeDetails = [];
@@ -288,7 +291,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     const PARALLEL_BATCHES = 3; // Process multiple batches in parallel
     const BULK_WRITE_BATCH_SIZE = 500; // MongoDB bulk write batch size
 
-    // Initialize response object with optimized structure
+    // Initialize response object with optimized structure - UPDATED with status tracking
     const response = {
         status: 'processing',
         startTime: new Date(),
@@ -304,7 +307,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             duplicatesInFile: 0,
             existingRecords: 0,
             skippedTotal: 0,
-            noChangesSkipped: 0
+            noChangesSkipped: 0,
+            statusUpdates: {
+                total: 0,
+                byStatus: {}
+            }
         },
         headerMapping: {},
         errors: [],
@@ -364,7 +371,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         const headerMapping = mapHeaders(headers);
         response.headerMapping = headerMapping;
 
-        // Check for required fields with optimized lookup
+        // Check for required fields with optimized lookup - status is NOT required
         const hasRequiredFields = [
             'invoiceno', 'distchnl', 'customerid', 'material',
             'description', 'serialnumber', 'salesdist', 'salesoff',
@@ -404,13 +411,16 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     status: 'Processing',
                     action: '',
                     error: null,
-                    warnings: []
+                    warnings: [],
+                    assignedStatus: null, // Track assigned status
+                    statusChanged: false // Track if status was changed
                 };
 
                 try {
                     const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
                     recordResult.invoiceno = cleanedRecord.invoiceno || 'Unknown';
                     recordResult.serialnumber = cleanedRecord.serialnumber || 'Unknown';
+                    recordResult.assignedStatus = cleanedRecord.status;
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -468,6 +478,16 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     if (existingRecord) {
                         response.summary.existingRecords++;
 
+                        // Handle status for existing records
+                        const statusFromFile = providedFields.includes('status');
+                        if (!statusFromFile) {
+                            // Keep existing status if not provided in file
+                            cleanedRecord.status = existingRecord.status;
+                            recordResult.assignedStatus = existingRecord.status;
+                        } else if (cleanedRecord.status !== existingRecord.status) {
+                            recordResult.statusChanged = true;
+                        }
+
                         const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields);
 
                         if (comparisonResult.hasChanges) {
@@ -475,6 +495,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                             providedFields.forEach(field => {
                                 updateData[field] = cleanedRecord[field];
                             });
+
+                            // Update status if provided in file but not in providedFields check
+                            if (statusFromFile || cleanedRecord.status !== existingRecord.status) {
+                                updateData.status = cleanedRecord.status;
+                            }
 
                             bulkUpdateOps.push({
                                 updateOne: {
@@ -492,6 +517,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                             recordResult.changeDetails = comparisonResult.changeDetails;
                             recordResult.changesText = changesList;
                             recordResult.warnings.push(`Changes detected: ${changesList}`);
+
+                            if (recordResult.statusChanged) {
+                                recordResult.warnings.push(`Status changed: ${existingRecord.status} → ${cleanedRecord.status}`);
+                            }
 
                             batchUpdated++;
                         } else {
@@ -604,6 +633,18 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 response.summary.noChangesSkipped += completedBatch.batchResults.filter(
                     r => r.status === 'Skipped' && r.action === 'No changes detected'
                 ).length;
+
+                // Track status updates
+                const statusChanges = completedBatch.batchResults.filter(r => r.statusChanged);
+                response.summary.statusUpdates.total += statusChanges.length;
+                statusChanges.forEach(change => {
+                    const status = change.assignedStatus;
+                    if (!response.summary.statusUpdates.byStatus[status]) {
+                        response.summary.statusUpdates.byStatus[status] = 0;
+                    }
+                    response.summary.statusUpdates.byStatus[status]++;
+                });
+
                 response.results.push(...completedBatch.batchResults);
 
                 res.write(JSON.stringify({
@@ -641,6 +682,18 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             response.summary.noChangesSkipped += completedBatch.batchResults.filter(
                 r => r.status === 'Skipped' && r.action === 'No changes detected'
             ).length;
+
+            // Track status updates
+            const statusChanges = completedBatch.batchResults.filter(r => r.statusChanged);
+            response.summary.statusUpdates.total += statusChanges.length;
+            statusChanges.forEach(change => {
+                const status = change.assignedStatus;
+                if (!response.summary.statusUpdates.byStatus[status]) {
+                    response.summary.statusUpdates.byStatus[status] = 0;
+                }
+                response.summary.statusUpdates.byStatus[status]++;
+            });
+
             response.results.push(...completedBatch.batchResults);
 
             res.write(JSON.stringify({
@@ -669,7 +722,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             `File Duplicates: ${response.summary.duplicatesInFile}, ` +
             `Existing Records: ${response.summary.existingRecords}, ` +
             `No Changes Skipped: ${response.summary.noChangesSkipped}, ` +
-            `Total Skipped: ${response.summary.skippedTotal}`;
+            `Total Skipped: ${response.summary.skippedTotal}, ` +
+            `Status Updates: ${response.summary.statusUpdates.total}`;
 
         res.write(JSON.stringify(response) + '\n');
         res.end();

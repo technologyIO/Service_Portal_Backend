@@ -5,9 +5,9 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-const Product = require('../../Model/MasterSchema/ProductSchema');    
+const Product = require('../../Model/MasterSchema/ProductSchema');
 
- 
+
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
@@ -47,9 +47,6 @@ function excelSerialToDate(val) {
   return isNaN(d) ? undefined : d;
 }
 
-/* -----------------------------------------------------------------
-   3.  Column-name mappings coming from front-end
-------------------------------------------------------------------*/
 const MAP = {
   partnoid: new Set(['partno', 'partnoid', 'partnumber', 'part_number', 'part no', 'part noid']),
   product: new Set(['productdescription', 'product desc', 'product', 'productdescription1']),
@@ -61,7 +58,8 @@ const MAP = {
   endofsupportdate: new Set(['endofsupportdate', 'eosd', 'end of support']),
   exsupportavlb: new Set(['exsupportavlb', 'ex support avlb', 'exsupportavailable']),
   installationcheckliststatusboolean: new Set(['installation checklist status', 'installationcheckliststatus', 'installation checklist statusboolean']),
-  pmcheckliststatusboolean: new Set(['pm checklist status', 'pmcheckliststatus', 'pmcheckliststatusboolean'])
+  pmcheckliststatusboolean: new Set(['pm checklist status', 'pmcheckliststatus', 'pmcheckliststatusboolean']),
+  status: new Set(['status', 'record_status', 'product_status', 'current_status', 'active_status', 'item_status'])
 };
 
 /* -----------------------------------------------------------------
@@ -106,7 +104,7 @@ function parseCSV(buf) {
 }
 
 /* -----------------------------------------------------------------
-   6.  Record validation / cleaning
+   6.  Record validation / cleaning - UPDATED with status handling
 ------------------------------------------------------------------*/
 function validate(rec, headerMap) {
   const clean = {};
@@ -123,7 +121,7 @@ function validate(rec, headerMap) {
     provided.push(schemaField);
   }
 
-  // mandatory
+  // mandatory - status is NOT required
   if (!clean.partnoid) errs.push('Part No is required');
   if (!clean.product) errs.push('Product Description is required');
 
@@ -142,8 +140,14 @@ function validate(rec, headerMap) {
     }
   });
 
+  // Set default status only if not provided
+  if (!clean.status || clean.status.trim() === '') {
+    clean.status = 'Active';
+  }
+
   return { clean, errs, provided };
 }
+
 
 /* -----------------------------------------------------------------
    7.  Change detector
@@ -170,7 +174,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
   const BATCH = 2000;
   const PARALLEL = 3;
 
-  /* ------- INITIAL response skeleton ---------- */
+  /* ------- INITIAL response skeleton - UPDATED with status tracking ---------- */
   const out = {
     status: 'processing',
     startTime: new Date(),
@@ -186,10 +190,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       skippedTotal: 0,
       duplicatesInFile: 0,
       noChangesSkipped: 0,
-      existingRecords: 0
+      existingRecords: 0,
+      statusUpdates: {
+        total: 0,
+        byStatus: {}
+      }
     },
     results: []
   };
+
 
   try {
     /* ------------------- No file? -------------------- */
@@ -235,12 +244,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     /* -----------------------------------------------------------
        Batch processor
     ----------------------------------------------------------- */
+    /* -----------------------------------------------------------
+       Batch processor - UPDATED with status handling
+    ----------------------------------------------------------- */
     const processBatch = async (batch) => {
       const batchRes = [];
       const toWrite = [];
       const now = new Date();
 
-      let created = 0, updated = 0, failed = 0, skipped = 0;
+      let created = 0, updated = 0, failed = 0, skipped = 0, statusUpdates = 0;
 
       /* ---- 1. clean / validate each row ---- */
       for (const raw of batch) {
@@ -249,12 +261,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
           status: 'Processing',
           action: '',
           error: null,
-          warnings: []
+          warnings: [],
+          assignedStatus: null, // Track assigned status
+          statusChanged: false // Track if status was changed
         };
 
         try {
           const { clean, errs, provided } = validate(raw, headerMap);
           rowRes.partnoid = clean.partnoid || 'Unknown';
+          rowRes.assignedStatus = clean.status;
 
           if (errs.length) {
             rowRes.status = 'Failed';
@@ -300,10 +315,28 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
           if (old) {
             out.summary.existingRecords++;
+
+            // Handle status for existing records
+            const statusFromFile = provided.includes('status');
+            if (!statusFromFile) {
+              // Keep existing status if not provided in file
+              clean.status = old.status;
+              rowRes.assignedStatus = old.status;
+            } else if (clean.status !== old.status) {
+              rowRes.statusChanged = true;
+              statusUpdates++;
+            }
+
             const { changed, details } = diff(old, clean, provided);
+
             if (changed) {
               const upd = { modifiedAt: now };
               provided.forEach(f => upd[f] = clean[f]);
+
+              // Update status if provided in file
+              if (statusFromFile || clean.status !== old.status) {
+                upd.status = clean.status;
+              }
 
               ops.push({
                 updateOne: {
@@ -315,6 +348,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
               rowRes.status = 'Updated';
               rowRes.action = 'Updated existing';
               rowRes.changeDetails = details;
+
+              if (rowRes.statusChanged) {
+                rowRes.warnings.push(`Status changed: ${old.status} → ${clean.status}`);
+              }
+
               updated++;
             } else {
               rowRes.status = 'Skipped';
@@ -361,8 +399,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         }
       }
 
-      return { batchRes, created, updated, failed, skipped };
-    }; // processBatch
+      return { batchRes, created, updated, failed, skipped, statusUpdates };
+    };
+
 
     /* -----------------------------------------------------------
        9.  Batch loop with limited parallelism
@@ -400,8 +439,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     res.end();
   }
 
-  /* helper to merge finished batch into output & stream */
-  function handleBatch({ batchRes, created, updated, failed, skipped }) {
+  /* helper to merge finished batch into output & stream - UPDATED with status tracking */
+  function handleBatch({ batchRes, created, updated, failed, skipped, statusUpdates }) {
     out.processedRecords += batchRes.length;
     out.successfulRecords += created + updated;
     out.failedRecords += failed;
@@ -409,6 +448,18 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     out.summary.updated += updated;
     out.summary.failed += failed;
     out.summary.skippedTotal += skipped;
+
+    // Track status updates
+    const statusChanges = batchRes.filter(r => r.statusChanged);
+    out.summary.statusUpdates.total += statusChanges.length;
+    statusChanges.forEach(change => {
+      const status = change.assignedStatus;
+      if (!out.summary.statusUpdates.byStatus[status]) {
+        out.summary.statusUpdates.byStatus[status] = 0;
+      }
+      out.summary.statusUpdates.byStatus[status]++;
+    });
+
     out.results.push(...batchRes);
 
     // send incremental update (last 3 records for lighter payload)
@@ -418,6 +469,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       latest: batchRes.slice(-3)
     }) + '\n');
   }
+
 });
 
 /* ----------------------------------------------------------------- */

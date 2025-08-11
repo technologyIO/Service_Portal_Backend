@@ -26,7 +26,7 @@ const upload = multer({
 
         // Check file extension
         const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-        
+
         // Check MIME type
         const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
 
@@ -45,6 +45,7 @@ const upload = multer({
 });
 
 // Updated: Field mappings to match schema field names
+// Updated: Field mappings to match schema field names - UPDATED with status
 const FIELD_MAPPINGS = {
     'subgrp': new Set([
         'subgrp', 'sub_grp', 'subgroup', 'sub_group', 'group',
@@ -77,8 +78,13 @@ const FIELD_MAPPINGS = {
     'spareiamegurl': new Set([
         'spareiamegurl', 'spare_image_url', 'spareimageurl', 'image_url',
         'imageurl', 'spare_img_url', 'spareimgurl', 'img_url'
+    ]),
+    'status': new Set([
+        'status', 'record_status', 'spare_status', 'current_status',
+        'active_status', 'part_status', 'item_status'
     ])
 };
+
 
 // Optimized normalizeFieldName with memoization
 const normalizedFieldCache = new Map();
@@ -159,7 +165,7 @@ function parseCSVFile(buffer) {
 // Helper function to determine file type
 function getFileType(fileName, mimeType) {
     const lowerFileName = fileName.toLowerCase();
-    
+
     // Check by extension first
     if (lowerFileName.endsWith('.csv')) {
         return 'csv';
@@ -168,7 +174,7 @@ function getFileType(fileName, mimeType) {
     } else if (lowerFileName.endsWith('.xls')) {
         return 'xls';
     }
-    
+
     // Fallback to MIME type
     switch (mimeType) {
         case 'text/csv':
@@ -206,11 +212,11 @@ function cleanCharges(value) {
         // Keep original string if it's not a number
         const trimmed = value.trim();
         if (trimmed === '-' || trimmed.toLowerCase() === 'na' || trimmed.toLowerCase() === 'n/a') return null;
-        
+
         // Try to convert to number
         const cleaned = trimmed.replace(/[^0-9.-]/g, '');
         const num = parseFloat(cleaned);
-        
+
         // If it's a valid number, return number, otherwise return original string
         return isNaN(num) ? trimmed : num;
     }
@@ -225,7 +231,7 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
     for (const field of providedFields) {
         const oldValue = existingRecord[field] || '';
         const newValue = newRecord[field] || '';
-        
+
         if (oldValue !== newValue) {
             hasChanges = true;
             changes.push({
@@ -246,8 +252,7 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
 function generateUniqueKey(record) {
     return `${record.PartNumber}`.toLowerCase();
 }
-
-// Updated: Record validation to match schema requirements
+// Updated: Record validation to match schema requirements - FIXED status handling
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
     const providedFields = [];
@@ -273,6 +278,10 @@ function validateRecord(record, headerMapping) {
                 cleanedRecord['Charges'] = chargesValue;
                 providedFields.push(schemaField);
             }
+        } else if (schemaField === 'status') {
+            // Handle status field - FIXED to use lowercase 'status'
+            cleanedRecord['status'] = value.replace(MULTISPACE_REGEX, ' ').trim();
+            providedFields.push(schemaField);
         } else {
             // String fields
             cleanedRecord[getSchemaFieldName(schemaField)] = value.replace(MULTISPACE_REGEX, ' ').trim();
@@ -280,7 +289,7 @@ function validateRecord(record, headerMapping) {
         }
     }
 
-    // Updated: Only Sub_grp and PartNumber are required based on schema
+    // Updated: Only Sub_grp and PartNumber are required based on schema - status is NOT required
     const requiredFields = ['subgrp', 'partnumber'];
     for (const field of requiredFields) {
         const schemaFieldName = getSchemaFieldName(field);
@@ -300,7 +309,8 @@ function validateRecord(record, headerMapping) {
         'PartNumber': 100,
         'Description': 500,
         'Type': 100,
-        'spareiamegUrl': 500
+        'spareiamegUrl': 500,
+        'status': 50 // Changed from 'Status' to 'status'
     };
 
     for (const [field, maxLength] of Object.entries(fieldLimits)) {
@@ -320,10 +330,17 @@ function validateRecord(record, headerMapping) {
         errors.push('Charges (Exchange Price) cannot be negative');
     }
 
+    // Set default status only if not provided - FIXED to use lowercase 'status'
+    if (!cleanedRecord.status || cleanedRecord.status.trim() === '') {
+        cleanedRecord.status = 'Active';
+    }
+
     return { cleanedRecord, errors, providedFields };
 }
 
+
 // Helper function to convert field names to schema field names
+// Helper function to convert field names to schema field names - UPDATED with status
 function getSchemaFieldName(field) {
     const fieldMapping = {
         'subgrp': 'Sub_grp',
@@ -333,10 +350,12 @@ function getSchemaFieldName(field) {
         'rate': 'Rate',
         'dp': 'DP',
         'charges': 'Charges',
-        'spareiamegurl': 'spareiamegUrl'
+        'spareiamegurl': 'spareiamegUrl',
+        'status': 'status'
     };
     return fieldMapping[field] || field;
 }
+
 
 // MAIN ROUTE - Optimized with parallel processing and bulk operations
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
@@ -345,6 +364,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     const BULK_WRITE_BATCH_SIZE = 500;
 
     // Initialize response object with optimized structure
+    // Initialize response object with optimized structure - UPDATED with status tracking
     const response = {
         status: 'processing',
         startTime: new Date(),
@@ -360,7 +380,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             duplicatesInFile: 0,
             existingRecords: 0,
             skippedTotal: 0,
-            noChangesSkipped: 0
+            noChangesSkipped: 0,
+            statusUpdates: {
+                total: 0,
+                byStatus: {}
+            }
         },
         headerMapping: {},
         errors: [],
@@ -372,6 +396,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             currentBatchRecords: 0
         }
     };
+
 
     try {
         if (!req.file) {
@@ -424,9 +449,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         const hasRequiredFields = requiredFields.every(field =>
             Object.values(headerMapping).includes(field)
         );
-        
+
         if (!hasRequiredFields) {
-            const missingFields = requiredFields.filter(field => 
+            const missingFields = requiredFields.filter(field =>
                 !Object.values(headerMapping).includes(field)
             );
             response.status = 'failed';
@@ -443,6 +468,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         let currentRow = 0;
 
         // Process data in parallel batches
+        // Process data in parallel batches - UPDATED with status handling
         const processBatch = async (batch, batchIndex) => {
             const batchResults = [];
             const validRecords = [];
@@ -450,6 +476,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             let batchUpdated = 0;
             let batchFailed = 0;
             let batchSkipped = 0;
+            let batchStatusUpdates = 0;
 
             // Process each record in the batch
             for (const record of batch) {
@@ -463,17 +490,22 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     status: 'Processing',
                     action: '',
                     error: null,
-                    warnings: []
+                    warnings: [],
+                    assignedStatus: null, // Track assigned status
+                    statusChanged: false // Track if status was changed
                 };
 
                 try {
                     const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
-                    
+
                     // Update record result with cleaned data
+                    // Update record result with cleaned data - FIXED
                     recordResult.partnumber = cleanedRecord.PartNumber || 'Unknown';
                     recordResult.description = cleanedRecord.Description || 'N/A';
                     recordResult.type = cleanedRecord.Type || 'N/A';
                     recordResult.rate = cleanedRecord.Rate || null;
+                    recordResult.assignedStatus = cleanedRecord.status; // Changed from Status to status
+
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -535,6 +567,17 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     if (existingRecord) {
                         response.summary.existingRecords++;
 
+                        // Handle status for existing records
+                        const statusFromFile = providedFields.includes('status');
+                        if (!statusFromFile) {
+                            // Keep existing status if not provided in file
+                            cleanedRecord.Status = existingRecord.Status;
+                            recordResult.assignedStatus = existingRecord.Status;
+                        } else if (cleanedRecord.Status !== existingRecord.Status) {
+                            recordResult.statusChanged = true;
+                            batchStatusUpdates++;
+                        }
+
                         const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields.map(f => getSchemaFieldName(f)));
 
                         if (comparisonResult.hasChanges) {
@@ -559,6 +602,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                             recordResult.changeDetails = comparisonResult.changeDetails;
                             recordResult.changesText = changesList;
                             recordResult.warnings.push(`Changes detected: ${changesList}`);
+
+                            if (recordResult.statusChanged) {
+                                recordResult.warnings.push(`Status changed: ${existingRecord.Status} → ${cleanedRecord.Status}`);
+                            }
 
                             batchUpdated++;
                         } else {
@@ -631,9 +678,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 batchCreated,
                 batchUpdated,
                 batchFailed,
-                batchSkipped
+                batchSkipped,
+                batchStatusUpdates
             };
         };
+
 
         // Process batches in parallel with controlled concurrency
         const batchPromises = [];
@@ -670,6 +719,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 response.summary.noChangesSkipped += completedBatch.batchResults.filter(
                     r => r.status === 'Skipped' && r.action === 'No changes detected'
                 ).length;
+                const statusChanges = completedBatch.batchResults.filter(r => r.statusChanged);
+                response.summary.statusUpdates.total += statusChanges.length;
+                statusChanges.forEach(change => {
+                    const status = change.assignedStatus;
+                    if (!response.summary.statusUpdates.byStatus[status]) {
+                        response.summary.statusUpdates.byStatus[status] = 0;
+                    }
+                    response.summary.statusUpdates.byStatus[status]++;
+                });
                 response.results.push(...completedBatch.batchResults);
 
                 res.write(JSON.stringify({
@@ -735,7 +793,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             `File Duplicates: ${response.summary.duplicatesInFile}, ` +
             `Existing Records: ${response.summary.existingRecords}, ` +
             `No Changes Skipped: ${response.summary.noChangesSkipped}, ` +
-            `Total Skipped: ${response.summary.skippedTotal}`;
+            `Total Skipped: ${response.summary.skippedTotal}, ` +
+            `Status Updates: ${response.summary.statusUpdates.total}`;
 
         res.write(JSON.stringify(response) + '\n');
         res.end();

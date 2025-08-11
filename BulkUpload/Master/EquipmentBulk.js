@@ -39,6 +39,7 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024 // 50MB limit
   }
 });
+
 function buildNormalizedCustomerMap(customers) {
   const map = new Map();
   customers.forEach(c => {
@@ -46,6 +47,7 @@ function buildNormalizedCustomerMap(customers) {
   });
   return map;
 }
+
 // Field mapping to match exact frontend field names
 const FIELD_MAPPINGS = {
   materialcode: [
@@ -144,6 +146,15 @@ const FIELD_MAPPINGS = {
     'installation report no',
     'installation_no',
     'install_report_no'
+  ],
+  status: [
+    'status',
+    'equipment_status',
+    'equipment status',
+    'machine_status',
+    'machine status',
+    'active_status',
+    'current_status'
   ]
 };
 
@@ -199,7 +210,8 @@ function getDetailedChanges(existingRecord, newRecord) {
     'custWarrantyenddate',
     'dealerwarrantystartdate',
     'dealerwarrantyenddate',
-    'dealer'
+    'dealer',
+    'status' // Add status here
   ];
 
   const changes = {};
@@ -425,6 +437,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         updated: 0,
         skipped: 0,
         failed: 0
+      },
+      statusUpdates: {
+        total: 0,
+        byStatus: {}
       }
     },
     errors: [],
@@ -453,8 +469,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       return res.status(400).json(response);
     }
 
-
-
     response.totalRecords = jsonData.length;
 
     if (jsonData.length === 0) {
@@ -477,6 +491,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       field => !response.fieldMappingInfo.mappedFields.includes(field)
     );
 
+    // Status is now optional - remove from required fields
     const requiredFields = ['materialcode', 'serialnumber', 'materialdescription', 'currentcustomer', 'endcustomer', 'custWarrantystartdate', 'custWarrantyenddate', 'dealer'];
     const missingFields = requiredFields.filter(field => !firstRecord.hasOwnProperty(field) || !firstRecord[field]);
 
@@ -500,10 +515,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       AMCContract.find({ serialnumber: { $in: [...serialnumbers] } }),
       Equipment.find({ serialnumber: { $in: [...serialnumbers] } })
     ]);
+    
     const productMap = new Map(products.map(p => [p.partnoid, p]));
-
     const customerMap = buildNormalizedCustomerMap(customers);
-
     const amcMap = new Map(amcContracts.map(a => [a.serialnumber, a]));
     const existingEquipmentMap = new Map(existingEquipment.map(e => [e.serialnumber, e]));
 
@@ -554,7 +568,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         const existingRecord = existingEquipmentMap.get(processedRecord.serialnumber);
 
         if (existingRecord) {
-          processedRecord.status = existingRecord.status;
+          // Keep existing status if no new status is provided
+          if (!processedRecord.status || processedRecord.status.toString().trim() === '') {
+            processedRecord.status = existingRecord.status;
+          }
+          
           processedRecord.equipmentid = existingRecord.equipmentid;
           processedRecord.createdAt = existingRecord.createdAt;
           processedRecord.modifiedAt = new Date();
@@ -575,7 +593,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
               changeCount: Object.keys(changeAnalysis.changes).length,
               previousModified: existingRecord.modifiedAt,
               willGeneratePMs: true,
-              error: null
+              error: null,
+              newStatus: processedRecord.status // Include new status in response
             });
           } else {
             recordsForPMGeneration.push(processedRecord);
@@ -587,12 +606,16 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
               reason: 'No equipment changes but PMs will be regenerated',
               lastModified: existingRecord.modifiedAt,
               willGeneratePMs: true,
-              error: null
+              error: null,
+              currentStatus: processedRecord.status // Include current status
             });
           }
         } else {
           processedRecord.equipmentid = processedRecord.serialnumber;
-          processedRecord.status = 'Active';
+          // Set default status if not provided
+          if (!processedRecord.status || processedRecord.status.toString().trim() === '') {
+            processedRecord.status = 'Active';
+          }
           processedRecord.createdAt = new Date();
           processedRecord.modifiedAt = new Date();
 
@@ -605,7 +628,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             status: 'Created',
             reason: 'New equipment record',
             willGeneratePMs: true,
-            error: null
+            error: null,
+            assignedStatus: processedRecord.status // Include assigned status
           });
         }
 
@@ -686,6 +710,21 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       }
     }
 
+    // Track status updates in the summary
+    const statusUpdates = response.equipmentResults.filter(r => 
+      r.detailedChanges && r.detailedChanges.status
+    );
+
+    response.summary.statusUpdates.total = statusUpdates.length;
+
+    statusUpdates.forEach(update => {
+      const newStatus = update.detailedChanges.status.new;
+      if (!response.summary.statusUpdates.byStatus[newStatus]) {
+        response.summary.statusUpdates.byStatus[newStatus] = 0;
+      }
+      response.summary.statusUpdates.byStatus[newStatus]++;
+    });
+
     response.processedRecords = jsonData.length;
 
     console.log(`Starting PM generation for ${recordsForPMGeneration.length} records`);
@@ -751,7 +790,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
               for (let i = 1; i <= numberOfPMs; i++) {
                 const pmType = `WPM${String(i).padStart(2, '0')}`;
                 if (completedPMMap.has(serialnumber) && completedPMMap.get(serialnumber).has(pmType)) continue;
-
 
                 const { dueDate, dueMonth } = generatePMDueInfo(startDate, frequencyMonths, i);
                 const pmStatus = calculatePMStatus(dueMonth);
@@ -933,7 +971,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       `${response.summary.operationBreakdown.updated} updated, ` +
       `${pmRegeneratedCount} PM regenerated, ` +
       `${response.summary.operationBreakdown.failed} failed. ` +
-      `Generated ${response.summary.totalPMCreated} PMs from ${response.summary.totalPMExpected} expected.`
+      `Generated ${response.summary.totalPMCreated} PMs from ${response.summary.totalPMExpected} expected. ` +
+      `Status updates: ${response.summary.statusUpdates.total} records had status changes.`
     );
 
     response.status = 'completed';
