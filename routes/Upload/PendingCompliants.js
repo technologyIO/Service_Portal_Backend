@@ -642,27 +642,70 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // 2. Extract part numbers from skills
-      const partNumbers = [];
-      user.skills.forEach(skill => {
-        if (skill.partNumbers && skill.partNumbers.length > 0) {
-          partNumbers.push(...skill.partNumbers);
+      let pendingComplaints = [];
+      let filterInfo = {};
+
+      // 2. Check usertype and apply appropriate logic
+      if (user.usertype === 'skanray') {
+        // SKANRAY USER LOGIC - Based on Branch & Skills (existing logic)
+
+        // Extract part numbers from skills
+        const partNumbers = [];
+        user.skills.forEach(skill => {
+          if (skill.partNumbers && skill.partNumbers.length > 0) {
+            partNumbers.push(...skill.partNumbers);
+          }
+        });
+
+        // Extract branch names
+        const branchNames = user.branch || [];
+
+        // Apply both filters: materialcode & salesoffice (branch)
+        pendingComplaints = await PendingComplaints.find({
+          materialcode: { $in: partNumbers },
+          salesoffice: { $in: branchNames }
+        });
+
+        filterInfo = {
+          filteredBy: 'skanray',
+          partNumbers,
+          branches: branchNames,
+          usertype: 'skanray'
+        };
+
+      } else if (user.usertype === 'dealer') {
+        // DEALER USER LOGIC - Based on Dealer Code only
+
+        const dealerCode = user.dealerInfo?.dealerCode;
+
+        if (!dealerCode) {
+          return res.status(400).json({
+            message: 'Dealer code not found for this dealer user'
+          });
         }
-      });
 
-      // 3. Extract branch names
-      const branchNames = user.branch || [];
+        // Filter only by dealer code for dealer users
+        pendingComplaints = await PendingComplaints.find({
+          dealercode: dealerCode  // Assuming dealercode field exists in PendingComplaints
+        });
 
-      // 4. Apply both filters: materialcode & salesoffice
-      const pendingComplaints = await PendingComplaints.find({
-        materialcode: { $in: partNumbers },
-        salesoffice: { $in: branchNames }
-      });
+        filterInfo = {
+          filteredBy: 'dealer',
+          dealerCode,
+          usertype: 'dealer'
+        };
+
+      } else {
+        return res.status(400).json({
+          message: 'Invalid user type'
+        });
+      }
 
       return res.json({
         pendingComplaints,
         count: pendingComplaints.length,
-        filteredByEmployee: true
+        filteredByEmployee: true,
+        filterInfo
       });
     }
 
@@ -678,6 +721,7 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
 
 
 // DELETE a PendingComplaint

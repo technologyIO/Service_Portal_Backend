@@ -472,7 +472,7 @@ router.get('/checklist/by-part/:partnoid', async (req, res) => {
 
     // Find checklists where prodGroup matches the product group
     const checklists = await CheckList.find({ prodGroup: productGroup })
-      .select('checklisttype checkpointtype checkpoint prodGroup result status createdAt modifiedAt resulttype');
+      .select('checklisttype checkpointtype checkpoint prodGroup result status createdAt modifiedAt resulttype endVoltage startVoltage');
 
     res.json({
       productGroup,
@@ -482,6 +482,7 @@ router.get('/checklist/by-part/:partnoid', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
 router.get('/docs/by-part/:partnoid', async (req, res) => {
   try {
     const partnoid = req.params.partnoid;

@@ -12,17 +12,17 @@ const getChecklistHTML = ({
   formatChlNo,
   formatRevNo,
 }) => {
-  const maxRows = 22;
+  const maxRows = 28;
   const displayedItems = checklistItems.slice(0, maxRows);
 
   const itemRows = displayedItems
     .map((item, index) => {
       return `
         <tr>
-          <td class="cell center">${index + 1}</td>
-          <td class="cell">${item.checkpoint}</td>
-          <td class="cell center">${item.result}</td>
-          <td class="cell">${item.remark || ""}</td>
+          <td class="cell center field-data">${index + 1}</td>
+          <td class="cell field-data">${item.checkpoint}</td>
+          <td class="cell center field-data">${item.result}</td>
+          <td class="cell field-data">${item.remark || ""}</td>
         </tr>
       `;
     })
@@ -86,6 +86,19 @@ const getChecklistHTML = ({
           text-align: center;
         }
 
+        /* Field Labels - Arial 9.5px */
+        .field-label {
+          font-family: Arial, sans-serif;
+          font-size: 9.5px;
+          font-weight: bold;
+        }
+
+        /* Field Data - Calibri 11px */
+        .field-data {
+          font-family: Calibri, sans-serif;
+          font-size: 11px;
+        }
+
         .header-title {
           text-align: center;
           font-weight: bold;
@@ -112,12 +125,15 @@ const getChecklistHTML = ({
         }
 
         .section-title {
+          font-family: Arial, sans-serif;
+          font-size: 9.5px;
           font-weight: bold;
-          font-size: 13px;
         }
 
         .checklist-header th {
-          font-size: 16px;
+          font-family: Arial, sans-serif;
+          font-size: 9.5px;
+          font-weight: bold;
           padding: 5px;
         }
 
@@ -125,7 +141,7 @@ const getChecklistHTML = ({
           border: 1px solid #000; 
           width: 100%; 
           font-family: Arial, sans-serif; 
-          font-size: 14px;
+          font-size: 9.5px;
           margin-bottom: 10px;
         }
         
@@ -133,6 +149,8 @@ const getChecklistHTML = ({
           padding: 4px; 
           font-weight: bold; 
           border-bottom: 1px solid #000;
+          font-family: Arial, sans-serif;
+          font-size: 9.5px;
         }
         
         .equipment-used-row {
@@ -146,12 +164,46 @@ const getChecklistHTML = ({
         .equipment-used-label {
           flex: 1; 
           border-right: 1px solid #000;
+          font-family: Arial, sans-serif;
+          font-size: 9.5px;
+          font-weight: bold;
+        }
+
+        .equipment-used-data {
+          font-family: Calibri, sans-serif;
+          font-size: 11px;
         }
         
         .cal-due-label {
           width: 150px; 
           border-right: 1px solid #000; 
+          font-family: Arial, sans-serif;
+          font-size: 9.5px;
           font-weight: bold;
+        }
+
+        /* Format and Document reference styling */
+        .format-label {
+          font-family: Arial, sans-serif;
+          font-size: 9.5px;
+          font-weight: bold;
+        }
+
+        .format-data {
+          font-family: Calibri, sans-serif;
+          font-size: 11px;
+        }
+
+        /* Remarks section styling */
+        .remarks-label {
+          font-family: Arial, sans-serif;
+          font-size: 9.5px;
+          font-weight: bold;
+        }
+
+        .remarks-data {
+          font-family: Calibri, sans-serif;
+          font-size: 11px;
         }
       </style>
     </head>
@@ -170,13 +222,15 @@ const getChecklistHTML = ({
             <td style="width: 30%; border: 1px solid black;">
               <table style="width: 100%; height: 100px;">
                 <tr>
-                  <td style="border-bottom: 1px solid black; font-weight: bold; height: 50px; font-size: 13px;">
-                    Format No &amp; Revision: ${formatChlNo || "N/A"} - ${formatRevNo || "N/A"}
+                  <td style="border-bottom: 1px solid black; height: 50px;">
+                    <span class="format-label">Format No &amp; Revision:</span> 
+                    <span class="format-data">${formatChlNo || "N/A"} - ${formatRevNo || "N/A"}</span>
                   </td>
                 </tr>
                 <tr>
-                  <td style="font-weight: bold; font-size: 13px;">
-                    Document reference no <br />&amp; Revision: ${documentChlNo || "N/A"} - ${documentRevNo || "N/A"}
+                  <td>
+                    <span class="format-label">Document reference no <br />&amp; Revision:</span> 
+                    <span class="format-data">${documentChlNo || "N/A"} - ${documentRevNo || "N/A"}</span>
                   </td>
                 </tr>
               </table>
@@ -188,42 +242,42 @@ const getChecklistHTML = ({
         <table>
           <tr>
             <td class="cell section-title">Report No:</td>
-            <td class="cell">${reportNo || ""}</td>
+            <td class="cell field-data">${reportNo || ""}</td>
             <td class="cell section-title">Date:</td>
-            <td class="cell">${date || "DD/MM/YYYY"}</td>
+            <td class="cell field-data">${date || "DD/MM/YYYY"}</td>
           </tr>
         <tr>
   <td class="cell section-title">Customer Code:</td>
-  <td class="cell">${customer?.customercodeid || "NA"}</td>
-
+  <td class="cell field-data">${customer?.customercodeid || "NA"}</td>
 
   <td class="cell section-title">Hospital Name:</td>
-  <td class="cell">${customer?.hospitalname || "NA"}</td>
+  <td class="cell field-data">${customer?.hospitalname || "NA"}</td>
 </tr>
 
           <tr>
              <td class="cell section-title">Customer Name:</td>
-  <td class="cell">${customer?.customername || "NA"}</td>
-
+             <td class="cell field-data">${customer?.customername || "NA"}</td>
+             <td class="cell"></td>
+             <td class="cell"></td>
           </tr>
           <tr>
             <td class="cell section-title">Address:</td>
-            <td class="cell">${customer?.street || ""}, ${customer?.city || ""}</td>
+            <td class="cell field-data">${customer?.street || ""}, ${customer?.city || ""}</td>
             <td class="cell section-title">Telephone:</td>
-            <td class="cell">${customer?.telephone || ""}</td>
+            <td class="cell field-data">${customer?.telephone || ""}</td>
           </tr>
           <tr>
             <td class="cell section-title">Email:</td>
-            <td class="cell">${customer?.email || ""}</td>
+            <td class="cell field-data">${customer?.email || ""}</td>
               <td class="cell section-title">Part Number:</td>
-            <td class="cell">${machine?.partNumber || ""}</td>
+            <td class="cell field-data">${machine?.partNumber || ""}</td>
           </tr>
           
           <tr>
             <td class="cell section-title">Model Description:</td>
-            <td class="cell">${machine?.modelDescription || ""}</td>
+            <td class="cell field-data">${machine?.modelDescription || ""}</td>
             <td class="cell section-title">Serial Number:</td>
-            <td class="cell">${machine?.serialNumber || ""}</td>
+            <td class="cell field-data">${machine?.serialNumber || ""}</td>
           </tr>
         </table>
 
@@ -234,12 +288,13 @@ const getChecklistHTML = ({
           </div>
           <div class="equipment-used-row">
             <div class="equipment-used-cell equipment-used-label">
-              Digital Multi meter S/L# --> ${equipmentUsedSerial || "(If used)"}
+              Digital Multi meter S/L# -->    ${equipmentUsedSerial || "(If used)"}
             </div>
+             
             <div class="equipment-used-cell cal-due-label">
               Cal Due Date:
             </div>
-            <div class="equipment-used-cell">
+            <div class="equipment-used-cell equipment-used-data">
               ${calibrationDueDate || ""}
             </div>
           </div>
@@ -259,12 +314,12 @@ const getChecklistHTML = ({
         <!-- Bottom Remarks -->
         <table>
           <tr style="height: 60px;">
-            <td class="cell center" style="width: 20%;"><strong>Remarks:</strong></td>
-            <td colspan="2" class="cell center">${remarkglobal}</td>
+            <td class="cell center remarks-label" style="width: 20%;"><strong>Remarks:</strong></td>
+            <td colspan="2" class="cell center remarks-data">${remarkglobal}</td>
           </tr>
           <tr>
-            <td class="cell center" style="width: 20%;"><strong>Service Engineer Name:</strong></td>
-            <td class="cell" style="width: 40%;"><strong>${serviceEngineer || ""}</strong></td>
+            <td class="cell center remarks-label" style="width: 20%;"><strong>Service Engineer Name:</strong></td>
+            <td class="cell remarks-data" style="width: 40%;"><strong>${serviceEngineer || ""}</strong></td>
             <td class="signature-box">
               <p style="font-weight: bold; margin: 0">Signature valid</p>
               <div>

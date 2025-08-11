@@ -39,10 +39,10 @@ module.exports = function getCertificateHTML(data) {
         const eq = items[i];
         rowsHtml += `
           <tr>
-            <td>${i + 1}</td>
-            <td colspan="2">${eq.materialdescription || ""}</td>
-            <td colspan="2">${eq.serialnumber || ""}</td>
-            <td colspan="2">${eq.custWarrantyenddate
+            <td class="field-data">${i + 1}</td>
+            <td colspan="2" class="field-data">${eq.materialdescription || ""}</td>
+            <td colspan="2" class="field-data">${eq.serialnumber || ""}</td>
+            <td colspan="2" class="field-data">${eq.custWarrantyenddate
             ? new Date(eq.custWarrantyenddate).toLocaleDateString("en-US", {
               month: "long",
               day: "numeric",
@@ -56,10 +56,10 @@ module.exports = function getCertificateHTML(data) {
         // Blank row
         rowsHtml += `
           <tr>
-            <td>${i + 1}</td>
-            <td colspan="2"></td>
-            <td colspan="2"></td>
-            <td colspan="2"></td>
+            <td class="field-data">${i + 1}</td>
+            <td colspan="2" class="field-data"></td>
+            <td colspan="2" class="field-data"></td>
+            <td colspan="2" class="field-data"></td>
           </tr>
         `;
       }
@@ -141,6 +141,38 @@ module.exports = function getCertificateHTML(data) {
         margin-left: 40px;
         margin-bottom: 20px;
       }
+      
+      /* Field Labels - Arial 9.5px */
+      .field-label {
+        font-family: Arial, sans-serif;
+        font-size: 9.5px;
+        font-weight: bold;
+      }
+
+      /* Field Data - Calibri 11px */
+      .field-data {
+        font-family: Calibri, sans-serif;
+        font-size: 11px;
+      }
+
+      /* Table header labels */
+      .table-header {
+        font-family: Arial, sans-serif;
+        font-size: 9.5px;
+        font-weight: bold;
+      }
+
+      /* Installation by section styling */
+      .install-label {
+        font-family: Arial, sans-serif;
+        font-size: 9.5px;
+        font-weight: bold;
+      }
+
+      .install-data {
+        font-family: Calibri, sans-serif;
+        font-size: 11px;
+      }
     </style>
   </head>
   <body>
@@ -172,68 +204,87 @@ module.exports = function getCertificateHTML(data) {
       <table>
         <tr>
           <td>
-            Date of Installation:
-            ${dateOfInstallation}
+            <span class="field-label">Date of Installation:</span>
+            <span class="field-data">${dateOfInstallation}</span>
           </td>
-          <td>Installation Report #</td>
-          <td>${installationreportno}</td>
+          <td class="field-label">Installation Report #</td>
+          <td class="field-data">${installationreportno}</td>
         </tr>
         <tr>
-          <td colspan="3">Customer Details: ${customerId}</td>
+          <td colspan="3">
+            <span class="field-label">Customer Details:</span> 
+            <span class="field-data">${customerId}</span>
+          </td>
         </tr>
         <tr>
-  <td>Name :<span style=" font-size: 13px;"> ${customerName || "NA"}</span></td>
-  <td>Hospital Name:</td>
-  <td>${hospitalName || "NA"}</td>
-</tr>
+          <td>
+            <span class="field-label">Name :</span>
+            <span class="field-data">${customerName || "NA"}</span>
+          </td>
+          <td class="field-label">Hospital Name:</td>
+          <td class="field-data">${hospitalName || "NA"}</td>
+        </tr>
 
         <tr>
-          <td>Address 1 : ${street}</td>
-          <td>Telephone</td>
-          <td>${phoneNumber}</td>
+          <td>
+            <span class="field-label">Address 1 :</span> 
+            <span class="field-data">${street}</span>
+          </td>
+          <td class="field-label">Telephone</td>
+          <td class="field-data">${phoneNumber}</td>
         </tr>
         <tr>
-          <td>Address 2 :</td>
-          <td>Email :</td>
-          <td>${email}</td>
+          <td class="field-label">Address 2 :</td>
+          <td class="field-label">Email :</td>
+          <td class="field-data">${email}</td>
         </tr>
         <tr>
-          <td>City : ${city}</td>
-          <td>Pin Code : ${postalCode}</td>
-          <td>State : ${state}</td>
+          <td>
+            <span class="field-label">City :</span> 
+            <span class="field-data">${city}</span>
+          </td>
+          <td>
+            <span class="field-label">Pin Code :</span> 
+            <span class="field-data">${postalCode}</span>
+          </td>
+          <td>
+            <span class="field-label">State :</span> 
+            <span class="field-data">${state}</span>
+          </td>
         </tr>
-         <td colspan="3">AERB APP No.For X-Ray Equipments only: </td>
+         <td colspan="3" class="field-label">AERB APP No.For X-Ray Equipments only: </td>
       </table>
 
       <!-- Second table: Equipment & Warranty -->
       <table>
         <tr>
-          <td style="width: 8%">S.No.</td>
-          <td colspan="2">Equipment Description</td>
-          <td colspan="2">Serial Number</td>
-          <td colspan="2">Warranty End</td>
+          <td style="width: 8%" class="table-header">S.No.</td>
+          <td colspan="2" class="table-header">Equipment Description</td>
+          <td colspan="2" class="table-header">Serial Number</td>
+          <td colspan="2" class="table-header">Warranty End</td>
         </tr>
 
         ${equipmentRows}
 
         <tr>
-          <td colspan="7" style="text-align: center; font-weight: bold; padding: 10px 0;">
+          <td colspan="7" style="text-align: center; font-weight: bold; padding: 10px 0;" class="field-label">
             Site Conditions
           </td>
         </tr>
         <tr>
           <td colspan="7" style="padding: 10px 0;">
-            Any abnormal site conditions: ${abnormalCondition}
+            <span class="field-label">Any abnormal site conditions:</span> 
+            <span class="field-data">${abnormalCondition}</span>
           </td>
         </tr>
         <tr>
-          <td>Supply Voltage(V)</td>
-          <td>L-N/R-Y</td>
-          <td>${lnry}</td>
-          <td>L-G/Y-B</td>
-          <td>${lgyb}</td>
-          <td>N-G/B-R</td>
-          <td>${ngbr}</td>
+          <td class="field-label">Supply Voltage(V)</td>
+          <td class="field-label">L-N/R-Y</td>
+          <td class="field-data">${lnry}</td>
+          <td class="field-label">L-G/Y-B</td>
+          <td class="field-data">${lgyb}</td>
+          <td class="field-label">N-G/B-R</td>
+          <td class="field-data">${ngbr}</td>
         </tr>
       </table>
 
@@ -265,9 +316,9 @@ module.exports = function getCertificateHTML(data) {
               font-size: 13px;
             "
           >
-            Installed by: ${employeeId}<br />
-            Engineer: ${firstName} ${lastName}<br />
-            Dealer: ${dealerCode}
+            <span class="install-label">Installed by:</span> <span class="install-data">${employeeId}</span><br />
+            <span class="install-label">Engineer:</span> <span class="install-data">${firstName} ${lastName}</span><br />
+            <span class="install-label">Dealer:</span> <span class="install-data">${dealerCode}</span>
           </td>
           <td
             style="
@@ -278,10 +329,10 @@ module.exports = function getCertificateHTML(data) {
               vertical-align: top;
             "
           >
-            Digitally Authorised by ${customerName} / ${hospitalName} <br />
-            by providing (OTP ${otp} sent on ${dateOfInstallation}) to
-            <strong>${email}</strong> and
-            <strong>${phoneNumber}</strong> by Skanray
+            <span class="install-label">Digitally Authorised by</span> <span class="install-data">${customerName} / ${hospitalName}</span> <br />
+            <span class="install-label">by providing (OTP</span> <span class="install-data">${otp}</span> <span class="install-label">sent on</span> <span class="install-data">${dateOfInstallation}</span><span class="install-label">) to</span>
+            <strong class="install-data">${email}</strong> <span class="install-label">and</span>
+            <strong class="install-data">${phoneNumber}</strong> <span class="install-label">by Skanray</span>
           </td>
           <td style="border: 1.5px solid #000; padding: 8px; width: 30%;">
             <p style="font-weight: bold; margin: 0;">Signature valid</p>
@@ -327,14 +378,14 @@ module.exports = function getCertificateHTML(data) {
       <p class="warranty-text">
         During the warranty period, Skanray will, at its option, either repair
         or replace the defective components / assemblies free of charge. The
-        defective part shall be promptly packed to Skanray’s concerned
+        defective part shall be promptly packed to Skanray's concerned
         office/service center in properly sealed packing freight, insurance
         and forwarding charges. Other claims, partially for compensation, are
         excluded.
       </p>
       <p class="warranty-text">
-        Skanray’s standard terms of sale and installation and repairs are
-        carried out by Skanray’s Engineer or Authorised Service Franchisee.
+        Skanray's standard terms of sale and installation and repairs are
+        carried out by Skanray's Engineer or Authorised Service Franchisee.
       </p>
       <p class="warranty-text">
         The warranty does not cover the following:
@@ -357,7 +408,7 @@ module.exports = function getCertificateHTML(data) {
       <p class="warranty-text">
         Equipment shall not be used for any other purpose than its intended
         design or nature. This warranty shall not apply to defects resulting
-        from any attempt by any person other than Skanray’s personnel or
+        from any attempt by any person other than Skanray's personnel or
         authorised agent to adjust, modify, or repair the product.
       </p>
       <p class="warranty-text" style="margin-bottom: 0;">

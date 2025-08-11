@@ -425,29 +425,119 @@ router.get('/equipment/:id', getEquipmentById, (req, res) => {
 });
 
 router.post('/send-otp', async (req, res) => {
-    const { email } = req.body;
+    const {
+        email,
+        products,
+        installationLocation,
+        customerDetails,
+        serviceEngineer
+    } = req.body;
+
     if (!email) {
         return res.status(400).json({ message: 'Email is required' });
     }
-    // Generate a 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Generate a 4-digit OTP (matching your template format)
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
     // Store OTP with a 5-minute expiry
     otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
+
+    // Create products warranty list for email template
+    const warrantyList = products && products.length > 0
+        ? products.map(product =>
+            `${product.serialNumber}  ${product.description} Warranty from ${product.warrantyStartDate} to ${product.warrantyEndDate}`
+        ).join('\n')
+        : 'No products specified';
+
+    // Create installation address
+    const installationAddress = installationLocation?.formattedAddress ||
+        `${customerDetails?.customerName || 'Customer Address'}\n${installationLocation?.city || ''}\n${installationLocation?.region || ''}`;
+
+    // Create HTML email template
+    const htmlTemplate = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd;">
+        <div style="border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
+            <h3 style="margin: 0;">OTP Template Installation (Email)</h3>
+            <p style="margin: 5px 0; font-size: 12px;">To be sent to customer's & Email selected during the Installation.</p>
+            <p style="margin: 5px 0; font-weight: bold;">Subject: OTP for Installation.</p>
+        </div>
+        
+        <p><strong>Dear Customer,</strong></p>
+        
+        <p><strong>Below products with warranty</strong></p>
+        <div style="background-color: #ffff99; padding: 10px; margin: 10px 0; font-family: monospace;">
+            ${warrantyList.split('\n').map(line => `<div>${line}</div>`).join('')}
+        </div>
+        
+        <p><strong>will be installed at</strong></p>
+        <div style="background-color: #ffff99; padding: 10px; margin: 10px 0; font-family: monospace;">
+            ${installationAddress.split('\n').map(line => `<div>${line}</div>`).join('')}
+        </div>
+        
+        <p>Kindly provide the Acceptance token ID /OTP (<strong style="color: #ff0000;">${otp}</strong>) to the service team acknowledging the installation and warranty terms.</p>
+        <p>You will receive a digitally signed Installation report in your email</p>
+        
+        <p>Regards,<br/>
+        Skanray Service Support team</p>
+        
+        <div style="border-top: 1px solid #333; margin-top: 30px; padding-top: 10px;">
+            <p style="font-size: 12px; color: #666;">This OTP is valid for 5 minutes only.</p>
+        </div>
+    </div>
+    `;
+
+    // Plain text version (fallback)
+    const textTemplate = `
+OTP Template Installation (Email)
+To be sent to customer's & Email selected during the Installation.
+Subject: OTP for Installation.
+
+Dear Customer,
+
+Below products with warranty
+${warrantyList}
+
+will be installed at
+${installationAddress}
+
+Kindly provide the Acceptance token ID /OTP (${otp}) to the service team acknowledging the installation and warranty terms.
+You will receive a digitally signed Installation report in your email
+
+Regards,
+Skanray Service Support team
+
+This OTP is valid for 5 minutes only.
+    `;
 
     const mailOptions = {
         from: 'webadmin@skanray-access.com',
         to: email,
-        subject: 'Your OTP for Equipment Installation',
-        text: `Your OTP is: ${otp}. It is valid for 5 minutes.`
+        subject: 'OTP for Installation',
+        text: textTemplate,
+        html: htmlTemplate
     };
 
     try {
         await transporter.sendMail(mailOptions);
-        res.status(200).json({ message: 'OTP sent successfully' });
+        console.log(`OTP ${otp} sent to ${email} for installation`);
+        res.status(200).json({
+            message: 'OTP sent successfully',
+            details: {
+                email: email,
+                productsCount: products?.length || 0,
+                customerName: customerDetails?.customerName || 'N/A'
+            }
+        });
     } catch (error) {
-        res.status(500).json({ message: 'Failed to send OTP', error: error.message });
+        console.error('Failed to send OTP email:', error);
+        res.status(500).json({
+            message: 'Failed to send OTP',
+            error: error.message
+        });
     }
 });
+
 
 // Endpoint to verify OTP
 router.post('/verify-otp', (req, res) => {
@@ -597,7 +687,7 @@ router.post("/equipment/bulk", async (req, res) => {
         const reportNo = `IR4000${counter.seq}`;
         sendUpdate(response);
 
-        // Phase 2: Installation PDF Generation
+        // Phase 2: Installation PDF Generation (only once)
         response.currentPhase = 'installation-pdf-generation';
         sendUpdate(response);
 
@@ -620,9 +710,18 @@ router.post("/equipment/bulk", async (req, res) => {
         }
         sendUpdate(response);
 
-        // Phase 3: Equipment Processing
+        // Phase 3: Equipment Processing and Checklist Generation
         response.currentPhase = 'equipment-processing';
         sendUpdate(response);
+
+        // Array to store all attachments for single email
+        const attachments = [{
+            filename: `InstallationReport_${reportNo}.pdf`,
+            content: installationBuffer
+        }];
+
+        // Create a list to track all serial numbers for email subject
+        const serialNumbers = [];
 
         // Process in small batches for better streaming
         const BATCH_SIZE = 3;
@@ -638,6 +737,7 @@ router.post("/equipment/bulk", async (req, res) => {
 
                 try {
                     const serialNumber = equipment.serialnumber;
+                    serialNumbers.push(serialNumber);
                     response.processedRecords++;
 
                     // Find matching checklist and enhance it with equipment data
@@ -661,7 +761,6 @@ router.post("/equipment/bulk", async (req, res) => {
                     } : null;
 
                     // Generate checklist PDF if exists
-                    let checklistBuffer = null;
                     if (enhancedChecklist?.checklistResults?.length > 0) {
                         const formatDetails = enhancedChecklist.prodGroup ?
                             await FormatMaster.findOne({ productGroup: enhancedChecklist.prodGroup }) :
@@ -729,58 +828,12 @@ router.post("/equipment/bulk", async (req, res) => {
                             formatRevNo,
                         });
 
-                        checklistBuffer = await generateSimplePdf(checklistHtml);
-                    }
-
-                    // Email attachments
-                    const attachments = [{
-                        filename: `InstallationReport_${reportNo}.pdf`,
-                        content: installationBuffer
-                    }];
-
-                    if (checklistBuffer) {
-                        attachments.push({
-                            filename: `Checklist_${serialNumber}.pdf`,
-                            content: checklistBuffer
-                        });
-                    }
-
-                    // 1. First send email to customer's email from pdfData
-                    if (pdfData.email) {
-                        await transporter.sendMail({
-                            from: 'webadmin@skanray-access.com',
-                            to: pdfData.email,
-                            subject: `Installation Report ${reportNo} - ${serialNumber}`,
-                            text: `Please find attached the installation report and checklist for equipment with serial number ${serialNumber}`,
-                            attachments: attachments,
-                            disableFileAccess: true,
-                            disableUrlAccess: true
-                        });
-                    }
-
-                    // 2. Then send email to dealer's email and user's email from userInfo
-                    if (pdfData.userInfo) {
-                        const toEmails = [
-                            pdfData.userInfo?.dealerEmail,
-                            pdfData.userInfo?.email,
-                            ...(Array.isArray(pdfData.userInfo.manageremail)
-                                ? pdfData.userInfo.manageremail
-                                : pdfData.userInfo.manageremail
-                                    ? [pdfData.userInfo.manageremail]
-                                    : []),
-                            'ftshivamtiwari222@gmail.com',
-                            // 'Damodara.s@skanray.com'
-                        ].filter(Boolean);
-
-                        if (toEmails.length > 0) {
-                            await transporter.sendMail({
-                                from: 'webadmin@skanray-access.com',
-                                to: toEmails,
-                                subject: `Installation Report ${reportNo} - ${serialNumber}`,
-                                text: `Please find attached the installation report and checklist for equipment with serial number ${serialNumber}`,
-                                attachments: attachments,
-                                disableFileAccess: true,
-                                disableUrlAccess: true
+                        const checklistBuffer = await generateSimplePdf(checklistHtml);
+                        if (checklistBuffer) {
+                            // Add checklist to attachments array
+                            attachments.push({
+                                filename: `Checklist_${serialNumber}.pdf`,
+                                content: checklistBuffer
                             });
                         }
                     }
@@ -814,6 +867,60 @@ router.post("/equipment/bulk", async (req, res) => {
             }
         }
 
+        // Phase 4: Send Single Email with All Attachments
+        response.currentPhase = 'sending-email';
+        sendUpdate(response);
+
+        // Create email subject with all serial numbers
+        const serialNumbersText = serialNumbers.join(', ');
+        const emailSubject = `Installation Report ${reportNo} - Equipment: ${serialNumbersText}`;
+        const emailText = `Please find attached the installation report and checklists for the following equipment serial numbers: ${serialNumbersText}`;
+
+        try {
+            // 1. First send email to customer's email from pdfData
+            if (pdfData.email) {
+                await transporter.sendMail({
+                    from: 'webadmin@skanray-access.com',
+                    to: pdfData.email,
+                    subject: emailSubject,
+                    text: emailText,
+                    attachments: attachments,
+                    disableFileAccess: true,
+                    disableUrlAccess: true
+                });
+            }
+
+            // 2. Then send email to dealer's email and user's email from userInfo
+            if (pdfData.userInfo) {
+                const toEmails = [
+                    pdfData.userInfo?.dealerEmail,
+                    pdfData.userInfo?.email,
+                    ...(Array.isArray(pdfData.userInfo.manageremail)
+                        ? pdfData.userInfo.manageremail
+                        : pdfData.userInfo.manageremail
+                            ? [pdfData.userInfo.manageremail]
+                            : []),
+                    'ftshivamtiwari222@gmail.com',
+                    // 'Damodara.s@skanray.com'
+                ].filter(Boolean);
+
+                if (toEmails.length > 0) {
+                    await transporter.sendMail({
+                        from: 'webadmin@skanray-access.com',
+                        to: toEmails,
+                        subject: emailSubject,
+                        text: emailText,
+                        attachments: attachments,
+                        disableFileAccess: true,
+                        disableUrlAccess: true
+                    });
+                }
+            }
+        } catch (emailError) {
+            console.error('Email sending error:', emailError);
+            response.errors.push(`Email sending failed: ${emailError.message}`);
+        }
+
         // Finalize response
         response.status = 'completed';
         response.endTime = new Date();
@@ -831,6 +938,7 @@ router.post("/equipment/bulk", async (req, res) => {
         res.end();
     }
 });
+
 
 
 
