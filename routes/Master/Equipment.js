@@ -691,8 +691,20 @@ router.post("/equipment/bulk", async (req, res) => {
         response.currentPhase = 'installation-pdf-generation';
         sendUpdate(response);
 
+        // 🔥 FIX: Create enhanced equipment list with keys from equipmentPayloads
+        const enhancedEquipmentList = equipmentPayloads.map(equipment => ({
+            materialdescription: equipment.materialdescription || "",
+            serialnumber: equipment.serialnumber || "",
+            custWarrantyenddate: equipment.custWarrantyenddate || "",
+            key: equipment.key || "", // 🔥 Add the key field here
+            materialcode: equipment.materialcode || ""
+        }));
+
+        console.log('Enhanced Equipment List with Keys:', enhancedEquipmentList);
+
         const installationHtml = getCertificateHTML({
             ...pdfData,
+            equipmentList: enhancedEquipmentList, // 🔥 Pass the enhanced list with keys
             installationreportno: reportNo,
             abnormalCondition: req.body.abnormalCondition || "",
             voltageData: req.body.voltageData || {},
@@ -844,7 +856,8 @@ router.post("/equipment/bulk", async (req, res) => {
                         {
                             $set: {
                                 equipmentUsedSerial: equipment.equipmentUsedSerial || "",
-                                calibrationDueDate: equipment.calibrationDueDate || ""
+                                calibrationDueDate: equipment.calibrationDueDate || "",
+                                key: equipment.key || "" // Add the key field
                             }
                         },
                         { new: true }
@@ -938,6 +951,8 @@ router.post("/equipment/bulk", async (req, res) => {
         res.end();
     }
 });
+
+
 
 
 

@@ -11,7 +11,6 @@ module.exports = function getCertificateHTML(data) {
     street = "",
     postalCode = "",
     state = "",
-    // Rename to match what your front-end sends
     abnormalCondition = "",
     voltageData = {},
     otp = "",
@@ -31,18 +30,39 @@ module.exports = function getCertificateHTML(data) {
   // Destructure your voltageData object
   const { lnry = "", lgyb = "", ngbr = "" } = voltageData;
 
-  // Build up to 6 rows for equipment
+  // Build up to 5 rows for equipment - UPDATED VERSION with key in brackets and centered
   function generateEquipmentRows(items) {
     let rowsHtml = "";
     for (let i = 0; i < 5; i++) {
       if (i < items.length) {
         const eq = items[i];
+
+        // FIXED: Ensure key is treated as string to avoid scientific notation
+        const keyStr = eq.key ? String(eq.key) : "";
+
+        // Create equipment description with material code below
+        const equipmentDescWithCode = `
+        ${eq.materialdescription || ""}<br />
+        <span style="font-size: 10px; color: #666;">${eq.materialcode || ""}</span>
+      `;
+
+        // Create serial number with key in brackets and centered below
+        const serialWithKeyBelow = keyStr ?
+          `${eq.serialnumber || ""}<br /><div style="text-align: center; font-size: 10px; color: #666;">(${keyStr})</div>` :
+          eq.serialnumber || "";
+
+        console.log('Equipment Key Debug:', {
+          originalKey: eq.key,
+          keyStr: keyStr,
+          serialWithKeyBelow: serialWithKeyBelow
+        });
+
         rowsHtml += `
-          <tr>
-            <td class="field-data">${i + 1}</td>
-            <td colspan="2" class="field-data">${eq.materialdescription || ""}</td>
-            <td colspan="2" class="field-data">${eq.serialnumber || ""}</td>
-            <td colspan="2" class="field-data">${eq.custWarrantyenddate
+        <tr>
+          <td class="field-data">${i + 1}</td>
+          <td colspan="2" class="field-data">${equipmentDescWithCode}</td>
+          <td colspan="2" class="field-data">${serialWithKeyBelow}</td>
+          <td colspan="2" class="field-data">${eq.custWarrantyenddate
             ? new Date(eq.custWarrantyenddate).toLocaleDateString("en-US", {
               month: "long",
               day: "numeric",
@@ -50,24 +70,45 @@ module.exports = function getCertificateHTML(data) {
             })
             : ""
           }</td>
-          </tr>
-        `;
+        </tr>
+      `;
       } else {
         // Blank row
         rowsHtml += `
-          <tr>
-            <td class="field-data">${i + 1}</td>
-            <td colspan="2" class="field-data"></td>
-            <td colspan="2" class="field-data"></td>
-            <td colspan="2" class="field-data"></td>
-          </tr>
-        `;
+        <tr>
+          <td class="field-data">${i + 1}</td>
+          <td colspan="2" class="field-data"></td>
+          <td colspan="2" class="field-data"></td>
+          <td colspan="2" class="field-data"></td>
+        </tr>
+      `;
       }
     }
     return rowsHtml;
   }
 
+
+
   const equipmentRows = generateEquipmentRows(equipmentList);
+
+  // Determine what to show in "Installed by" section based on usertype
+  let installedBySection = "";
+  if (userInfo.usertype === "skanray") {
+    // For Skanray users, show state names instead of dealer code
+    const stateNamesText = userInfo.stateNames ? userInfo.stateNames.join(", ") : "";
+    installedBySection = `
+      <span class="install-label">Installed by:</span> <span class="install-data">${employeeId}</span><br />
+      <span class="install-label">Engineer:</span> <span class="install-data">${firstName} ${lastName}</span><br />
+      <span class="install-label">States:</span> <span class="install-data">${stateNamesText}</span>
+    `;
+  } else {
+    // For dealer users, show dealer code (existing logic)
+    installedBySection = `
+      <span class="install-label">Installed by:</span> <span class="install-data">${employeeId}</span><br />
+      <span class="install-label">Engineer:</span> <span class="install-data">${firstName} ${lastName}</span><br />
+      <span class="install-label">Dealer:</span> <span class="install-data">${dealerCode}</span>
+    `;
+  }
 
   return `
 <!DOCTYPE html>
@@ -316,9 +357,7 @@ module.exports = function getCertificateHTML(data) {
               font-size: 13px;
             "
           >
-            <span class="install-label">Installed by:</span> <span class="install-data">${employeeId}</span><br />
-            <span class="install-label">Engineer:</span> <span class="install-data">${firstName} ${lastName}</span><br />
-            <span class="install-label">Dealer:</span> <span class="install-data">${dealerCode}</span>
+            ${installedBySection}
           </td>
           <td
             style="
