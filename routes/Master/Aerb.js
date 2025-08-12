@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Aerb = require('../../Model/MasterSchema/AerbSchema');
-
+const mongoose = require('mongoose');
 // Middleware to get an Aerb entry by ID
 async function getAerbById(req, res, next) {
     let aerb;
@@ -55,6 +55,45 @@ router.get('/aerb', async (req, res) => {
     }
 });
 
+// BULK DELETE Aerb entries
+router.delete('/aerb/bulk', async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        // Validate input
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Please provide valid IDs array' });
+        }
+
+        // Validate ObjectIds
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return res.status(400).json({ message: 'No valid IDs provided' });
+        }
+
+        // Delete multiple entries
+        const deleteResult = await Aerb.deleteMany({
+            _id: { $in: validIds }
+        });
+
+        if (deleteResult.deletedCount === 0) {
+            return res.status(404).json({
+                message: 'No entries found to delete',
+                deletedCount: 0
+            });
+        }
+
+        res.json({
+            message: `Successfully deleted ${deleteResult.deletedCount} entries`,
+            deletedCount: deleteResult.deletedCount,
+            requestedCount: validIds.length
+        });
+
+    } catch (err) {
+        console.error('Bulk delete error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 // GET Aerb entry by ID
 router.get('/aerb/:id', getAerbById, (req, res) => {

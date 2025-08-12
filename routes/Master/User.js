@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 const Role = require('../../Model/Role/RoleSchema'); // Make sure you import the Role model
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
-
+const mongoose = require('mongoose');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
@@ -427,6 +427,44 @@ router.post('/reset-password', async (req, res) => {
             errorCode: 'SERVER_ERROR',
             errorDetails: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
+    }
+});
+router.delete('/user/bulk', async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        // Validate input
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Please provide valid IDs array' });
+        }
+
+        // Validate ObjectIds
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return res.status(400).json({ message: 'No valid IDs provided' });
+        }
+
+        // Delete multiple users
+        const deleteResult = await User.deleteMany({
+            _id: { $in: validIds }
+        });
+
+        if (deleteResult.deletedCount === 0) {
+            return res.status(404).json({
+                message: 'No users found to delete',
+                deletedCount: 0
+            });
+        }
+
+        res.json({
+            message: `Successfully deleted ${deleteResult.deletedCount} users`,
+            deletedCount: deleteResult.deletedCount,
+            requestedCount: validIds.length
+        });
+
+    } catch (err) {
+        console.error('Bulk delete error:', err);
+        res.status(500).json({ message: err.message });
     }
 });
 router.patch('/user/:id/status', getUserById, async (req, res) => {

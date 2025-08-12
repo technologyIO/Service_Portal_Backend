@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Dealer = require('../../Model/MasterSchema/DealerSchema');
+const mongoose = require('mongoose');
 
 // Middleware to get dealer by ID
 async function getDealerById(req, res, next) {
@@ -57,6 +58,46 @@ router.get('/alldealer', async (req, res) => {
         const dealers = await Dealer.find();
         res.json({ dealers });
     } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// BULK DELETE Dealer entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/dealer/bulk', async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        // Validate input
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Please provide valid IDs array' });
+        }
+
+        // Validate ObjectIds
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return res.status(400).json({ message: 'No valid IDs provided' });
+        }
+
+        // Delete multiple dealers
+        const deleteResult = await Dealer.deleteMany({
+            _id: { $in: validIds }
+        });
+
+        if (deleteResult.deletedCount === 0) {
+            return res.status(404).json({
+                message: 'No dealers found to delete',
+                deletedCount: 0
+            });
+        }
+
+        res.json({
+            message: `Successfully deleted ${deleteResult.deletedCount} dealers`,
+            deletedCount: deleteResult.deletedCount,
+            requestedCount: validIds.length
+        });
+
+    } catch (err) {
+        console.error('Bulk delete error:', err);
         res.status(500).json({ message: err.message });
     }
 });

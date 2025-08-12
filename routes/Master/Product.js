@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Product = require('../../Model/MasterSchema/ProductSchema');
+const mongoose = require('mongoose');
 
 // Middleware to get product by ID
 async function getProductById(req, res, next) {
@@ -37,6 +38,46 @@ router.get('/product', async (req, res) => {
         const products = await Product.find();
         res.json(products);
     } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+ 
+// BULK DELETE Product entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/product/bulk', async (req, res) => {
+    try {
+        const { ids } = req.body;
+        
+        // Validate input
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Please provide valid IDs array' });
+        }
+
+        // Validate ObjectIds
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return res.status(400).json({ message: 'No valid IDs provided' });
+        }
+
+        // Delete multiple products
+        const deleteResult = await Product.deleteMany({ 
+            _id: { $in: validIds } 
+        });
+
+        if (deleteResult.deletedCount === 0) {
+            return res.status(404).json({ 
+                message: 'No products found to delete',
+                deletedCount: 0 
+            });
+        }
+
+        res.json({ 
+            message: `Successfully deleted ${deleteResult.deletedCount} products`,
+            deletedCount: deleteResult.deletedCount,
+            requestedCount: validIds.length
+        });
+
+    } catch (err) {
+        console.error('Bulk delete error:', err);
         res.status(500).json({ message: err.message });
     }
 });

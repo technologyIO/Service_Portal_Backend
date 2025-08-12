@@ -3,6 +3,7 @@ const router = express.Router();
 const Branch = require("../../Model/CollectionSchema/BranchSchema");
 const User = require("../../Model/MasterSchema/UserSchema");
 const City = require("../../Model/CollectionSchema/CitySchema");
+const mongoose = require('mongoose');
 
 async function getBranch(req, res, next) {
   try {
@@ -68,6 +69,47 @@ router.get("/branch", async (req, res) => {
     res.status(500).json({ message: err.message }); // Handle error and return JSON response with status 500 (Internal Server Error)
   }
 });
+
+// BULK DELETE Branch entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/branch/bulk', async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    // Validate input
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'Please provide valid IDs array' });
+    }
+
+    // Validate ObjectIds
+    const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length === 0) {
+      return res.status(400).json({ message: 'No valid IDs provided' });
+    }
+
+    // Delete multiple branches
+    const deleteResult = await Branch.deleteMany({
+      _id: { $in: validIds }
+    });
+
+    if (deleteResult.deletedCount === 0) {
+      return res.status(404).json({
+        message: 'No branches found to delete',
+        deletedCount: 0
+      });
+    }
+
+    res.json({
+      message: `Successfully deleted ${deleteResult.deletedCount} branches`,
+      deletedCount: deleteResult.deletedCount,
+      requestedCount: validIds.length
+    });
+
+  } catch (err) {
+    console.error('Bulk delete error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.get("/allbranch", async (req, res) => {
   try {
     const branches = await Branch.find();
