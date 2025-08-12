@@ -12,7 +12,9 @@ const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
 const pdf = require('html-pdf');
 const { getChecklistHTMLPM } = require("./checklistTemplatepm"); // DO NOT change its design
 const FormatMaster = require("../../Model/MasterSchema/FormatMasterSchema");
-// In-memory store for OTPs keyed by customerCode
+
+const mongoose = require('mongoose');
+
 
 const pdfStore = {};
 const otpStore = {};
@@ -55,6 +57,45 @@ async function checkDuplicatePMNumber(req, res, next) {
 
 
 
+// BULK DELETE PM entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/pms/bulk', async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    // Validate input
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'Please provide valid IDs array' });
+    }
+
+    // Validate ObjectIds
+    const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length === 0) {
+      return res.status(400).json({ message: 'No valid IDs provided' });
+    }
+
+    // Delete multiple PM records
+    const deleteResult = await PM.deleteMany({
+      _id: { $in: validIds }
+    });
+
+    if (deleteResult.deletedCount === 0) {
+      return res.status(404).json({
+        message: 'No PM records found to delete',
+        deletedCount: 0
+      });
+    }
+
+    res.json({
+      message: `Successfully deleted ${deleteResult.deletedCount} PM records`,
+      deletedCount: deleteResult.deletedCount,
+      requestedCount: validIds.length
+    });
+
+  } catch (err) {
+    console.error('Bulk delete error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
 
 router.get('/allpms/:employeeid?', async (req, res) => {
   try {

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
+const mongoose = require('mongoose');
 
 // 🔹 CREATE
 router.post('/', async (req, res) => {
@@ -34,7 +35,8 @@ router.get('/all', async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-// 🔍 SEARCH Endpoint (like your dealer example)
+
+// 🔍 SEARCH Endpoint
 router.get('/search-pmdocmaster', async (req, res) => {
   try {
     const { q } = req.query;
@@ -74,7 +76,47 @@ router.get('/search-pmdocmaster', async (req, res) => {
   }
 });
 
-// 🔹 READ ONE BY ID
+// BULK DELETE - CORRECTED ROUTE (removed /pm-doc-master/ prefix)
+router.delete('/bulk', async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    // Validate input
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'Please provide valid IDs array' });
+    }
+
+    // Validate ObjectIds
+    const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length === 0) {
+      return res.status(400).json({ message: 'No valid IDs provided' });
+    }
+
+    // Delete multiple PM doc masters
+    const deleteResult = await PMDocMaster.deleteMany({
+      _id: { $in: validIds }
+    });
+
+    if (deleteResult.deletedCount === 0) {
+      return res.status(404).json({
+        message: 'No PM doc masters found to delete',
+        deletedCount: 0
+      });
+    }
+
+    res.json({
+      message: `Successfully deleted ${deleteResult.deletedCount} PM doc masters`,
+      deletedCount: deleteResult.deletedCount,
+      requestedCount: validIds.length
+    });
+
+  } catch (err) {
+    console.error('Bulk delete error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// 🔹 READ ONE BY ID - PLACE AFTER BULK DELETE
 router.get('/:id', async (req, res) => {
   try {
     const doc = await PMDocMaster.findById(req.params.id);
@@ -107,7 +149,5 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
-
 
 module.exports = router;

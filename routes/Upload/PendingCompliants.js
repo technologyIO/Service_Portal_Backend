@@ -8,6 +8,9 @@ const pdf = require("html-pdf");
 const User = require('../../Model/MasterSchema/UserSchema');
 const cors = require('cors');
 let otpStore = {};
+
+const mongoose = require('mongoose');
+
 const app = express();
 app.options('*', cors());
 // Middleware to get a PendingComplaint by ID
@@ -41,6 +44,45 @@ async function checkDuplicateComplaintId(req, res, next) {
   next();
 }
 
+// BULK DELETE Pending Complaints entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/pendingcomplaints/bulk', async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    // Validate input
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'Please provide valid IDs array' });
+    }
+
+    // Validate ObjectIds
+    const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length === 0) {
+      return res.status(400).json({ message: 'No valid IDs provided' });
+    }
+
+    // Delete multiple pending complaints
+    const deleteResult = await PendingComplaints.deleteMany({
+      _id: { $in: validIds }
+    });
+
+    if (deleteResult.deletedCount === 0) {
+      return res.status(404).json({
+        message: 'No pending complaints found to delete',
+        deletedCount: 0
+      });
+    }
+
+    res.json({
+      message: `Successfully deleted ${deleteResult.deletedCount} pending complaints`,
+      deletedCount: deleteResult.deletedCount,
+      requestedCount: validIds.length
+    });
+
+  } catch (err) {
+    console.error('Bulk delete error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
 
 router.post("/revise/:notificationId", async (req, res) => {
   const { notificationId } = req.params;

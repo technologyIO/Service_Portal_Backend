@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const WarrantyCode = require('../../Model/MasterSchema/WarrantyCodeSchema');
+const mongoose = require('mongoose');
 
 // Middleware to get a warranty code by ID
 async function getWarrantyCodeById(req, res, next) {
@@ -32,6 +33,46 @@ async function checkDuplicateWarrantyCode(req, res, next) {
     }
     next();
 }
+
+// BULK DELETE Warranty Code entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/warrantycode/bulk', async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        // Validate input
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Please provide valid IDs array' });
+        }
+
+        // Validate ObjectIds
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return res.status(400).json({ message: 'No valid IDs provided' });
+        }
+
+        // Delete multiple warranty codes
+        const deleteResult = await WarrantyCode.deleteMany({
+            _id: { $in: validIds }
+        });
+
+        if (deleteResult.deletedCount === 0) {
+            return res.status(404).json({
+                message: 'No warranty codes found to delete',
+                deletedCount: 0
+            });
+        }
+
+        res.json({
+            message: `Successfully deleted ${deleteResult.deletedCount} warranty codes`,
+            deletedCount: deleteResult.deletedCount,
+            requestedCount: validIds.length
+        });
+
+    } catch (err) {
+        console.error('Bulk delete error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 router.get('/warrantycode', async (req, res) => {
     try {

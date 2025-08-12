@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const ReportedProblem = require('../../Model/MasterSchema/ReportedProblemSchema');
+const mongoose = require('mongoose');
 
 // Middleware to get a reported problem by ID
 async function getReportedProblemById(req, res, next) {
@@ -59,6 +60,45 @@ router.get('/reportedproblem', async (req, res) => {
     }
 });
 
+// BULK DELETE Reported Problem entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/reportedproblem/bulk', async (req, res) => {
+    try {
+        const { ids } = req.body;
+        
+        // Validate input
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Please provide valid IDs array' });
+        }
+
+        // Validate ObjectIds
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return res.status(400).json({ message: 'No valid IDs provided' });
+        }
+
+        // Delete multiple reported problems
+        const deleteResult = await ReportedProblem.deleteMany({ 
+            _id: { $in: validIds } 
+        });
+
+        if (deleteResult.deletedCount === 0) {
+            return res.status(404).json({ 
+                message: 'No reported problems found to delete',
+                deletedCount: 0 
+            });
+        }
+
+        res.json({ 
+            message: `Successfully deleted ${deleteResult.deletedCount} reported problems`,
+            deletedCount: deleteResult.deletedCount,
+            requestedCount: validIds.length
+        });
+
+    } catch (err) {
+        console.error('Bulk delete error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 // GET reported problem by ID
 router.get('/reportedproblem/:id', getReportedProblemById, (req, res) => {

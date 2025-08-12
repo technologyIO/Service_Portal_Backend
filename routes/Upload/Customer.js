@@ -3,6 +3,7 @@ const router = express.Router();
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 const nodemailer = require('nodemailer');
 const User = require('../../Model/MasterSchema/UserSchema');
+const mongoose = require('mongoose');
 
 const transporter = nodemailer.createTransport({
     service: 'Gmail',
@@ -47,6 +48,46 @@ async function checkDuplicateCustomer(req, res, next) {
     }
     next();
 }
+
+// BULK DELETE Customer entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/customer/bulk', async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        // Validate input
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Please provide valid IDs array' });
+        }
+
+        // Validate ObjectIds
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return res.status(400).json({ message: 'No valid IDs provided' });
+        }
+
+        // Delete multiple customers
+        const deleteResult = await Customer.deleteMany({
+            _id: { $in: validIds }
+        });
+
+        if (deleteResult.deletedCount === 0) {
+            return res.status(404).json({
+                message: 'No customers found to delete',
+                deletedCount: 0
+            });
+        }
+
+        res.json({
+            message: `Successfully deleted ${deleteResult.deletedCount} customers`,
+            deletedCount: deleteResult.deletedCount,
+            requestedCount: validIds.length
+        });
+
+    } catch (err) {
+        console.error('Bulk delete error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 router.post('/customer/send-email', async (req, res) => {
     // Extract the fields from req.body (ensure your frontend sends these)

@@ -6,6 +6,8 @@ const User = require('../../Model/MasterSchema/UserSchema');
 const Aerb = require('../../Model/MasterSchema/AerbSchema');
 const Product = require('../../Model/MasterSchema/ProductSchema');
 const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
+const mongoose = require('mongoose');
+
 // Middleware to get a PendingInstallation by ID
 async function getPendingInstallationById(req, res, next) {
     let pendingInstallation;
@@ -40,6 +42,46 @@ async function checkDuplicateInvoiceNo(req, res, next) {
 /** 
  * Specific Routes must come before generic parameterized routes.
  */
+
+// BULK DELETE Pending Installation entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/pendinginstallations/bulk', async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        // Validate input
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Please provide valid IDs array' });
+        }
+
+        // Validate ObjectIds
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return res.status(400).json({ message: 'No valid IDs provided' });
+        }
+
+        // Delete multiple pending installations
+        const deleteResult = await PendingInstallation.deleteMany({
+            _id: { $in: validIds }
+        });
+
+        if (deleteResult.deletedCount === 0) {
+            return res.status(404).json({
+                message: 'No pending installations found to delete',
+                deletedCount: 0
+            });
+        }
+
+        res.json({
+            message: `Successfully deleted ${deleteResult.deletedCount} pending installations`,
+            deletedCount: deleteResult.deletedCount,
+            requestedCount: validIds.length
+        });
+
+    } catch (err) {
+        console.error('Bulk delete error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 // GET all serial numbers
 router.get('/pendinginstallations/serialnumbers', async (req, res) => {

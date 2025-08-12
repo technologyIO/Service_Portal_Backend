@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const DealerStock = require('../../Model/UploadSchema/DealerStockSchema');
+const mongoose = require('mongoose');
 
 // Middleware to get a DealerStock by ID
 async function getDealerStockById(req, res, next) {
@@ -32,6 +33,46 @@ async function checkDuplicateMaterialCode(req, res, next) {
     }
     next();
 }
+
+// BULK DELETE Dealer Stock entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/dealerstocks/bulk', async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        // Validate input
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Please provide valid IDs array' });
+        }
+
+        // Validate ObjectIds
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return res.status(400).json({ message: 'No valid IDs provided' });
+        }
+
+        // Delete multiple dealer stocks
+        const deleteResult = await DealerStock.deleteMany({
+            _id: { $in: validIds }
+        });
+
+        if (deleteResult.deletedCount === 0) {
+            return res.status(404).json({
+                message: 'No dealer stocks found to delete',
+                deletedCount: 0
+            });
+        }
+
+        res.json({
+            message: `Successfully deleted ${deleteResult.deletedCount} dealer stocks`,
+            deletedCount: deleteResult.deletedCount,
+            requestedCount: validIds.length
+        });
+
+    } catch (err) {
+        console.error('Bulk delete error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 // GET all DealerStocks
 router.get('/dealerstocks', async (req, res) => {

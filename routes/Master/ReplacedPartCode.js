@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const ReplacedPartCode = require('../../Model/MasterSchema/ReplacedPartCodeSchema');
+const mongoose = require('mongoose');
 
 // Middleware to get a replaced part code by ID
 async function getReplacedPartCodeById(req, res, next) {
@@ -54,6 +55,46 @@ router.get('/replacedpartcodes', async (req, res) => {
     }
 });
 
+
+// BULK DELETE Replaced Part Code entries - PLACE THIS BEFORE THE /:id ROUTES
+router.delete('/replacedpartcodes/bulk', async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        // Validate input
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Please provide valid IDs array' });
+        }
+
+        // Validate ObjectIds
+        const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+            return res.status(400).json({ message: 'No valid IDs provided' });
+        }
+
+        // Delete multiple replaced part codes
+        const deleteResult = await ReplacedPartCode.deleteMany({
+            _id: { $in: validIds }
+        });
+
+        if (deleteResult.deletedCount === 0) {
+            return res.status(404).json({
+                message: 'No replaced part codes found to delete',
+                deletedCount: 0
+            });
+        }
+
+        res.json({
+            message: `Successfully deleted ${deleteResult.deletedCount} replaced part codes`,
+            deletedCount: deleteResult.deletedCount,
+            requestedCount: validIds.length
+        });
+
+    } catch (err) {
+        console.error('Bulk delete error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 // GET replaced part code by ID
 router.get('/replacedpartcodes/:id', getReplacedPartCodeById, (req, res) => {
