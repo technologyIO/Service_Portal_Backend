@@ -673,9 +673,15 @@ router.put(
     }
   }
 );
+// GET /allpendingcomplaints/:employeeid? - For fetching data with pagination only
 router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
   try {
     const { employeeid } = req.params;
+
+    // Pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
     if (employeeid) {
       // 1. Get the user
@@ -684,14 +690,12 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      let pendingComplaints = [];
+      let baseFilter = {};
       let filterInfo = {};
 
       // 2. Check usertype and apply appropriate logic
       if (user.usertype === 'skanray') {
-        // SKANRAY USER LOGIC - Based on Branch & Skills (existing logic)
-
-        // Extract part numbers from skills
+        // SKANRAY USER LOGIC - Based on Branch & Skills
         const partNumbers = [];
         user.skills.forEach(skill => {
           if (skill.partNumbers && skill.partNumbers.length > 0) {
@@ -699,14 +703,12 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
           }
         });
 
-        // Extract branch names
         const branchNames = user.branch || [];
 
-        // Apply both filters: materialcode & salesoffice (branch)
-        pendingComplaints = await PendingComplaints.find({
+        baseFilter = {
           materialcode: { $in: partNumbers },
           salesoffice: { $in: branchNames }
-        });
+        };
 
         filterInfo = {
           filteredBy: 'skanray',
@@ -717,7 +719,6 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
 
       } else if (user.usertype === 'dealer') {
         // DEALER USER LOGIC - Based on Dealer Code only
-
         const dealerCode = user.dealerInfo?.dealerCode;
 
         if (!dealerCode) {
@@ -726,10 +727,9 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
           });
         }
 
-        // Filter only by dealer code for dealer users
-        pendingComplaints = await PendingComplaints.find({
-          dealercode: dealerCode  // Assuming dealercode field exists in PendingComplaints
-        });
+        baseFilter = {
+          dealercode: dealerCode
+        };
 
         filterInfo = {
           filteredBy: 'dealer',
@@ -743,26 +743,222 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
         });
       }
 
+      // Get total count for pagination
+      const totalComplaints = await PendingComplaints.countDocuments(baseFilter);
+      const totalPages = Math.ceil(totalComplaints / limit);
+
+      // Apply pagination and get results
+      const pendingComplaints = await PendingComplaints.find(baseFilter)
+        .skip(skip)
+        .limit(limit)
+        .sort({ createdAt: -1 });
+
       return res.json({
+        success: true,
         pendingComplaints,
-        count: pendingComplaints.length,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalComplaints,
+          limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        },
         filteredByEmployee: true,
         filterInfo
       });
     }
 
-    // Default: Return all complaints if no employeeid provided
-    const pendingComplaints = await PendingComplaints.find();
+    // Default: Return all complaints with pagination if no employeeid provided
+    const totalComplaints = await PendingComplaints.countDocuments({});
+    const totalPages = Math.ceil(totalComplaints / limit);
+
+    const pendingComplaints = await PendingComplaints.find({})
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
     res.json({
+      success: true,
       pendingComplaints,
-      count: pendingComplaints.length,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalComplaints,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      },
       filteredByEmployee: false
     });
 
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('Error in allpendingcomplaints API:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: err.message
+    });
   }
 });
+
+
+
+// GET /searchpendingcomplaints/:employeeid? - For search functionality
+router.get('/searchpendingcomplaints/:employeeid?', async (req, res) => {
+  try {
+    const { employeeid } = req.params;
+
+    // Pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Search parameters
+    const searchQuery = req.query.search || '';
+
+    if (!searchQuery.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required'
+      });
+    }
+
+    let baseFilter = {};
+    let filterInfo = {};
+
+    if (employeeid) {
+      // 1. Get the user
+      const user = await User.findOne({ employeeid });
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // 2. Apply user-type specific base filters first
+      if (user.usertype === 'skanray') {
+        const partNumbers = [];
+        user.skills.forEach(skill => {
+          if (skill.partNumbers && skill.partNumbers.length > 0) {
+            partNumbers.push(...skill.partNumbers);
+          }
+        });
+
+        const branchNames = user.branch || [];
+
+        // Base filter for skanray user
+        baseFilter = {
+          materialcode: { $in: partNumbers },
+          salesoffice: { $in: branchNames }
+        };
+
+        filterInfo = {
+          filteredBy: 'skanray',
+          partNumbers,
+          branches: branchNames,
+          usertype: 'skanray'
+        };
+
+      } else if (user.usertype === 'dealer') {
+        const dealerCode = user.dealerInfo?.dealerCode;
+
+        if (!dealerCode) {
+          return res.status(400).json({
+            message: 'Dealer code not found for this dealer user'
+          });
+        }
+
+        // Base filter for dealer user
+        baseFilter = {
+          dealercode: dealerCode
+        };
+
+        filterInfo = {
+          filteredBy: 'dealer',
+          dealerCode,
+          usertype: 'dealer'
+        };
+      }
+    }
+
+    // Add search functionality on top of base filter
+    const searchConditions = [
+      { materialcode: { $regex: searchQuery, $options: 'i' } },
+      { dealercode: { $regex: searchQuery, $options: 'i' } },
+      { salesoffice: { $regex: searchQuery, $options: 'i' } },
+      { notification_complaintid: { $regex: searchQuery, $options: 'i' } },
+      { serialnumber: { $regex: searchQuery, $options: 'i' } },
+      { materialdescription: { $regex: searchQuery, $options: 'i' } },
+      { reportedproblem: { $regex: searchQuery, $options: 'i' } },
+      { customercode: { $regex: searchQuery, $options: 'i' } },
+      { productgroup: { $regex: searchQuery, $options: 'i' } },
+      { status: { $regex: searchQuery, $options: 'i' } },
+      { notificationtype: { $regex: searchQuery, $options: 'i' } },
+      { userstatus: { $regex: searchQuery, $options: 'i' } },
+      { devicedata: { $regex: searchQuery, $options: 'i' } },
+      { partnerresp: { $regex: searchQuery, $options: 'i' } },
+      { breakdown: { $regex: searchQuery, $options: 'i' } },
+      { problemtype: { $regex: searchQuery, $options: 'i' } },
+      { problemname: { $regex: searchQuery, $options: 'i' } },
+      { sparerequest: { $regex: searchQuery, $options: 'i' } },
+      { remark: { $regex: searchQuery, $options: 'i' } }
+    ];
+
+    // Combine base filter with search conditions
+    if (Object.keys(baseFilter).length > 0) {
+      // If there's a base filter (user-specific), combine with AND condition
+      baseFilter = {
+        $and: [
+          baseFilter,
+          { $or: searchConditions }
+        ]
+      };
+    } else {
+      // If no base filter, use only search conditions
+      baseFilter = { $or: searchConditions };
+    }
+
+    // Get total count for pagination
+    const totalComplaints = await PendingComplaints.countDocuments(baseFilter);
+    const totalPages = Math.ceil(totalComplaints / limit);
+
+    // Apply pagination and get results
+    const pendingComplaints = await PendingComplaints.find(baseFilter)
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      pendingComplaints,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalComplaints,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      },
+      filteredByEmployee: !!employeeid,
+      filterInfo,
+      searchQuery,
+      searchableFields: [
+        'materialcode', 'dealercode', 'salesoffice', 'notification_complaintid',
+        'serialnumber', 'materialdescription', 'reportedproblem', 'customercode',
+        'productgroup', 'status', 'notificationtype', 'userstatus', 'devicedata',
+        'partnerresp', 'breakdown', 'problemtype', 'problemname', 'sparerequest', 'remark'
+      ]
+    });
+
+  } catch (err) {
+    console.error('Error in searchpendingcomplaints API:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: err.message
+    });
+  }
+});
+
 
 
 

@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 
-
 const additionalServiceChargeSchema = new mongoose.Schema({
     totalAmount: { type: Number },
     location: { type: String, enum: ["withinCity", "outsideCity"] },
@@ -8,8 +7,6 @@ const additionalServiceChargeSchema = new mongoose.Schema({
     enteredCharge: { type: Number }
 }, { _id: false });
 
-
-// Spare Part Schema
 const sparePartSchema = new mongoose.Schema({
     PartNumber: String,
     Description: String,
@@ -20,7 +17,6 @@ const sparePartSchema = new mongoose.Schema({
     Image: String
 }, { _id: false });
 
-// Complaint Schema
 const complaintSchema = new mongoose.Schema({
     notificationtype: String,
     notification_complaintid: String,
@@ -42,7 +38,6 @@ const complaintSchema = new mongoose.Schema({
     sparerequest: String
 }, { _id: false });
 
-// Product Group Schema
 const productGroupSchema = new mongoose.Schema({
     productPartNo: String,
     subgroup: String,
@@ -51,7 +46,6 @@ const productGroupSchema = new mongoose.Schema({
     existingSpares: [sparePartSchema]
 }, { _id: false });
 
-// Customer Schema
 const customerSchema = new mongoose.Schema({
     customercodeid: String,
     customername: String,
@@ -63,14 +57,12 @@ const customerSchema = new mongoose.Schema({
     email: String
 }, { _id: false });
 
-// Approval Schema
 const approvalSchema = new mongoose.Schema({
     approved: { type: Boolean, default: false },
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     approvedAt: Date
 }, { _id: false });
 
-// Revision Schema
 const revisionSchema = new mongoose.Schema({
     revisionNumber: { type: Number, required: true },
     revisionDate: { type: Date, default: Date.now },
@@ -94,7 +86,6 @@ const revisionSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
-// OnCall Schema
 const onCallSchema = new mongoose.Schema({
     customer: customerSchema,
     productGroups: [productGroupSchema],
@@ -116,6 +107,10 @@ const onCallSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now },
     status: { type: String, default: 'draft' },
     onCallNumber: { type: String, unique: true },
+    
+    // Only cnoteNumber field as you need
+    cnoteNumber: { type: String, default: null },
+
     currentRevision: { type: Number, default: 0 },
     revisions: [revisionSchema],
     createdBy: { type: String },
@@ -134,47 +129,41 @@ const onCallSchema = new mongoose.Schema({
     }
 });
 
+// OnCall number generation if not exists
 onCallSchema.pre('save', async function (next) {
-    // OnCall number generation (अगर नहीं है तो)
     if (!this.onCallNumber) {
         try {
             const year = new Date().getFullYear();
-
             const latest = await this.constructor
                 .findOne({ onCallNumber: { $regex: `^ONCALL-${year}-` } })
                 .sort({ onCallNumber: -1 })
                 .select('onCallNumber')
                 .lean();
-
             let nextNumber = 1;
             if (latest && latest.onCallNumber) {
                 const lastPart = latest.onCallNumber.split('-').pop();
                 const parsed = parseInt(lastPart, 10);
                 if (!isNaN(parsed)) nextNumber = parsed + 1;
             }
-
             this.onCallNumber = `ONCALL-${year}-${String(nextNumber).padStart(5, '0')}`;
         } catch (err) {
             return next(err);
         }
     }
-
-    // UpdatedAt set करें
     this.updatedAt = new Date();
     next();
 });
 
-
-
-// Auto update updatedAt
+// Auto update updatedAt on update
 onCallSchema.pre('findOneAndUpdate', function (next) {
     this.set({ updatedAt: new Date() });
     next();
 });
 
-// Indexes
+// Useful Indexes
 onCallSchema.index({ 'customer.customername': 1 });
 onCallSchema.index({ 'productGroups.productPartNo': 1 });
 onCallSchema.index({ 'productGroups.spares.PartNumber': 1 });
+onCallSchema.index({ cnoteNumber: 1 });
 
 module.exports = mongoose.model('OnCall', onCallSchema);

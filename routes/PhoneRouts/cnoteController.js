@@ -438,16 +438,38 @@ router.post('/', async (req, res) => {
             cnoteNumber
         });
 
-        await cnote.save();
+        // Use session for transaction to ensure both operations succeed
+        const session = await mongoose.startSession();
 
-        // Generate PDF and send email
-        await generateAndSendPdf(cnote, res);
+        try {
+            await session.withTransaction(async () => {
+                // Save CNote
+                await cnote.save({ session });
+
+                // Update Proposal with cnoteNumber
+                await Proposal.findByIdAndUpdate(
+                    proposalId,
+                    { cnoteNumber: cnoteNumber },
+                    { session }
+                );
+            });
+
+            // Generate PDF and send email
+            await generateAndSendPdf(cnote, res);
+
+        } catch (transactionError) {
+            await session.abortTransaction();
+            throw transactionError;
+        } finally {
+            session.endSession();
+        }
 
     } catch (error) {
         console.error('CNote creation error:', error);
         res.status(500).json({ message: error.message });
     }
 });
+
 
 // Get all CNotes
 router.get('/', async (req, res) => {
@@ -561,16 +583,51 @@ router.delete('/:cnoteNumber', async (req, res) => {
     try {
         const { cnoteNumber } = req.params;
 
-        const cnote = await CNote.findOneAndDelete({ cnoteNumber });
+        // Use session for transaction
+        const session = await mongoose.startSession();
 
-        if (!cnote) {
-            return res.status(404).json({ message: 'CNote not found' });
+        try {
+            let deletedCNote;
+
+            await session.withTransaction(async () => {
+                // Find and delete CNote
+                deletedCNote = await CNote.findOneAndDelete({ cnoteNumber }, { session });
+
+                if (!deletedCNote) {
+                    throw new Error('CNote not found');
+                }
+
+                // Clear cnoteNumber from corresponding Proposal
+                await Proposal.findOneAndUpdate(
+                    { proposalNumber: deletedCNote.proposalNumber },
+                    { $unset: { cnoteNumber: "" } }, // This will remove the field or set it to null
+                    { session }
+                );
+            });
+
+            res.json({
+                message: 'CNote deleted successfully',
+                deletedCNote: {
+                    cnoteNumber: deletedCNote.cnoteNumber,
+                    proposalNumber: deletedCNote.proposalNumber
+                }
+            });
+
+        } catch (transactionError) {
+            await session.abortTransaction();
+            if (transactionError.message === 'CNote not found') {
+                return res.status(404).json({ message: 'CNote not found' });
+            }
+            throw transactionError;
+        } finally {
+            session.endSession();
         }
 
-        res.json({ message: 'CNote deleted successfully' });
     } catch (error) {
+        console.error('CNote deletion error:', error);
         res.status(500).json({ message: error.message });
     }
 });
+
 
 module.exports = router;

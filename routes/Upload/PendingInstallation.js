@@ -128,6 +128,7 @@ router.get('/pendinginstallations/serial/:serialnumber', async (req, res) => {
 router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, res) => {
     try {
         const employeeid = req.params.employeeid;
+        const { search, limit = 100, skip = 0 } = req.query;
 
         // 1. Find the user by employee ID
         const user = await User.findOne({ employeeid: employeeid });
@@ -147,20 +148,62 @@ router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, r
             return res.status(404).json({ message: 'No part numbers found in user skills' });
         }
 
-        // 3. Find pending installations where material matches any part number
-        const installations = await PendingInstallation.find({
+        // 3. Build query for pending installations
+        let query = {
             material: { $in: partNumbers }
-        }, 'serialnumber'); // Only get serialnumber field
+        };
 
-        if (installations.length === 0) {
-            return res.status(404).json({ message: 'No installations found matching user skills' });
+        // Add search functionality if search term is provided
+        if (search && search.trim()) {
+            query.serialnumber = {
+                $regex: search.trim(),
+                $options: 'i' // Case insensitive
+            };
         }
 
-        // 4. Extract just the serial numbers into an array
+        // 4. Get total count for pagination info
+        const totalCount = await PendingInstallation.countDocuments(query);
+
+        // 5. Find installations with pagination and search
+        const installations = await PendingInstallation.find(query, 'serialnumber')
+            .sort({ serialnumber: 1 }) // Sort alphabetically
+            .skip(parseInt(skip))
+            .limit(parseInt(limit));
+
+        if (installations.length === 0) {
+            return res.status(404).json({
+                message: search
+                    ? 'No installations found matching search criteria'
+                    : 'No installations found matching user skills',
+                serialNumbers: [],
+                pagination: {
+                    total: totalCount,
+                    skip: parseInt(skip),
+                    limit: parseInt(limit),
+                    hasMore: false
+                }
+            });
+        }
+
+        // 6. Extract serial numbers
         const serialNumbers = installations.map(inst => inst.serialnumber);
 
-        res.json(serialNumbers);
+        // 7. Calculate pagination info
+        const hasMore = (parseInt(skip) + parseInt(limit)) < totalCount;
+
+        res.json({
+            serialNumbers,
+            pagination: {
+                total: totalCount,
+                skip: parseInt(skip),
+                limit: parseInt(limit),
+                hasMore,
+                returned: serialNumbers.length
+            }
+        });
+
     } catch (err) {
+        console.error('Error in user-serialnumbers API:', err);
         res.status(500).json({ message: err.message });
     }
 });

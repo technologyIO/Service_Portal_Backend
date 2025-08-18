@@ -10,7 +10,7 @@ const User = require('../../Model/MasterSchema/UserSchema');
 const router = express.Router();
 
 
- 
+
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -441,7 +441,7 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: 'Generated OnCall CNote number already exists. Try again.' });
         }
 
-        // Flatten spares from productGroups
+        // Flatten spares
         const flattenedSpares = [];
         onCall.productGroups?.forEach(group => {
             group.spares?.forEach(spare => {
@@ -482,6 +482,9 @@ router.post('/', async (req, res) => {
         const cnote = new OnCallCNote(cnoteData);
         await cnote.save();
 
+        // **** Update OnCall schema with cnoteNumber ****
+        await OnCall.findByIdAndUpdate(onCallId, { cnoteNumber }, { new: true });
+
         // Generate PDF and send email
         await generateAndSendPdf(cnote, res);
 
@@ -490,6 +493,7 @@ router.post('/', async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
+
 
 // Get all OnCall CNotes
 router.get('/', async (req, res) => {

@@ -84,6 +84,7 @@ const proposalSchema = new mongoose.Schema({
     gstPercentage: Number,
     remark: String,
     CoNumber: String,
+    cnoteNumber: { type: String, default: null },
     grandSubTotal: { type: Number, min: [0, 'Subtotal cannot be negative'] },
     discountAmount: { type: Number, min: [0, 'Discount cannot be negative'] },
     afterDiscount: { type: Number, min: [0, 'Value cannot be negative'] },
