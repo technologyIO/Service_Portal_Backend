@@ -535,6 +535,7 @@ router.get('/search', async (req, res) => {
                 { 'customer.email': searchRegex },
                 { status: searchRegex },
                 { remark: searchRegex },
+                { serialNumber: searchRegex },
                 { 'items.equipment.name': searchRegex },
                 { 'items.equipment.materialcode': searchRegex }
             ];

@@ -123,15 +123,16 @@ router.get('/paginated', async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
 
-        // Base query to exclude completed proposals
-        const query = { status: { $ne: "completed" } };
+        // ✅ No default status filter anymore
+        const query = {};
 
-        // Add additional filters if needed
+        // Optional filter by createdBy
         if (req.query.createdBy) {
             query.createdBy = req.query.createdBy;
         }
 
-        if (req.query.status && req.query.status !== "completed") {
+        // Optional filter by status (only if explicitly passed from frontend)
+        if (req.query.status) {
             query.status = req.query.status;
         }
 
@@ -146,15 +147,16 @@ router.get('/paginated', async (req, res) => {
         const totalPages = Math.ceil(total / limit);
 
         res.json({
-            data: proposals, // Keep data field name consistent with frontend
+            data: proposals,
             totalPages,
             total,
-            currentPage: page
+            currentPage: page,
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });
+
 // Search proposals with pagination
 router.get('/search', async (req, res) => {
     try {
@@ -336,10 +338,9 @@ router.get('/customer/:customerId', async (req, res) => {
         const skip = (page - 1) * limit;
         const searchTerm = req.query.q || req.query.search || '';
 
-        // Base query to find proposals by customer code ID
+        // ✅ Base query only by customerId (no default status filter)
         let baseQuery = {
-            'customer.customercodeid': customerId,
-            status: { $ne: "completed" } // Exclude completed by default
+            'customer.customercodeid': customerId
         };
 
         // Add search functionality if search term is provided
@@ -360,17 +361,12 @@ router.get('/customer/:customerId', async (req, res) => {
             };
         }
 
-        // Add additional filters
-        if (req.query.status && req.query.status !== "completed") {
+        // Optional status filter (only if frontend passes it)
+        if (req.query.status) {
             baseQuery.status = req.query.status;
         }
 
-        // Include completed proposals if specifically requested
-        if (req.query.includeCompleted === 'true') {
-            delete baseQuery.status; // Remove status filter to include all
-        }
-
-        // Filter by discount percentage if provided
+        // Discount filters
         if (req.query.minDiscount) {
             baseQuery.discountPercentage = {
                 $gte: parseFloat(req.query.minDiscount)
@@ -402,24 +398,20 @@ router.get('/customer/:customerId', async (req, res) => {
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
-            .lean(); // Use lean() for better performance
+            .lean();
 
-        // Get total count for pagination
         const total = await Proposal.countDocuments(baseQuery);
         const totalPages = Math.ceil(total / limit);
 
-        // Calculate pagination info
         const hasNext = page < totalPages;
         const hasPrev = page > 1;
 
-        // Get customer info from first proposal (if exists)
         const customerInfo = proposals.length > 0 ? proposals[0].customer : null;
 
-        // If no proposals found but we have customer ID, try to get customer info
         if (!customerInfo && proposals.length === 0) {
             const anyProposal = await Proposal.findOne(
                 { 'customer.customercodeid': customerId },
-                { 'customer': 1 }
+                { customer: 1 }
             ).lean();
 
             if (!anyProposal) {
@@ -443,8 +435,7 @@ router.get('/customer/:customerId', async (req, res) => {
             }
         }
 
-        // Prepare response
-        const response = {
+        res.json({
             success: true,
             message: `Found ${total} proposals for customer ${customerId}`,
             data: proposals,
@@ -467,12 +458,126 @@ router.get('/customer/:customerId', async (req, res) => {
                 minDiscount: req.query.minDiscount || null,
                 maxDiscount: req.query.maxDiscount || null,
                 startDate: req.query.startDate || null,
-                endDate: req.query.endDate || null,
-                includeCompleted: req.query.includeCompleted === 'true'
+                endDate: req.query.endDate || null
             }
+        });
+
+    } catch (error) {
+        console.error('Error fetching customer proposals:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error occurred while fetching customer proposals',
+            error: error.message,
+            data: [],
+            customer: null
+        });
+    }
+});
+router.get('/customercmcclose/:customerId', async (req, res) => {
+    try {
+        const { customerId } = req.params;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const searchTerm = req.query.q || req.query.search || '';
+
+        // ✅ Base query: exclude proposals with Cmcncmcsostatus = "Open"
+        let baseQuery = {
+            'customer.customercodeid': customerId,
+            Cmcncmcsostatus: { $ne: "Open" }
         };
 
-        res.json(response);
+        // Add search functionality
+        if (searchTerm.trim()) {
+            const searchRegex = new RegExp(searchTerm.trim(), 'i');
+            baseQuery = {
+                ...baseQuery,
+                $or: [
+                    { proposalNumber: searchRegex },
+                    { cnoteNumber: searchRegex },
+                    { 'customer.customername': searchRegex },
+                    { status: searchRegex },
+                    { remark: searchRegex },
+                    { 'items.equipment.equipmentname': searchRegex },
+                    { 'items.equipment.model': searchRegex },
+                    { 'items.equipment.brand': searchRegex }
+                ]
+            };
+        }
+
+        // Optional status filter
+        if (req.query.status) {
+            baseQuery.status = req.query.status;
+        }
+
+        // Discount filters
+        if (req.query.minDiscount) {
+            baseQuery.discountPercentage = {
+                $gte: parseFloat(req.query.minDiscount)
+            };
+        }
+
+        if (req.query.maxDiscount) {
+            baseQuery.discountPercentage = {
+                ...baseQuery.discountPercentage,
+                $lte: parseFloat(req.query.maxDiscount)
+            };
+        }
+
+        // Date range filter
+        if (req.query.startDate || req.query.endDate) {
+            baseQuery.createdAt = {};
+            if (req.query.startDate) {
+                baseQuery.createdAt.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                baseQuery.createdAt.$lte = new Date(req.query.endDate);
+            }
+        }
+
+        // Execute query
+        const proposals = await Proposal.find(baseQuery)
+            .populate('customer', 'customername customercode city email telephone')
+            .populate('items.equipment', 'equipmentname model brand')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
+
+        const total = await Proposal.countDocuments(baseQuery);
+        const totalPages = Math.ceil(total / limit);
+
+        const hasNext = page < totalPages;
+        const hasPrev = page > 1;
+
+        const customerInfo = proposals.length > 0 ? proposals[0].customer : null;
+
+        res.json({
+            success: true,
+            message: `Found ${total} proposals for customer ${customerId}`,
+            data: proposals,
+            customer: customerInfo,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalRecords: total,
+                recordsPerPage: limit,
+                recordsOnPage: proposals.length,
+                hasNext,
+                hasPrev,
+                nextPage: hasNext ? page + 1 : null,
+                prevPage: hasPrev ? page - 1 : null
+            },
+            filters: {
+                customerId,
+                search: searchTerm || null,
+                status: req.query.status || null,
+                minDiscount: req.query.minDiscount || null,
+                maxDiscount: req.query.maxDiscount || null,
+                startDate: req.query.startDate || null,
+                endDate: req.query.endDate || null
+            }
+        });
 
     } catch (error) {
         console.error('Error fetching customer proposals:', error);
@@ -520,13 +625,14 @@ router.put('/:id/update-conumber', async (req, res) => {
                 $set: {
                     CoNumber: CoNumber,
                     status: 'completed',
+                    Cmcncmcsostatus: 'CLOSED_WON',
                     updatedAt: Date.now()
                 },
                 $push: {
                     statusHistory: {
                         status: 'completed',
                         changedAt: Date.now(),
-                        changedBy: req.user ? req.user._id : null // Assuming you have user info in req.user
+                        changedBy: req.user ? req.user._id : null
                     }
                 }
             },
@@ -542,10 +648,11 @@ router.put('/:id/update-conumber', async (req, res) => {
 
         res.json({
             success: true,
-            message: 'CoNumber updated and status set to completed',
+            message: 'CoNumber updated, status set to completed, Cmcncmcsostatus closed won',
             data: proposal
         });
     } catch (error) {
+        console.error('Proposal update error:', error);
         res.status(500).json({
             success: false,
             message: 'Server error during update',
@@ -553,6 +660,7 @@ router.put('/:id/update-conumber', async (req, res) => {
         });
     }
 });
+
 // Create a new revision
 router.post('/:id/revisions', async (req, res) => {
     try {
@@ -1101,15 +1209,6 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
-// Get proposals by customer
-router.get('/customer/:customerId', async (req, res) => {
-    try {
-        const proposals = await Proposal.find({ 'customer.customercodeid': req.params.customerId })
-            .sort({ createdAt: -1 });
-        res.json(proposals);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
+
 
 module.exports = router;

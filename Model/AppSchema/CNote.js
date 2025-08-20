@@ -72,6 +72,7 @@ const CNoteSchema = new mongoose.Schema({
     discountPercentage: Number,
     gstPercentage: Number,
     remark: String,
+    serialNumber: String,
     grandSubTotal: Number,
     discountAmount: Number,
     afterDiscount: Number,

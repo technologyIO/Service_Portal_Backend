@@ -106,6 +106,7 @@ const onCallSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
     status: { type: String, default: 'draft' },
+    onCallproposalstatus: { type: String,default: 'Open' },
     onCallNumber: { type: String, unique: true },
     
     // Only cnoteNumber field as you need
