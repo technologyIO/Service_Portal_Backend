@@ -85,8 +85,8 @@ router.get('/search', async (req, res) => {
         const skip = (page - 1) * limit;
         const searchTerm = req.query.q || req.query.search || '';
 
-        // Base query to exclude completed OnCalls
-        let baseQuery = { status: { $ne: "completed" } };
+        // Base query (no status filter anymore)
+        let baseQuery = {};
 
         // Build search query if search term is provided
         if (searchTerm.trim()) {
@@ -98,7 +98,6 @@ router.get('/search', async (req, res) => {
                     { onCallNumber: searchRegex },
                     { 'customer.customername': searchRegex },
                     { 'customer.customercode': searchRegex },
-                    { status: searchRegex },
                     { remark: searchRegex },
                     { 'complaint.notification_complaintid': searchRegex },
                     { 'complaint.complaintType': searchRegex },
@@ -110,16 +109,11 @@ router.get('/search', async (req, res) => {
             };
         }
 
-        // Add additional filters if needed
-        if (req.query.status && req.query.status !== "completed") {
-            baseQuery.status = req.query.status;
-        }
-
+        // Keep other filters
         if (req.query.createdBy) {
             baseQuery.createdBy = req.query.createdBy;
         }
 
-        // Filter by discount percentage if provided
         if (req.query.minDiscount) {
             baseQuery.discountPercentage = {
                 $gte: parseFloat(req.query.minDiscount)
@@ -133,7 +127,6 @@ router.get('/search', async (req, res) => {
             };
         }
 
-        // Date range filter
         if (req.query.startDate || req.query.endDate) {
             baseQuery.createdAt = {};
             if (req.query.startDate) {
@@ -144,12 +137,10 @@ router.get('/search', async (req, res) => {
             }
         }
 
-        // Priority level filter
         if (req.query.priorityLevel) {
             baseQuery['complaint.priorityLevel'] = req.query.priorityLevel;
         }
 
-        // Complaint type filter
         if (req.query.complaintType) {
             baseQuery['complaint.complaintType'] = new RegExp(req.query.complaintType, 'i');
         }
@@ -160,13 +151,12 @@ router.get('/search', async (req, res) => {
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
-            .lean(); // Use lean() for better performance
+            .lean();
 
         // Get total count for pagination
         const total = await OnCall.countDocuments(baseQuery);
         const totalPages = Math.ceil(total / limit);
 
-        // Calculate pagination info
         const hasNext = page < totalPages;
         const hasPrev = page > 1;
 
@@ -189,7 +179,6 @@ router.get('/search', async (req, res) => {
                 query: searchTerm,
                 totalMatches: total,
                 filters: {
-                    status: req.query.status || null,
                     minDiscount: req.query.minDiscount || null,
                     maxDiscount: req.query.maxDiscount || null,
                     startDate: req.query.startDate || null,
@@ -212,6 +201,7 @@ router.get('/search', async (req, res) => {
         });
     }
 });
+
 
 router.get('/pagecallcompleted', async (req, res) => {
     try {

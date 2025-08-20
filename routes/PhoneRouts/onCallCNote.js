@@ -767,21 +767,29 @@ router.post('/:cnoteNumber/cancel', async (req, res) => {
     }
 });
 
-// Delete OnCall CNote
+ 
 router.delete('/:cnoteNumber', async (req, res) => {
     try {
         const { cnoteNumber } = req.params;
 
+        // Find and delete the OnCall CNote by cnoteNumber
         const cnote = await OnCallCNote.findOneAndDelete({ cnoteNumber });
 
         if (!cnote) {
             return res.status(404).json({ message: 'OnCall CNote not found' });
         }
 
-        res.json({ message: 'OnCall CNote deleted successfully' });
+        // Remove the cnoteNumber from the related OnCall document
+        await OnCall.findOneAndUpdate(
+            { cnoteNumber },
+            { $unset: { cnoteNumber: '' } } // unset the cnoteNumber field
+        );
+
+        res.json({ message: 'OnCall CNote deleted successfully and OnCall updated' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });
+
 
 module.exports = router;

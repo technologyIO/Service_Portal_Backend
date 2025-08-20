@@ -166,8 +166,8 @@ router.get('/search', async (req, res) => {
         const skip = (page - 1) * limit;
         const searchTerm = req.query.q || req.query.search || '';
 
-        // Base query to exclude completed proposals
-        let baseQuery = { status: { $ne: "completed" } };
+        // Base query (no status filter now)
+        let baseQuery = {};
 
         // Build search query if search term is provided
         if (searchTerm.trim()) {
@@ -179,7 +179,6 @@ router.get('/search', async (req, res) => {
                     { proposalNumber: searchRegex },
                     { cnoteNumber: searchRegex },
                     { 'customer.customername': searchRegex },
-                    { status: searchRegex },
                     { remark: searchRegex },
                     { 'items.equipment.equipmentname': searchRegex },
                     { 'items.equipment.model': searchRegex },
@@ -189,10 +188,6 @@ router.get('/search', async (req, res) => {
         }
 
         // Add additional filters if needed
-        if (req.query.status && req.query.status !== "completed") {
-            baseQuery.status = req.query.status;
-        }
-
         if (req.query.createdBy) {
             baseQuery.createdBy = req.query.createdBy;
         }
@@ -258,7 +253,6 @@ router.get('/search', async (req, res) => {
                 query: searchTerm,
                 totalMatches: total,
                 filters: {
-                    status: req.query.status || null,
                     minDiscount: req.query.minDiscount || null,
                     maxDiscount: req.query.maxDiscount || null,
                     startDate: req.query.startDate || null,
@@ -279,6 +273,7 @@ router.get('/search', async (req, res) => {
         });
     }
 });
+
 
 router.get('/allcompleted', async (req, res) => {
     try {
