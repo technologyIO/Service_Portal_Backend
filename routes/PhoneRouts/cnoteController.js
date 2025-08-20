@@ -469,6 +469,160 @@ router.post('/', async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
+// GET /paginated - Paginated list of CNotes
+router.get('/paginated', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const total = await CNote.countDocuments({});
+        const totalPages = Math.ceil(total / limit);
+
+        const cnotes = await CNote.find({})
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .populate('issuedBy', 'name email')
+            .populate('items.RSHApproval.approvedBy', 'name')
+            .populate('items.NSHApproval.approvedBy', 'name')
+            .lean();
+
+        res.json({
+            success: true,
+            data: cnotes,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalRecords: total,
+                recordsPerPage: limit,
+                recordsOnPage: cnotes.length,
+                hasNext: page < totalPages,
+                hasPrev: page > 1,
+                nextPage: page < totalPages ? page + 1 : null,
+                prevPage: page > 1 ? page - 1 : null
+            }
+        });
+    } catch (error) {
+        console.error('CNote paginated fetch error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error occurred while fetching CNotes',
+            error: error.message
+        });
+    }
+});
+// GET /search - Paginated search for CNotes
+router.get('/search', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const searchTerm = req.query.q || req.query.search || '';
+
+        let baseQuery = {};
+
+        // Build search query if search term is provided
+        if (searchTerm.trim()) {
+            const searchRegex = new RegExp(searchTerm.trim(), 'i');
+            
+            baseQuery.$or = [
+                { cnoteNumber: searchRegex },
+                { proposalNumber: searchRegex },
+                { 'customer.customername': searchRegex },
+                { 'customer.customercode': searchRegex },
+                { 'customer.city': searchRegex },
+                { 'customer.email': searchRegex },
+                { status: searchRegex },
+                { remark: searchRegex },
+                { 'items.equipment.name': searchRegex },
+                { 'items.equipment.materialcode': searchRegex }
+            ];
+        }
+
+        // Additional filters if needed
+        if (req.query.status) {
+            baseQuery.status = req.query.status;
+        }
+
+        if (req.query.issuedBy) {
+            baseQuery.issuedBy = req.query.issuedBy;
+        }
+
+        // Date range filter
+        if (req.query.startDate || req.query.endDate) {
+            baseQuery.createdAt = {};
+            if (req.query.startDate) {
+                baseQuery.createdAt.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                baseQuery.createdAt.$lte = new Date(req.query.endDate);
+            }
+        }
+
+        // Amount range filter
+        if (req.query.minAmount) {
+            baseQuery.finalAmount = { $gte: parseFloat(req.query.minAmount) };
+        }
+
+        if (req.query.maxAmount) {
+            baseQuery.finalAmount = { 
+                ...baseQuery.finalAmount,
+                $lte: parseFloat(req.query.maxAmount) 
+            };
+        }
+
+        const total = await CNote.countDocuments(baseQuery);
+        const totalPages = Math.ceil(total / limit);
+
+        const cnotes = await CNote.find(baseQuery)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .populate('issuedBy', 'name email')
+            .populate('items.RSHApproval.approvedBy', 'name')
+            .populate('items.NSHApproval.approvedBy', 'name')
+            .lean();
+
+        const hasNext = page < totalPages;
+        const hasPrev = page > 1;
+
+        res.json({
+            success: true,
+            data: cnotes,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalRecords: total,
+                recordsPerPage: limit,
+                recordsOnPage: cnotes.length,
+                hasNext,
+                hasPrev,
+                nextPage: hasNext ? page + 1 : null,
+                prevPage: hasPrev ? page - 1 : null
+            },
+            search: {
+                query: searchTerm,
+                totalMatches: total,
+                filters: {
+                    status: req.query.status || null,
+                    minAmount: req.query.minAmount || null,
+                    maxAmount: req.query.maxAmount || null,
+                    startDate: req.query.startDate || null,
+                    endDate: req.query.endDate || null,
+                    issuedBy: req.query.issuedBy || null
+                }
+            }
+        });
+    } catch (error) {
+        console.error('CNote search error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error occurred during search',
+            error: error.message
+        });
+    }
+});
 
 
 // Get all CNotes

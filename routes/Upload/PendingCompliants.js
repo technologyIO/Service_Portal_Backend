@@ -1681,6 +1681,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         });
 
         const toEmails = [
+          customerEmail,
           userInfo?.dealerEmail,
           userInfo?.email,
           ...(Array.isArray(userInfo.manageremail)
@@ -1689,7 +1690,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
               ? [userInfo.manageremail]
               : []),
           'ftshivamtiwari222@gmail.com',
-          // 'Damodara.s@skanray.com'
+          'Damodara.s@skanray.com'
         ].filter(Boolean);
         console.log("Sending email to:", toEmails.join(", "));
 

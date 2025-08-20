@@ -99,6 +99,28 @@ router.delete('/aerb/bulk', async (req, res) => {
 router.get('/aerb/:id', getAerbById, (req, res) => {
     res.json(res.aerb);
 });
+// CHECK if materialcode exists
+router.get('/aerb/check/:materialcode', async (req, res) => {
+    try {
+        const { materialcode } = req.params;
+
+        if (!materialcode || materialcode.trim() === "") {
+            return res.status(400).json({ message: "Material code is required" });
+        }
+
+        const aerb = await Aerb.findOne({ materialcode: materialcode.trim() });
+
+        if (aerb) {
+            return res.json({ exists: true });
+        } else {
+            return res.json({ exists: false });
+        }
+
+    } catch (err) {
+        console.error("Error checking material code:", err);
+        res.status(500).json({ message: "Server error: " + err.message });
+    }
+});
 
 // CREATE a new Aerb entry
 router.post('/aerb', checkDuplicateAerb, async (req, res) => {

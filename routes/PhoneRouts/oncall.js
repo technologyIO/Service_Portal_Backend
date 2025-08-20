@@ -95,6 +95,142 @@ router.get('/pagecall', async (req, res) => {
         });
     }
 });
+// Search OnCalls with pagination
+router.get('/search', async (req, res) => {
+    try {
+        // Extract query parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const searchTerm = req.query.q || req.query.search || '';
+
+        // Base query to exclude completed OnCalls
+        let baseQuery = { status: { $ne: "completed" } };
+
+        // Build search query if search term is provided
+        if (searchTerm.trim()) {
+            const searchRegex = new RegExp(searchTerm.trim(), 'i'); // case insensitive
+
+            baseQuery = {
+                ...baseQuery,
+                $or: [
+                    { onCallNumber: searchRegex },
+                    { 'customer.customername': searchRegex },
+                    { 'customer.customercode': searchRegex },
+                    { status: searchRegex },
+                    { remark: searchRegex },
+                    { 'complaint.notification_complaintid': searchRegex },
+                    { 'complaint.complaintType': searchRegex },
+                    { 'complaint.complaintDetails': searchRegex },
+                    { 'complaint.priorityLevel': searchRegex },
+                    { CoNumber: searchRegex }
+                ]
+            };
+        }
+
+        // Add additional filters if needed
+        if (req.query.status && req.query.status !== "completed") {
+            baseQuery.status = req.query.status;
+        }
+
+        if (req.query.createdBy) {
+            baseQuery.createdBy = req.query.createdBy;
+        }
+
+        // Filter by discount percentage if provided
+        if (req.query.minDiscount) {
+            baseQuery.discountPercentage = {
+                $gte: parseFloat(req.query.minDiscount)
+            };
+        }
+
+        if (req.query.maxDiscount) {
+            baseQuery.discountPercentage = {
+                ...baseQuery.discountPercentage,
+                $lte: parseFloat(req.query.maxDiscount)
+            };
+        }
+
+        // Date range filter
+        if (req.query.startDate || req.query.endDate) {
+            baseQuery.createdAt = {};
+            if (req.query.startDate) {
+                baseQuery.createdAt.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                baseQuery.createdAt.$lte = new Date(req.query.endDate);
+            }
+        }
+
+        // Priority level filter
+        if (req.query.priorityLevel) {
+            baseQuery['complaint.priorityLevel'] = req.query.priorityLevel;
+        }
+
+        // Complaint type filter
+        if (req.query.complaintType) {
+            baseQuery['complaint.complaintType'] = new RegExp(req.query.complaintType, 'i');
+        }
+
+        // Execute search with pagination
+        const onCalls = await OnCall.find(baseQuery)
+            .populate('customer', 'customername customercode')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean(); // Use lean() for better performance
+
+        // Get total count for pagination
+        const total = await OnCall.countDocuments(baseQuery);
+        const totalPages = Math.ceil(total / limit);
+
+        // Calculate pagination info
+        const hasNext = page < totalPages;
+        const hasPrev = page > 1;
+
+        // Prepare response
+        const response = {
+            success: true,
+            data: onCalls,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalRecords: total,
+                recordsPerPage: limit,
+                recordsOnPage: onCalls.length,
+                hasNext,
+                hasPrev,
+                nextPage: hasNext ? page + 1 : null,
+                prevPage: hasPrev ? page - 1 : null
+            },
+            search: {
+                query: searchTerm,
+                totalMatches: total,
+                filters: {
+                    status: req.query.status || null,
+                    minDiscount: req.query.minDiscount || null,
+                    maxDiscount: req.query.maxDiscount || null,
+                    startDate: req.query.startDate || null,
+                    endDate: req.query.endDate || null,
+                    createdBy: req.query.createdBy || null,
+                    priorityLevel: req.query.priorityLevel || null,
+                    complaintType: req.query.complaintType || null
+                }
+            }
+        };
+
+        res.json(response);
+
+    } catch (error) {
+        console.error('OnCall search error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error occurred during search',
+            error: error.message
+        });
+    }
+});
+
 router.get('/pagecallcompleted', async (req, res) => {
     try {
         const filters = { ...req.query };

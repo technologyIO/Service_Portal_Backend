@@ -494,6 +494,175 @@ router.post('/', async (req, res) => {
     }
 });
 
+router.get('/search', async (req, res) => {
+    try {
+        // Extract query parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const searchTerm = req.query.q || req.query.search || '';
+
+        // Base query
+        let baseQuery = {};
+
+        // Build search query if search term is provided
+        if (searchTerm.trim()) {
+            const searchRegex = new RegExp(searchTerm.trim(), 'i'); // case insensitive
+
+            baseQuery.$or = [
+                { cnoteNumber: searchRegex },
+                { onCallNumber: searchRegex },
+                { 'customer.customername': searchRegex },
+                { 'customer.customercode': searchRegex },
+                { 'customer.city': searchRegex },
+                { 'customer.email': searchRegex },
+                { 'complaint.notification_complaintid': searchRegex },
+                { 'complaint.materialdescription': searchRegex },
+                { 'complaint.serialnumber': searchRegex },
+                { 'complaint.reportedproblem': searchRegex },
+                { status: searchRegex },
+                { remark: searchRegex },
+                { 'spares.Description': searchRegex },
+                { 'spares.PartNumber': searchRegex }
+            ];
+        }
+
+        // Add additional filters if needed
+        if (req.query.status) {
+            baseQuery.status = req.query.status;
+        }
+
+        if (req.query.issuedBy) {
+            baseQuery.issuedBy = req.query.issuedBy;
+        }
+
+        // Date range filter
+        if (req.query.startDate || req.query.endDate) {
+            baseQuery.createdAt = {};
+            if (req.query.startDate) {
+                baseQuery.createdAt.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                baseQuery.createdAt.$lte = new Date(req.query.endDate);
+            }
+        }
+
+        // Amount range filter
+        if (req.query.minAmount) {
+            baseQuery.finalAmount = {
+                $gte: parseFloat(req.query.minAmount)
+            };
+        }
+
+        if (req.query.maxAmount) {
+            baseQuery.finalAmount = {
+                ...baseQuery.finalAmount,
+                $lte: parseFloat(req.query.maxAmount)
+            };
+        }
+
+        // Execute search with pagination
+        const cnotes = await OnCallCNote.find(baseQuery)
+            .populate('issuedBy', 'name email')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean(); // Use lean() for better performance
+
+        // Get total count for pagination
+        const total = await OnCallCNote.countDocuments(baseQuery);
+        const totalPages = Math.ceil(total / limit);
+
+        // Calculate pagination info
+        const hasNext = page < totalPages;
+        const hasPrev = page > 1;
+
+        // Prepare response
+        const response = {
+            success: true,
+            data: cnotes,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalRecords: total,
+                recordsPerPage: limit,
+                recordsOnPage: cnotes.length,
+                hasNext,
+                hasPrev,
+                nextPage: hasNext ? page + 1 : null,
+                prevPage: hasPrev ? page - 1 : null
+            },
+            search: {
+                query: searchTerm,
+                totalMatches: total,
+                filters: {
+                    status: req.query.status || null,
+                    minAmount: req.query.minAmount || null,
+                    maxAmount: req.query.maxAmount || null,
+                    startDate: req.query.startDate || null,
+                    endDate: req.query.endDate || null,
+                    issuedBy: req.query.issuedBy || null
+                }
+            }
+        };
+
+        res.json(response);
+
+    } catch (error) {
+        console.error('OnCall CNote search error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error occurred during search',
+            error: error.message
+        });
+    }
+});
+router.get('/paginated', async (req, res) => {
+    try {
+        // Default pagination parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10; // Default 10 per page
+
+        // Calculate skip
+        const skip = (page - 1) * limit;
+
+        // Get total count
+        const total = await OnCallCNote.countDocuments({});
+        const totalPages = Math.ceil(total / limit);
+
+        // Fetch paginated data
+        const cnotes = await OnCallCNote.find({})
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .populate('issuedBy', 'name email')
+            .lean();
+
+        // Always return paginated response
+        res.json({
+            success: true,
+            data: cnotes,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalRecords: total,
+                recordsPerPage: limit,
+                recordsOnPage: cnotes.length,
+                hasNext: page < totalPages,
+                hasPrev: page > 1,
+                nextPage: page < totalPages ? page + 1 : null,
+                prevPage: page > 1 ? page - 1 : null
+            }
+        });
+    } catch (error) {
+        console.error('OnCall CNote fetch error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error occurred while fetching CNotes',
+            error: error.message
+        });
+    }
+});
 
 // Get all OnCall CNotes
 router.get('/', async (req, res) => {

@@ -117,6 +117,166 @@ router.get('/all', async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
+router.get('/paginated', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Base query to exclude completed proposals
+        const query = { status: { $ne: "completed" } };
+
+        // Add additional filters if needed
+        if (req.query.createdBy) {
+            query.createdBy = req.query.createdBy;
+        }
+
+        if (req.query.status && req.query.status !== "completed") {
+            query.status = req.query.status;
+        }
+
+        const proposals = await Proposal.find(query)
+            .populate('customer', 'customername')
+            .populate('items')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const total = await Proposal.countDocuments(query);
+        const totalPages = Math.ceil(total / limit);
+
+        res.json({
+            data: proposals, // Keep data field name consistent with frontend
+            totalPages,
+            total,
+            currentPage: page
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+// Search proposals with pagination
+router.get('/search', async (req, res) => {
+    try {
+        // Extract query parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const searchTerm = req.query.q || req.query.search || '';
+
+        // Base query to exclude completed proposals
+        let baseQuery = { status: { $ne: "completed" } };
+
+        // Build search query if search term is provided
+        if (searchTerm.trim()) {
+            const searchRegex = new RegExp(searchTerm.trim(), 'i'); // case insensitive
+
+            baseQuery = {
+                ...baseQuery,
+                $or: [
+                    { proposalNumber: searchRegex },
+                    { cnoteNumber: searchRegex },
+                    { 'customer.customername': searchRegex },
+                    { status: searchRegex },
+                    { remark: searchRegex },
+                    { 'items.equipment.equipmentname': searchRegex },
+                    { 'items.equipment.model': searchRegex },
+                    { 'items.equipment.brand': searchRegex }
+                ]
+            };
+        }
+
+        // Add additional filters if needed
+        if (req.query.status && req.query.status !== "completed") {
+            baseQuery.status = req.query.status;
+        }
+
+        if (req.query.createdBy) {
+            baseQuery.createdBy = req.query.createdBy;
+        }
+
+        // Filter by discount percentage if provided
+        if (req.query.minDiscount) {
+            baseQuery.discountPercentage = {
+                $gte: parseFloat(req.query.minDiscount)
+            };
+        }
+
+        if (req.query.maxDiscount) {
+            baseQuery.discountPercentage = {
+                ...baseQuery.discountPercentage,
+                $lte: parseFloat(req.query.maxDiscount)
+            };
+        }
+
+        // Date range filter
+        if (req.query.startDate || req.query.endDate) {
+            baseQuery.createdAt = {};
+            if (req.query.startDate) {
+                baseQuery.createdAt.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                baseQuery.createdAt.$lte = new Date(req.query.endDate);
+            }
+        }
+
+        // Execute search with pagination
+        const proposals = await Proposal.find(baseQuery)
+            .populate('customer', 'customername customercode')
+            .populate('items.equipment', 'equipmentname model brand')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean(); // Use lean() for better performance
+
+        // Get total count for pagination
+        const total = await Proposal.countDocuments(baseQuery);
+        const totalPages = Math.ceil(total / limit);
+
+        // Calculate pagination info
+        const hasNext = page < totalPages;
+        const hasPrev = page > 1;
+
+        // Prepare response
+        const response = {
+            success: true,
+            data: proposals,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalRecords: total,
+                recordsPerPage: limit,
+                recordsOnPage: proposals.length,
+                hasNext,
+                hasPrev,
+                nextPage: hasNext ? page + 1 : null,
+                prevPage: hasPrev ? page - 1 : null
+            },
+            search: {
+                query: searchTerm,
+                totalMatches: total,
+                filters: {
+                    status: req.query.status || null,
+                    minDiscount: req.query.minDiscount || null,
+                    maxDiscount: req.query.maxDiscount || null,
+                    startDate: req.query.startDate || null,
+                    endDate: req.query.endDate || null,
+                    createdBy: req.query.createdBy || null
+                }
+            }
+        };
+
+        res.json(response);
+
+    } catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error occurred during search',
+            error: error.message
+        });
+    }
+});
 
 router.get('/allcompleted', async (req, res) => {
     try {
@@ -166,6 +326,163 @@ router.get('/:id', async (req, res) => {
         res.json(proposal);
     } catch (error) {
         res.status(500).json({ message: error.message });
+    }
+});
+router.get('/customer/:customerId', async (req, res) => {
+    try {
+        const { customerId } = req.params;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const searchTerm = req.query.q || req.query.search || '';
+
+        // Base query to find proposals by customer code ID
+        let baseQuery = {
+            'customer.customercodeid': customerId,
+            status: { $ne: "completed" } // Exclude completed by default
+        };
+
+        // Add search functionality if search term is provided
+        if (searchTerm.trim()) {
+            const searchRegex = new RegExp(searchTerm.trim(), 'i');
+            baseQuery = {
+                ...baseQuery,
+                $or: [
+                    { proposalNumber: searchRegex },
+                    { cnoteNumber: searchRegex },
+                    { 'customer.customername': searchRegex },
+                    { status: searchRegex },
+                    { remark: searchRegex },
+                    { 'items.equipment.equipmentname': searchRegex },
+                    { 'items.equipment.model': searchRegex },
+                    { 'items.equipment.brand': searchRegex }
+                ]
+            };
+        }
+
+        // Add additional filters
+        if (req.query.status && req.query.status !== "completed") {
+            baseQuery.status = req.query.status;
+        }
+
+        // Include completed proposals if specifically requested
+        if (req.query.includeCompleted === 'true') {
+            delete baseQuery.status; // Remove status filter to include all
+        }
+
+        // Filter by discount percentage if provided
+        if (req.query.minDiscount) {
+            baseQuery.discountPercentage = {
+                $gte: parseFloat(req.query.minDiscount)
+            };
+        }
+
+        if (req.query.maxDiscount) {
+            baseQuery.discountPercentage = {
+                ...baseQuery.discountPercentage,
+                $lte: parseFloat(req.query.maxDiscount)
+            };
+        }
+
+        // Date range filter
+        if (req.query.startDate || req.query.endDate) {
+            baseQuery.createdAt = {};
+            if (req.query.startDate) {
+                baseQuery.createdAt.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                baseQuery.createdAt.$lte = new Date(req.query.endDate);
+            }
+        }
+
+        // Execute query with pagination
+        const proposals = await Proposal.find(baseQuery)
+            .populate('customer', 'customername customercode city email telephone')
+            .populate('items.equipment', 'equipmentname model brand')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean(); // Use lean() for better performance
+
+        // Get total count for pagination
+        const total = await Proposal.countDocuments(baseQuery);
+        const totalPages = Math.ceil(total / limit);
+
+        // Calculate pagination info
+        const hasNext = page < totalPages;
+        const hasPrev = page > 1;
+
+        // Get customer info from first proposal (if exists)
+        const customerInfo = proposals.length > 0 ? proposals[0].customer : null;
+
+        // If no proposals found but we have customer ID, try to get customer info
+        if (!customerInfo && proposals.length === 0) {
+            const anyProposal = await Proposal.findOne(
+                { 'customer.customercodeid': customerId },
+                { 'customer': 1 }
+            ).lean();
+
+            if (!anyProposal) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'No proposals found for this customer',
+                    data: [],
+                    customer: null,
+                    pagination: {
+                        currentPage: page,
+                        totalPages: 0,
+                        totalRecords: 0,
+                        recordsPerPage: limit,
+                        recordsOnPage: 0,
+                        hasNext: false,
+                        hasPrev: false,
+                        nextPage: null,
+                        prevPage: null
+                    }
+                });
+            }
+        }
+
+        // Prepare response
+        const response = {
+            success: true,
+            message: `Found ${total} proposals for customer ${customerId}`,
+            data: proposals,
+            customer: customerInfo,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalRecords: total,
+                recordsPerPage: limit,
+                recordsOnPage: proposals.length,
+                hasNext,
+                hasPrev,
+                nextPage: hasNext ? page + 1 : null,
+                prevPage: hasPrev ? page - 1 : null
+            },
+            filters: {
+                customerId,
+                search: searchTerm || null,
+                status: req.query.status || null,
+                minDiscount: req.query.minDiscount || null,
+                maxDiscount: req.query.maxDiscount || null,
+                startDate: req.query.startDate || null,
+                endDate: req.query.endDate || null,
+                includeCompleted: req.query.includeCompleted === 'true'
+            }
+        };
+
+        res.json(response);
+
+    } catch (error) {
+        console.error('Error fetching customer proposals:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error occurred while fetching customer proposals',
+            error: error.message,
+            data: [],
+            customer: null
+        });
     }
 });
 
