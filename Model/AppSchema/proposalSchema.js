@@ -104,6 +104,7 @@ const proposalSchema = new mongoose.Schema({
         type: String,
         default: 'Open'
     },
+    proposalRemark: { type: String },
     proposalNumber: { type: String, unique: true },
     currentRevision: { type: Number, default: 0 },
     revisions: [revisionSchema],

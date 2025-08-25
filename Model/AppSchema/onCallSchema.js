@@ -108,7 +108,7 @@ const onCallSchema = new mongoose.Schema({
     status: { type: String, default: 'draft' },
     onCallproposalstatus: { type: String,default: 'Open' },
     onCallNumber: { type: String, unique: true },
-    
+    proposalRemark: { type: String },
     // Only cnoteNumber field as you need
     cnoteNumber: { type: String, default: null },
 

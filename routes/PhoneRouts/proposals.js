@@ -87,24 +87,12 @@ router.get('/all', async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
 
-        // Base query to exclude completed proposals
-        const query = { status: { $ne: "completed" } };
-
-        // Add additional filters if needed
-        if (req.query.createdBy) {
-            query.createdBy = req.query.createdBy;
-        }
-
-        if (req.query.status && req.query.status !== "completed") {
-            query.status = req.query.status;
-        }
-
-        const proposals = await Proposal.find(query)
+        const proposals = await Proposal.find({})
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
 
-        const total = await Proposal.countDocuments(query);
+        const total = await Proposal.countDocuments({});
         const totalPages = Math.ceil(total / limit);
 
         res.json({
@@ -117,6 +105,7 @@ router.get('/all', async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
+
 router.get('/paginated', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -602,6 +591,66 @@ router.put('/:id', async (req, res) => {
         res.status(400).json({ message: error.message });
     }
 });
+router.put('/:id/update-proposal-status', async (req, res) => {
+    try {
+        const { Cmcncmcsostatus, proposalRemark } = req.body;
+
+        if (!Cmcncmcsostatus) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cmcncmcsostatus is required'
+            });
+        }
+
+        // Create update object
+        const updateFields = {
+            Cmcncmcsostatus,
+            updatedAt: Date.now()
+        };
+
+        // Add remark only if provided
+        if (proposalRemark !== undefined) {
+            updateFields.proposalRemark = proposalRemark;
+        }
+
+        const proposal = await Proposal.findByIdAndUpdate(
+            req.params.id,
+            {
+                $set: updateFields,
+                $push: {
+                    statusHistory: {
+                        status: `proposal_${Cmcncmcsostatus.toLowerCase()}`,
+                        changedAt: Date.now(),
+                        changedBy: req.user ? req.user._id : null,
+                        note: proposalRemark || `Proposal status changed to ${Cmcncmcsostatus}`
+                    }
+                }
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!proposal) {
+            return res.status(404).json({
+                success: false,
+                message: 'Proposal not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: `Proposal status updated to ${Cmcncmcsostatus}`,
+            data: proposal
+        });
+    } catch (error) {
+        console.error('Proposal status update error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error during proposal status update',
+            error: error.message
+        });
+    }
+});
+
 // Add or Update CoNumber and set status to completed
 router.put('/:id/update-conumber', async (req, res) => {
     try {

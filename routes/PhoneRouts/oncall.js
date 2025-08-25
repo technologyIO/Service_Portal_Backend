@@ -216,7 +216,7 @@ router.get('/pagecallcompleted', async (req, res) => {
         const query = {};
 
         // Only fetch completed status
-        query.status = "completed";
+        // query.status = "completed";
 
         if (filters.createdBy) {
             query.createdBy = filters.createdBy;
@@ -917,6 +917,67 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+router.put('/:id/update-proposal-status', async (req, res) => {
+    try {
+        const { onCallproposalstatus, proposalRemark } = req.body;
+
+        if (!onCallproposalstatus) {
+            return res.status(400).json({
+                success: false,
+                message: 'onCallproposalstatus is required'
+            });
+        }
+
+        // Create update object
+        const updateFields = {
+            onCallproposalstatus,
+            updatedAt: Date.now()
+        };
+
+        // Add remark only if provided
+        if (proposalRemark !== undefined) {
+            updateFields.proposalRemark = proposalRemark;
+        }
+
+        const onCall = await OnCall.findByIdAndUpdate(
+            req.params.id,
+            {
+                $set: updateFields,
+                $push: {
+                    statusHistory: {
+                        status: `proposal_${onCallproposalstatus.toLowerCase()}`,
+                        changedAt: Date.now(),
+                        changedBy: req.user ? req.user._id : null,
+                        note: proposalRemark || `Proposal status changed to ${onCallproposalstatus}`
+                    }
+                }
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!onCall) {
+            return res.status(404).json({
+                success: false,
+                message: 'OnCall not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: `Proposal status updated to ${onCallproposalstatus}`,
+            data: onCall
+        });
+    } catch (error) {
+        console.error('OnCall proposal status update error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error during proposal status update',
+            error: error.message
+        });
+    }
+});
+
+
 // OnCall के लिए CO Number update API
 router.put('/:id/update-conumber', async (req, res) => {
     try {
@@ -935,7 +996,7 @@ router.put('/:id/update-conumber', async (req, res) => {
                 $set: {
                     CoNumber,
                     status: 'completed',
-                    onCallproposalstatus: 'CLOSED_WON',   // <-- added
+                    onCallproposalstatus: 'CLOSED_WON',    
                     updatedAt: Date.now()
                 },
                 $push: {

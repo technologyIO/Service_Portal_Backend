@@ -6,6 +6,7 @@ const User = require('../../Model/MasterSchema/UserSchema');
 const Aerb = require('../../Model/MasterSchema/AerbSchema');
 const Product = require('../../Model/MasterSchema/ProductSchema');
 const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
+const Customer = require('../../Model/UploadSchema/CustomerSchema');
 const mongoose = require('mongoose');
 
 // Middleware to get a PendingInstallation by ID
@@ -96,35 +97,46 @@ router.get('/pendinginstallations/serialnumbers', async (req, res) => {
 
 // GET PendingInstallation by Serial Number
 router.get('/pendinginstallations/serial/:serialnumber', async (req, res) => {
-    try {
-        const serialnumber = req.params.serialnumber;
-        const pendingInstallation = await PendingInstallation.findOne({ serialnumber: serialnumber });
-        if (!pendingInstallation) {
-            return res.status(404).json({ message: 'No Pending Installation found with the provided serial number.' });
-        }
+  try {
+    const { serialnumber } = req.params;
 
-        // WarrantyCode ke liye mtl_grp4 field ka use karke match karein
-        const warrantyCode = await WarrantyCode.findOne({ warrantycodeid: pendingInstallation.mtl_grp4 });
-        const warrantyMonths = warrantyCode?.months || 0;
-
-        // Pending installation object ko convert karein aur warrantyMonths add karein
-        const pendingInstallationObj = pendingInstallation.toObject();
-        pendingInstallationObj.warrantyMonths = warrantyMonths;
-
-        // Aerb collection se check karein: agar pending installation ka material Aerb ke materialcode se match karta hai,
-        // to palnumber field ko show karenge; agar match nahi hota, to ise remove kar denge.
-        const aerbRecord = await Aerb.findOne({ materialcode: pendingInstallation.material });
-        if (!aerbRecord) {
-            delete pendingInstallationObj.palnumber;
-        }
-
-        res.json(pendingInstallationObj);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+    // 1) Find pending installation by serial
+    const pending = await PendingInstallation.findOne({ serialnumber }).lean();
+    if (!pending) {
+      return res.status(404).json({ message: 'No Pending Installation found with the provided serial number.' });
     }
+
+    // 2) Prepare lookups (in parallel)
+    const [warrantyCode, aerbRecord, customer] = await Promise.all([
+      pending.mtl_grp4 ? WarrantyCode.findOne({ warrantycodeid: pending.mtl_grp4 }).lean() : null,
+      pending.material ? Aerb.findOne({ materialcode: pending.material }).lean() : null,
+      // 3) Match currentcustomerid -> Customer.customercodeid
+      pending.currentcustomerid
+        ? Customer.findOne({ customercodeid: String(pending.currentcustomerid).trim() }).lean()
+        : null
+    ]);
+
+    // 4) Build response
+    const resp = {
+      ...pending,
+      warrantyMonths: warrantyCode?.months || 0,
+      Customer: customer?.customername || "N/A",
+      City: customer?.city || "N/A",
+      PinCode: customer?.postalcode || "N/A",
+    };
+
+    // Hide palnumber if not in AERB
+    if (!aerbRecord) delete resp.palnumber;
+
+    return res.json(resp);
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Server error' });
+  }
 });
-// GET all serial numbers for installations matching user's skill part numbers
-// GET all serial numbers for installations matching user's skill part numbers (simplified version)
+
+
+
+
 router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, res) => {
     try {
         const employeeid = req.params.employeeid;
