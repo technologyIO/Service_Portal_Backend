@@ -325,73 +325,117 @@ router.post('/abort-installation', async (req, res) => {
         userId,
         userName,
         employeeId,
-        branchOrDealerCode,
-        branchOrDealerName,
-        city,
+        branchOrDealerCode = '',
+        branchOrDealerName = '',
+        city = '',
+        usertype = '',
+        userBranchCodes = [],
+        managerEmails = [],
+        userEmail,
     } = req.body;
 
     if (!products || !Array.isArray(products) || products.length === 0) {
         return res.status(400).send({ error: 'Products list is required' });
     }
 
-    if (!userId || !userName || !branchOrDealerCode || !branchOrDealerName || !city) {
-        return res.status(400).send({ error: 'User and branch/dealer details are required' });
+    if (!userId || !userName || !employeeId) {
+        return res.status(400).send({ error: 'User ID, user name, and employee ID are required' });
     }
 
-    let productListText = '';
-    products.forEach((product, index) => {
-        productListText += `${index + 1}  ${product.name}  ${product.slno}\n`;
-    });
-    const dealerCodeHtml = branchOrDealerCode
-        ? `Dealer code - <strong>${branchOrDealerCode}</strong>, `
-        : '';
+    // Function to determine branch or dealer display based on usertype
+    const getBranchOrDealerDisplay = () => {
+        if (usertype === 'skanray') {
+            // For Skanray users, show branch codes from userBranchCodes array
+            if (Array.isArray(userBranchCodes) && userBranchCodes.length > 0) {
+                return userBranchCodes.join(', ');
+            } else {
+                return 'NA';
+            }
+        } else if (usertype === 'dealer') {
+            // For dealer users, show dealer code / dealer name / city
+            const dealerCode = branchOrDealerCode && branchOrDealerCode.trim() !== '' ? branchOrDealerCode : 'NA';
+            const dealerName = branchOrDealerName && branchOrDealerName.trim() !== '' ? branchOrDealerName : 'NA';
+            const cityName = city && city.trim() !== '' ? city : 'NA';
+            return `${dealerCode} / ${dealerName} / ${cityName}`;
+        } else {
+            return 'NA';
+        }
+    };
+
+    const branchDealerDisplay = getBranchOrDealerDisplay();
+
+    // Prepare recipient emails list
+    const emailsToSend = [
+        'shivamt2023@gmail.com',
+        'Damodara.s@skanray.com'
+    ];
+
+    // Add user email if provided
+    if (userEmail && !emailsToSend.includes(userEmail)) {
+        emailsToSend.push(userEmail);
+    }
+
+    // Add manager emails from array
+    if (Array.isArray(managerEmails) && managerEmails.length > 0) {
+        managerEmails.forEach(email => {
+            if (email && !emailsToSend.includes(email)) {
+                emailsToSend.push(email);
+            }
+        });
+    }
 
     const mailOptions = {
         from: 'webadmin@skanray-access.com',
-        to: 'shivamt2023@gmail.com',
+        to: emailsToSend.join(','),
         subject: 'Aborted Installation',
         html: `
-    <div style="font-family: Arial, sans-serif; font-size: 14px;">
+    <div style="font-family: Arial, sans-serif; font-size: 14px; margin: 20px;">
         <p>Dear Team,</p>
-        <p>Installation aborted for below products:</p>
+        <p>Installation <strong>aborted</strong> for below products</p>
 
-        <table style="border-collapse: collapse; width: 70%; margin-bottom: 18px; font-size: 14px; font-family: Arial, sans-serif;">
+        <table style="border-collapse: collapse; width: 100%; max-width: 500px; font-size: 14px; font-family: Arial, sans-serif;">
             <thead>
                 <tr>
-                    <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">No</th>
-                    <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">Product</th>
-                    <th style="background-color: #ffff00; padding: 8px 20px; border: 1px solid #888;">Slno</th>
+                    <th style="background-color: #ffff00; padding: 8px 12px; border: 1px solid #000; text-align: left; width: 50px;">No</th>
+                    <th style="background-color: #ffff00; padding: 8px 12px; border: 1px solid #000; text-align: left;">Product</th>
+                    <th style="background-color: #ffff00; padding: 8px 12px; border: 1px solid #000; text-align: left; width: 150px;">Slno</th>
                 </tr>
             </thead>
             <tbody>
                 ${products.map((item, index) => `
                     <tr>
-                        <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888; text-align: center;">${index + 1}</td>
-                        <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888;">${item.name}</td>
-                        <td style="background-color: #ffff00; padding: 6px 18px; border: 1px solid #888;">${item.slno}</td>
+                        <td style="background-color: #ffff00; padding: 8px 12px; border: 1px solid #000; text-align: center; font-weight: bold;">${index + 1}</td>
+                        <td style="background-color: #ffff00; padding: 8px 12px; border: 1px solid #000; font-weight: bold;">${item.name}</td>
+                        <td style="background-color: #ffff00; padding: 8px 12px; border: 1px solid #000; font-weight: bold;">${item.slno}</td>
                     </tr>
                 `).join('')}
             </tbody>
         </table>
 
-        <p style="background-color: #ffff00; padding: 8px 12px; display: inline-block; border-radius: 4px;">
-            by (<strong>${employeeId}</strong> - <strong>${userName}</strong><br>)${dealerCodeHtml}<strong>${city}</strong>
+        <p style="margin-top: 20px;">
+            by ( <span style="background-color: #ffff00; padding: 2px 4px; font-weight: bold;">${employeeId}</span> & <span style="background-color: #ffff00; padding: 2px 4px; font-weight: bold;">${userName}</span> ) <span style="background-color: #ffff00; padding: 2px 4px; font-weight: bold;">${usertype === 'skanray' ? 'Skanray branch' : 'Dealer code'}</span> , <span style="background-color: #ffff00; padding: 2px 4px; font-weight: bold;">${branchDealerDisplay}</span>
         </p>
     </div>
   `,
     };
 
-
-
-
     try {
         await transporter.sendMail(mailOptions);
-        res.send({ message: 'Aborted installation email sent successfully' });
+        res.send({
+            message: 'Aborted installation email sent successfully',
+            recipients: emailsToSend,
+            productsCount: products.length,
+            branchDealerDisplay: branchDealerDisplay,
+            usertype: usertype
+        });
     } catch (error) {
         console.error('Error sending email:', error);
         res.status(500).send({ error: 'Failed to send email' });
     }
 });
+
+
+
 
 router.get('/getbyserialno/:serialnumber', async (req, res) => {
     try {

@@ -25,6 +25,7 @@ module.exports = function getCertificateHTML(data) {
     lastName = userInfo.lastName || "",
     employeeId = userInfo.employeeId || "",
     dealerCode = userInfo.dealerCode || "",
+    dealerName = userInfo.dealerName || "",
   } = data;
 
   // Destructure your voltageData object
@@ -41,15 +42,17 @@ module.exports = function getCertificateHTML(data) {
         const keyStr = eq.key ? String(eq.key) : "";
 
         // Create equipment description with material code below
-        const equipmentDescWithCode = `
-        ${eq.materialdescription || ""}<br />
-        <span style="font-size: 10px; color: #666;">${eq.materialcode || ""}</span>
-      `;
+        const equipmentDescWithCode = `${eq.materialdescription || ""}`;
+
 
         // Create serial number with key in brackets and centered below
-        const serialWithKeyBelow = keyStr ?
-          `${eq.serialnumber || ""}<br /><div style="text-align: center; font-size: 10px; color: #666;">(${keyStr})</div>` :
-          eq.serialnumber || "";
+        const serialWithKeyBelow = `
+  <div style="text-align: center;">
+    <div>${eq.serialnumber || ""}</div>
+    ${keyStr ? `<div style="font-size: 10px; color: #666;">(${keyStr})</div>` : ""}
+  </div>
+`;
+
 
         console.log('Equipment Key Debug:', {
           originalKey: eq.key,
@@ -106,6 +109,7 @@ module.exports = function getCertificateHTML(data) {
     installedBySection = `
       <span class="install-label">Installed by:</span> <span class="install-data">${employeeId}</span><br />
       <span class="install-label">Engineer:</span> <span class="install-data">${firstName} ${lastName}</span><br />
+      <span class="install-label"></span> <span class="install-data">${dealerName}</span><br />
       <span class="install-label">Dealer:</span> <span class="install-data">${dealerCode}</span>
     `;
   }

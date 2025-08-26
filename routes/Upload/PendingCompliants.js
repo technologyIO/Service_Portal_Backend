@@ -153,19 +153,22 @@ router.post('/sendComplaintEmail', async (req, res) => {
       partno: equipmentData.materialcode || '',
       customer: equipmentData.currentcustomer || '',
 
-      // User (Service Engineer) Data
+      // User (Service Engineer/Dealer) Data
       userInfo: {
         firstName: user.firstName || 'N/A',
         lastName: user.lastName || 'N/A',
         email: user.email || 'N/A',
+        usertype: user.usertype || 'N/A',
+        dealerEmail: user.dealerEmail || 'N/A',
         mobilenumber: user.mobilenumber || 'N/A',
-        branch: user.branch || 'N/A'
+        branch: Array.isArray(user.branch) ? user.branch.join(', ') : (user.branch || 'N/A'),
+        manageremail: user.manageremail || []
       }
     };
 
-    // 4. Find customer details (hospital name & city) using the customer code from equipmentData
+    // 4. Find customer details using the customer code from equipmentData
     const foundCustomer = await Customer.findOne({ customercodeid: combinedData.customer });
-    // Default values if customer is not found
+
     let finalHospitalName = 'N/A';
     let finalCity = 'N/A';
     let finalPhone = 'N/A';
@@ -180,133 +183,159 @@ router.post('/sendComplaintEmail', async (req, res) => {
       finalpincode = foundCustomer.postalcode || 'N/A';
     }
 
-    // 5. Construct the HTML email body with improved design
+    // Determine engineer title based on usertype
+    const engineerTitle = combinedData.userInfo.usertype === 'dealer'
+      ? 'Dealer Service Engineer'
+      : 'Service Engineer';
+
     const emailBodyHtml = `
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 0; }
-          .container { width: 80%; margin: 20px auto; border: 1px solid #ccc; padding: 20px; }
-          .header { background-color: #f7f7f7; padding: 10px; text-align: center; }
-          .section { margin-top: 20px; }
-          .section h3 { border-bottom: 2px solid #333; padding-bottom: 5px; }
-          table { width: 100%; border-collapse: collapse; }
-          table th, table td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
-          .footer { margin-top: 20px; font-size: 0.9em; color: #555; text-align: center; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h2>New Complaint Notification</h2>
-          </div>
-
-          <div class="section">
-            <h3>Complaint Details</h3>
-            <table>
-              <tr>
-                <th>Complaint Type</th>
-                <td>${combinedData.complaintType}</td>
-              </tr>
-              <tr>
-                <th>Serial No</th>
-                <td>${combinedData.serialNo}</td>
-              </tr>
-              <tr>
-                <th>Description</th>
-                <td>${combinedData.description}</td>
-              </tr>
-              <tr>
-                <th>Product Group</th>
-                <td>${combinedData.productGroup}</td>
-              </tr>
-              <tr>
-                <th>Problem Type</th>
-                <td>${combinedData.problemType}</td>
-              </tr>
-              <tr>
-                <th>Part No</th>
-                <td>${combinedData.partno}</td>
-              </tr>
-              <tr>
-                <th>Problem Name</th>
-                <td>${combinedData.problemName}</td>
-              </tr>
-              <tr>
-                <th>Spares Requested</th>
-                <td>${combinedData.sparesrequested}</td>
-              </tr>
-              <tr>
-                <th>Breakdown</th>
-                <td>${combinedData.breakdown ? 'Yes' : 'No'}</td>
-              </tr>
-              <tr>
-                <th>Remarks</th>
-                <td>${combinedData.remark}</td>
-              </tr>
-            </table>
-          </div>
-
-          <div class="section">
-            <h3>Customer Details</h3>
-            <table>
-              <tr>
-                <th>Customer</th>
-                <td>${combinedData.customer}</td>
-              </tr>
-              <tr>
-                <th>Hospital Name</th>
-                <td>${finalHospitalName}</td>
-              </tr>
-              <tr>
-                <th>City</th>
-                <td>${finalCity}</td>
-              </tr>
-              <tr>
-                <th>Phone</th>
-                <td>${finalPhone}</td>
-              </tr>
-              <tr>
-                <th>Email</th>
-                <td>${finalEmail}</td>
-              </tr>
-              <tr>
-                <th>PinCode</th>
-                <td>${finalpincode}</td>
-              </tr>
-            </table>
-          </div>
-
-          <div class="section">
-            <h3>Service Engineer Details</h3>
-            <table>
-              <tr>
-                <th>Name</th>
-                <td>${combinedData.userInfo.firstName} ${combinedData.userInfo.lastName}</td>
-              </tr>
-              <tr>
-                <th>Email</th>
-                <td>${combinedData.userInfo.email}</td>
-              </tr>
-              <tr>
-                <th>Mobile Number</th>
-                <td>${combinedData.userInfo.mobilenumber}</td>
-              </tr>
-              <tr>
-                <th>Branch</th>
-                <td>${combinedData.userInfo.branch}</td>
-              </tr>
-            </table>
-          </div>
-
-          <div class="footer">
-            <p>Regards,<br>Skanray Service Support Team</p>
-            <p>Please consider the Environment before printing this e-mail.</p>
-          </div>
+  <html>
+  <head>
+    <style>
+      body { 
+        font-family: Arial, sans-serif; 
+        color: #000; 
+        margin: 0; 
+        padding: 0; 
+        background-color: #ffffff;
+      }
+      .container { 
+        background-color: white;
+        max-width: 800px; 
+        margin: 0; 
+        padding: 0;
+        border: none;
+      }
+      .header { 
+        background-color: #00ff00; 
+        color: black; 
+        padding: 3px 8px; 
+        font-weight: bold;
+        font-size: 12px;
+        margin: 0;
+      }
+      .content { 
+        padding: 15px; 
+        line-height: 1.6;
+        font-size: 14px;
+        font-family: Arial, sans-serif;
+      }
+      .field { 
+        margin: 2px 0;
+        font-size: 14px;
+      }
+      .field-label { 
+        font-weight: normal; 
+        display: inline;
+      }
+      .field-value { 
+        display: inline;
+        font-weight: normal;
+      }
+      .highlight-yellow { 
+        background-color: #ffff00; 
+        padding: 0px 2px;
+        font-weight: bold;
+      }
+      .highlight-blue { 
+        background-color: #0066ff; 
+        color: white; 
+        padding: 0px 2px;
+        font-weight: bold;
+      }
+      .highlight-green { 
+        background-color: #00ff00; 
+        color: black; 
+        padding: 0px 2px;
+        font-weight: bold;
+      }
+      .vendor-section {
+        background-color: #00ff00;
+        color: black;
+        padding: 3px 8px;
+        margin: 15px 0 0 0;
+        font-weight: bold;
+        font-size: 12px;
+      }
+      .greeting {
+        margin: 10px 0;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      
+      <div class="content">
+        <div class="greeting"><strong>Dear CIC,</strong></div>
+        <div class="greeting">Please create a new complaint as below</div>
+        
+        <div class="field">
+          Complaint Type : <span class="highlight-yellow">${combinedData.complaintType}</span>
         </div>
-      </body>
-      </html>
-    `;
+        
+        <div class="field">
+          Serial no : ${combinedData.serialNo}
+        </div>
+        
+        <div class="field">
+          Description : ${combinedData.description}
+        </div>
+        
+        <div class="field">
+          Part no : ${combinedData.partno}
+        </div>
+        
+        <div class="field">
+          Customer : ${combinedData.customer}
+        </div>
+        
+        <div class="field">
+          Name : ${finalHospitalName}
+        </div>
+        
+        <div class="field">
+          City : <span class="highlight-blue">${finalCity}</span>
+        </div>
+        
+        <div class="field">
+          Problem reported : <span class="highlight-green">${combinedData.problemType} | ${combinedData.problemName}</span>
+        </div>
+        
+        <div class="field">
+          Breakdown : ${combinedData.breakdown ? 'Y' : 'N'}
+        </div>
+        
+        <div class="field">
+          Remarks : ${combinedData.remark}
+        </div>
+        
+        <div class="field">
+          ${engineerTitle} : ${combinedData.userInfo.firstName} ${combinedData.userInfo.lastName}
+        </div>
+        
+        <div class="field">
+          ${engineerTitle} Mobile : ${combinedData.userInfo.mobilenumber}
+        </div>
+        
+        <div class="field">
+          ${engineerTitle} Email : ${combinedData.userInfo.email}
+        </div>
+        
+        ${combinedData.sparesrequested ? `
+        <div class="field">
+          Spares Requested : ${combinedData.sparesrequested}
+        </div>
+        ` : ''}
+      </div>
+      
+      <div class="vendor-section">
+        Vendor Details ✓ Vendor Code / Vendor Name / City
+      </div>
+    </div>
+  </body>
+  </html>
+`;
 
     // 6. Configure nodemailer transporter
     const transporter = nodemailer.createTransport({
@@ -317,32 +346,47 @@ router.post('/sendComplaintEmail', async (req, res) => {
       },
     });
 
-    const cicUser = await User.findOne({
-      'role.roleName': 'CIC',
-      'role.roleId': 'C1'
-    });
+    // 7. Prepare recipient emails
+    const recipientEmails = [
+      'ftshivamtiwari222@gmail.com',
+      'Damodara.s@skanray.com'
+    ];
 
-    if (!cicUser) {
-      console.error("CIC user not found");
-      return;
+    // Add service engineer email
+    if (combinedData.userInfo.email && combinedData.userInfo.email !== 'N/A') {
+      recipientEmails.push(combinedData.userInfo.email);
     }
 
+    // Add dealer email if exists
+    if (combinedData.userInfo.dealerEmail && combinedData.userInfo.dealerEmail !== 'N/A') {
+      recipientEmails.push(combinedData.userInfo.dealerEmail);
+    }
 
-    // 7. Set up mail options with the HTML body
+    // Add manager emails
+    if (Array.isArray(combinedData.userInfo.manageremail)) {
+      combinedData.userInfo.manageremail.forEach(email => {
+        if (email && !recipientEmails.includes(email)) {
+          recipientEmails.push(email);
+        }
+      });
+    }
+
+    // 8. Set up mail options
     const mailOptions = {
       from: 'webadmin@skanray-access.com',
-      to: 'ftshivamtiwari222@gmail.com',
-      subject: 'New Complaint',
+      to: recipientEmails.join(','),
+      subject: 'New Complaint Request',
       html: emailBodyHtml,
     };
 
-    // 8. Send the email
+    // 9. Send the email
     await transporter.sendMail(mailOptions);
 
-    // 9. Send a success response to the frontend
+    // 10. Send success response
     return res.status(200).json({
-      message: 'Email sent successfully.',
-      combinedData, // Returning the full data for verification
+      message: 'Email sent successfully to all recipients.',
+      recipients: recipientEmails,
+      combinedData
     });
 
   } catch (error) {
@@ -353,6 +397,8 @@ router.post('/sendComplaintEmail', async (req, res) => {
     });
   }
 });
+
+
 
 
 router.post('/sendUpdatedComplaintEmail', async (req, res) => {
@@ -367,7 +413,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
       customer,
       name,
       city,
-      userInfo,
+      user, // Complete user object from frontend
       spareRequested,
       remarks,
       serviceEngineerMobile,
@@ -381,76 +427,169 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
     // 3. If found, override 'name' and 'city' with DB values
     let finalHospitalName = name;
     let finalCity = city;
+    let finalPhone = 'N/A';
+    let finalEmail = 'N/A';
+    let finalpincode = 'N/A';
 
     if (foundCustomer) {
       finalHospitalName = foundCustomer.hospitalname || name;
       finalCity = foundCustomer.city || city;
+      finalPhone = foundCustomer.telephone || 'N/A';
+      finalEmail = foundCustomer.email || 'N/A';
+      finalpincode = foundCustomer.postalcode || 'N/A';
     }
 
-    // 4. Build the HTML email
+    // Determine engineer title based on usertype
+    const engineerTitle = user?.usertype === 'dealer'
+      ? 'Dealer Service Engineer'
+      : 'Service Engineer';
+
+    // 4. Build the HTML email with exact design from image
     const emailHTML = `
-            <div style="font-family: Arial, sans-serif; margin: 20px;">
-              <p>Dear CIC,</p>
-              <p>Please Update the notification int as below</p>
-              <table style="border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 4px;">Notification No:</td>
-                  <td style="padding: 4px;">${notification_no}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">Serial no:</td>
-                  <td style="padding: 4px;">${serial_no}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">Description:</td>
-                  <td style="padding: 4px;">${description}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">Part no:</td>
-                  <td style="padding: 4px;">${part_no}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">Customer Code:</td>
-                  <td style="padding: 4px;">${customer}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">Name (Hospital):</td>
-                  <td style="padding: 4px;">${finalHospitalName}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">City:</td>
-                  <td style="padding: 4px;">${finalCity}</td>
-                </tr>
-                 <tr>
-                  <td style="padding: 4px;">Spare Requested:</td>
-                  <td style="padding: 4px;">${spareRequested}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">Remarks:</td>
-                  <td style="padding: 4px;">${remarks}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">Service Engineer:</td>
-                  <td style="padding: 4px;">${serviceEngineer}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">Service Engineer Mobile:</td>
-                  <td style="padding: 4px;">${serviceEngineerMobile}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">Service Engineer Email:</td>
-                  <td style="padding: 4px;">${serviceEngineerEmail}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px;">Branch Name:</td>
-                  <td style="padding: 4px;">${branchName}</td>
-                </tr>
-              </table>
-              <br />
-              <p>Regards,<br />Skanray Service Support Team</p>
-              <p>Please consider the Environment before printing this e-mail.</p>
+      <html>
+      <head>
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            color: #000; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #ffffff;
+          }
+          .container { 
+            background-color: white;
+            max-width: 800px; 
+            margin: 0; 
+            padding: 0;
+            border: none;
+          }
+          .header { 
+            background-color: #00ff00; 
+            color: black; 
+            padding: 3px 8px; 
+            font-weight: bold;
+            font-size: 12px;
+            margin: 0;
+          }
+          .content { 
+            padding: 15px; 
+            line-height: 1.6;
+            font-size: 14px;
+            font-family: Arial, sans-serif;
+          }
+          .field { 
+            margin: 2px 0;
+            font-size: 14px;
+          }
+          .highlight-yellow { 
+            background-color: #ffff00; 
+            padding: 0px 2px;
+            font-weight: bold;
+          }
+          .highlight-blue { 
+            background-color: #0066ff; 
+            color: white; 
+            padding: 0px 2px;
+            font-weight: bold;
+          }
+          .highlight-green { 
+            background-color: #00ff00; 
+            color: black; 
+            padding: 0px 2px;
+            font-weight: bold;
+          }
+          .highlight-red { 
+            background-color: #ff0000; 
+            color: white; 
+            padding: 0px 2px;
+            font-weight: bold;
+          }
+          .vendor-section {
+            background-color: #00ff00;
+            color: black;
+            padding: 3px 8px;
+            margin: 15px 0 0 0;
+            font-weight: bold;
+            font-size: 12px;
+          }
+          .greeting {
+            margin: 10px 0;
+            font-size: 14px;
+          }
+          .action-section {
+            background-color: #00ff00;
+            color: black;
+            padding: 2px 4px;
+            margin: 10px 0;
+            font-weight: bold;
+            font-size: 14px;
+          }
+          .strikethrough {
+            text-decoration: line-through;
+            color: #ff0000;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="content">
+            <div class="greeting"><strong>Dear CIC,</strong></div>
+            <div class="greeting">Kindly update the notification as below</div>
+            
+            <div class="field">
+              Notification No: <span class="highlight-yellow">${notification_no}</span>
             </div>
-        `;
+            
+            <div class="field">
+              Serial no : ${serial_no}
+            </div>
+            
+            <div class="field">
+              Description : <span class="highlight-yellow">${description}</span>
+            </div>
+            
+            <div class="field">
+              Part no : ${part_no}
+            </div>
+            
+            <div class="field">
+              Customer : ${customer} Name : <span class="highlight-yellow">${finalHospitalName}</span>
+            </div>
+            
+            <div class="field">
+              City : <span class="highlight-blue">${finalCity}</span>
+            </div>
+            
+            
+            
+            <div class="field">
+              Spare Required : <span class="highlight-red">${spareRequested || 'N/A'}</span>
+            </div>
+            
+            <div class="field">
+              Remarks : ${remarks}
+            </div>
+            
+            <div class="field">
+              ${engineerTitle} : ${user?.firstName || ''} ${user?.lastName || ''}
+            </div>
+            
+            <div class="field">
+              ${engineerTitle} Mobile : ${user?.mobilenumber || serviceEngineerMobile}
+            </div>
+            
+            <div class="field">
+              ${engineerTitle} Email : ${user?.email || serviceEngineerEmail}
+            </div>
+          </div>
+          
+          <div class="vendor-section">
+            Vendor Details ✓ Vendor Code / Vendor Name / City
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
 
     // 5. Configure nodemailer transporter
     const transporter = nodemailer.createTransport({
@@ -461,24 +600,47 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
       },
     });
 
+    // 6. Prepare recipient emails
+    const recipientEmails = [
+      'ftshivamtiwari222@gmail.com',
+      'Damodara.s@skanray.com',
+      // 'tomson.m+customer@skanray.com'
+    ];
 
+    // Add service engineer email
+    if (user?.email && user.email !== 'N/A') {
+      recipientEmails.push(user.email);
+    }
 
+    // Add dealer email if exists
+    if (user?.dealerEmail && user.dealerEmail !== 'N/A') {
+      recipientEmails.push(user.dealerEmail);
+    }
 
-    // 6. Set up mail options
+    // Add manager emails
+    if (Array.isArray(user?.manageremail)) {
+      user.manageremail.forEach(email => {
+        if (email && !recipientEmails.includes(email)) {
+          recipientEmails.push(email);
+        }
+      });
+    }
+
+    // 7. Set up mail options
     const mailOptions = {
       from: 'webadmin@skanray-access.com',
-      to: 'ftshivamtiwari222@gmail.com, Damodara.s@skanray.com, tomson.m+customer@skanray.com', // comma-separated string
-      subject: 'Updated Complaint',
+      to: recipientEmails.join(','),
+      subject: 'Update Notification - ' + notification_no,
       html: emailHTML
     };
 
-
-    // 7. Send the email
+    // 8. Send the email
     await transporter.sendMail(mailOptions);
 
-    // 8. Return success response
+    // 9. Return success response
     return res.status(200).json({
-      message: 'Updated complaint email sent successfully.',
+      message: 'Updated complaint email sent successfully to all recipients.',
+      recipients: recipientEmails,
       dataSent: req.body,
     });
 
@@ -490,6 +652,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
     });
   }
 });
+
 // PATCH request to update `requesteupdate` field to true
 router.patch('/pendingcomplaints/:id/requestupdate', getPendingComplaintById, async (req, res) => {
   // Set requesteupdate to true
@@ -1036,7 +1199,15 @@ router.get('/pendingcomplaintsearch', async (req, res) => {
 
 router.post("/sendOtpEmail", async (req, res) => {
   try {
-    const { customerEmail } = req.body;
+    const {
+      customerEmail,
+      serviceCallNo,
+      unitSerialNo,
+      productDescription,
+      problemReported,
+      actionTaken,
+      customerDetails
+    } = req.body;
 
     if (!customerEmail) {
       return res
@@ -1056,20 +1227,85 @@ router.post("/sendOtpEmail", async (req, res) => {
       expiresAt,
     };
 
+    // Create email template matching your image design
+    const emailHTML = `
+      <html>
+      <head>
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            color: #000; 
+            margin: 20px; 
+            font-size: 14px;
+            line-height: 1.6;
+          }
+          .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+          }
+          .field {
+            margin: 5px 0;
+          }
+          .otp-highlight {
+            background-color: #ffff00;
+            padding: 2px 4px;
+            font-weight: bold;
+            display: inline;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <p><strong>Dear Customer,</strong></p>
+          
+          <p>Below service complaint is attended by our service team and being closed</p>
+          
+          <div class="field">
+            <strong>Service Call No:</strong> ${serviceCallNo || 'N/A'}
+          </div>
+          
+          <div class="field">
+            <strong>Unit Serial no:</strong> ${unitSerialNo || 'N/A'}
+          </div>
+          
+          <div class="field">
+            <strong>Product Description:</strong> ${productDescription || 'N/A'}
+          </div>
+          
+          <div class="field">
+            <strong>Problem Reported:</strong> ${problemReported || 'N/A'}
+          </div>
+          
+          <div class="field">
+            <strong>Action Taken:</strong> ${actionTaken || 'N/A'}
+          </div>
+          
+          <p>
+            Kindly provide the acceptance token ID <span class="otp-highlight">(${generatedOtp})</span> to the service team acknowledging to close the service call after being satisfied. You will receive a digitally signed Service report in your email
+          </p>
+          
+          <p><strong>Regards</strong></p>
+          
+          <p>Skanray Service Support team</p>
+        </div>
+      </body>
+      </html>
+    `;
+
     // Send the OTP via email
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
-        user: "webadmin@skanray-access.com",
-        pass: "rdzegwmzirvbjcpm", // example password/app password
-      },
+        user: 'webadmin@skanray-access.com',
+        pass: 'rdzegwmzirvbjcpm'
+      }
     });
 
     const mailOptions = {
       from: "webadmin@skanray-access.com",
-      to: customerEmail, // send to the customer's email
-      subject: "Your OTP Code",
-      text: `Dear Customer,\n\nYour OTP is: ${generatedOtp}\n\nThis code will expire in 10 minutes.\n\nRegards,\nSkanray Service Support Team`,
+      to: customerEmail,
+      subject: `Service Completion OTP - ${serviceCallNo || 'Service Request'}`,
+      html: emailHTML,
     };
 
     await transporter.sendMail(mailOptions);
@@ -1077,6 +1313,7 @@ router.post("/sendOtpEmail", async (req, res) => {
     return res.status(200).json({
       message: "OTP sent successfully to customer email.",
       email: customerEmail,
+      serviceCallNo: serviceCallNo,
     });
   } catch (error) {
     console.error("Error sending OTP email:", error);
@@ -1086,6 +1323,7 @@ router.post("/sendOtpEmail", async (req, res) => {
     });
   }
 });
+
 // (A) Function that generates only the "Incident Reporting Form" HTML
 function generateIncidentReportHTML(injuryDetails = {}) {
   const {
@@ -1278,11 +1516,11 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       userInfo,
       injuryDetails,
       customerDetails,
-      description,          // e.g. { customerCode, hospitalName, street, city, phone, email }
-      partNumber,                   // complaint's part number
-      partDescription,              // description of the part
-      customerRemarks,              // specific actions required from customer
-      customerAdditionalRemarks,    // additional customer remarks if any
+      description,
+      partNumber,
+      partDescription,
+      customerRemarks,
+      customerAdditionalRemarks,
     } = req.body;
 
     // 1) Verify OTP
@@ -1300,8 +1538,13 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
     delete otpStore[customerEmail];
 
     // 2) Prepare date fields
-    const dateAttended = new Date().toLocaleDateString("en-GB"); // e.g. "02/04/2025"
+    const dateAttended = new Date().toLocaleDateString("en-GB");
     const currentDate = new Date().toLocaleDateString("en-GB");
+
+    // Determine engineer title based on usertype
+    const engineerTitle = userInfo?.usertype === 'dealer'
+      ? 'Dealer Service Engineer'
+      : 'Service Engineer';
 
     // 3) Build the 5 rows for "Parts/Modules replaced"
     const maxRows = 5;
@@ -1329,22 +1572,241 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       }
     }
 
+    // Spares replaced display for email
+    let sparesDisplayHTML = "";
+    if (sparesReplaced.length > 0) {
+      sparesDisplayHTML = `
+        <div style="margin: 10px 0; background-color: #00ff00; padding: 2px;">
+          <div style="margin: 2px 0;">Spares Replaced : Yes</div>
+      `;
+      sparesReplaced.forEach((spare, index) => {
+        sparesDisplayHTML += `
+          <div style="margin: 2px 0;">${index + 1}. ${spare.Description || 'ABCD'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Def: ${spare.defectivePartNumber || '123'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="background-color: #00ff00;">Good: ${spare.replacedPartNumber || '123'}</span></div>
+        `;
+      });
+      sparesDisplayHTML += `</div>`;
+    } else {
+      sparesDisplayHTML = `<div class="field">Spares Replaced : No</div>`;
+    }
+
     function formatExcelDate(serial) {
       if (!serial || isNaN(serial)) return "";
-
       const excelEpoch = new Date(1899, 11, 30);
       const days = Math.floor(serial);
       const milliseconds = (serial - days) * 24 * 60 * 60 * 1000;
       const date = new Date(excelEpoch.getTime() + days * 86400000 + milliseconds);
-
-      // Format as dd-mm-yyyy
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const year = date.getFullYear();
       return `${day}-${month}-${year}`;
     }
 
-    // 4) Build the Service Report HTML with compact styling
+    // 4) Build the Service Engineers Email Template (First Image Design)
+    const serviceEngineersEmailHTML = `
+      <html>
+      <head>
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            color: #000; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #ffffff;
+          }
+          .container { 
+            background-color: white;
+            max-width: 800px; 
+            margin: 0; 
+            padding: 0;
+            border: none;
+          }
+          .header { 
+            background-color: #00ff00; 
+            color: black; 
+            padding: 3px 8px; 
+            font-weight: bold;
+            font-size: 12px;
+            margin: 0;
+          }
+          .content { 
+            padding: 15px; 
+            line-height: 1.6;
+            font-size: 14px;
+            font-family: Arial, sans-serif;
+          }
+          .field { 
+            margin: 2px 0;
+            font-size: 14px;
+          }
+          .highlight-yellow { 
+            background-color: #ffff00; 
+            padding: 0px 2px;
+            font-weight: bold;
+          }
+          .highlight-blue { 
+            background-color: #0066ff; 
+            color: white; 
+            padding: 0px 2px;
+            font-weight: bold;
+          }
+          .highlight-green { 
+            background-color: #00ff00; 
+            color: black; 
+            padding: 0px 2px;
+            font-weight: bold;
+          }
+          .vendor-section {
+            background-color: #00ff00;
+            color: black;
+            padding: 3px 8px;
+            margin: 15px 0 0 0;
+            font-weight: bold;
+            font-size: 12px;
+          }
+          .greeting {
+            margin: 10px 0;
+            font-size: 14px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+           
+          <div class="content">
+            <div class="greeting"><strong>Dear CIC,</strong></div>
+            <div class="greeting">Kindly Close the notification as below</div>
+            
+            <div class="field">
+              Notification No: <span class="highlight-yellow">${complaintNumber}</span>
+            </div>
+            
+            <div class="field">
+              Serial no : ${serialNumber}
+            </div>
+            
+            <div class="field">
+              Description : <span class="highlight-yellow">${description}</span>
+            </div>
+            
+            <div class="field">
+              Name : ${customerDetails?.hospitalName || customerDetails?.customername || 'N/A'}
+            </div>
+            
+            <div class="field">
+              City : <span class="highlight-blue">${customerDetails?.city || 'N/A'}</span>
+            </div>
+            
+            <div class="field">
+              Problem Reported : <span class="highlight-green">${reportedProblem}</span>
+            </div>
+            
+            <div style="background-color: #00ff00; padding: 3px 8px; margin: 10px 0; font-weight: bold;">
+              Action Taken : ${actionTaken}
+            </div>
+            
+            <div class="field">
+              Remarks : ${instructionToCustomer || 'Complaint resolved successfully'}
+            </div>
+            
+            ${sparesDisplayHTML}
+            
+            <div class="field">
+              ${engineerTitle} : <span style="background-color: #00ff00; padding: 0px 2px;">${userInfo?.firstName || ''} ${userInfo?.lastName || ''}</span>
+            </div>
+            
+            <div class="field">
+              ${engineerTitle} Mobile : ${userInfo?.mobilenumber || 'N/A'}
+            </div>
+            
+            <div class="field">
+              ${engineerTitle} Email : ${userInfo?.email || 'N/A'}
+            </div>
+          </div>
+          
+          <div class="vendor-section">
+            Vendor Details ✓ Vendor Code / Vendor Name / City
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // 5) Build the Customer Email Template (Second Image Design)
+    const customerEmailHTML = `
+      <html>
+      <head>
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            color: #000; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #ffffff;
+          }
+          .container { 
+            background-color: white;
+            max-width: 800px; 
+            margin: 0; 
+            padding: 0;
+            border: none;
+          }
+          .header { 
+            background-color: #00ff00; 
+            color: black; 
+            padding: 3px 8px; 
+            font-weight: bold;
+            font-size: 12px;
+            margin: 0;
+          }
+          .content { 
+            padding: 15px; 
+            line-height: 1.6;
+            font-size: 14px;
+            font-family: Arial, sans-serif;
+          }
+          .greeting {
+            margin: 10px 0;
+            font-size: 14px;
+          }
+          .info-section {
+            background-color: #00ff00;
+            padding: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="content">
+            <div class="greeting"><strong>Dear Customer,</strong></div>
+            
+            <div class="info-section">
+              The Service request no : (${complaintNumber}) for ( ${description} / ${serialNumber} ) is successfully closed up on your Digital authentication by providing OTP.
+            </div>
+            
+            <div class="info-section">
+              Please find the service report ( Digitally Signed by Skanray )!
+            </div>
+            
+            <div class="greeting">
+              In case of any queries kindly email to :CIC@skanray.com
+            </div>
+            
+            <div class="info-section">
+              You can also call our Toll Free No :1800 425 7002  / 0821 2402005
+            </div>
+       
+            <div style="margin-top: 20px;">
+              <p>Best Regards,<br>Skanray Technologies Limited</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // 6) Build the Service Report HTML with compact styling (for PDF)
     const serviceReportHTML = `
 <!DOCTYPE html>
 <html lang="en">
@@ -1434,10 +1896,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
           <td style="width: 16%;">Notification No:</td>
           <td style="width: 17%;">${complaintNumber || "N/A"}</td>
           <td style="width: 16%;">Notification Date:</td>
-          <td style="width: 17%;">
-  ${notificationDate}
-</td>
-
+          <td style="width: 17%;">${notificationDate}</td>
           <td style="width: 17%;">Service Type:</td>
           <td style="width: 17%;">${notificationType || "N/A"}</td>
         </tr>
@@ -1573,7 +2032,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       <table>
         <tr class="compact-row">
           <td style="width: 50%;">
-            <strong>Service Engineer's Name:</strong><br/>
+            <strong>${engineerTitle} Name:</strong><br/>
             ${userInfo?.firstName || "N/A"} ${userInfo?.lastName || ""}
             <br/>
             ${userInfo?.location || ""}
@@ -1592,7 +2051,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         <tr class="compact-row">
           <td style="width: 50%;">
             <strong>
-              Digitally Authorised by ${customerDetails?.hospitalName || "N/A"}
+              Digitally Authorised by ${customerDetails?.hospitalName || customerDetails?.customername || "N/A"}
               by providing OTP ${otp} sent on ${currentDate}
               to ${customerEmail} and ${customerDetails?.phone || "N/A"} by Skanray
             </strong>
@@ -1617,7 +2076,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       <table>
         <tr>
           <td class="small-text">
-            <div style="border-bottom: 1px solid black; padding-left: 5px;  ">
+            <div style="border-bottom: 1px solid black; padding-left: 5px;">
               <strong>
                 Payments to be made through Cheque / DD in favour of Skanray Technologies Limited. only<br/>
               </strong>
@@ -1642,10 +2101,10 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
 </html>
 `;
 
-    // 5) Set PDF file name
+    // 7) Set PDF file name
     const pdfFileName = `${complaintNumber || "report"}_${(description || "description").replace(/\s+/g, "_")}.pdf`;
 
-    // 6) Generate PDF with adjusted settings
+    // 8) Generate PDF with adjusted settings
     pdf.create(serviceReportHTML, {
       format: "A4",
       orientation: "portrait",
@@ -1671,93 +2130,81 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       }
 
       try {
-        // 7) Send email with the PDF as an attachment
+        // 9) Configure nodemailer transporter
         const transporter = nodemailer.createTransport({
           service: "gmail",
           auth: {
-            user: "webadmin@skanray-access.com",
-            pass: "rdzegwmzirvbjcpm",
-          },
+            user: 'webadmin@skanray-access.com',
+            pass: 'rdzegwmzirvbjcpm'
+          }
         });
 
-        const toEmails = [
-          customerEmail,
-          userInfo?.dealerEmail,
-          userInfo?.email,
-          ...(Array.isArray(userInfo.manageremail)
-            ? userInfo.manageremail
-            : userInfo.manageremail
-              ? [userInfo.manageremail]
-              : []),
+        // 10) Prepare recipient emails for SERVICE ENGINEERS
+        const serviceEngineerEmails = [
           'ftshivamtiwari222@gmail.com',
           'Damodara.s@skanray.com'
-        ].filter(Boolean);
-        console.log("Sending email to:", toEmails.join(", "));
+        ];
 
-        const mailOptions = {
+        // Add service engineer email
+        if (userInfo?.email && userInfo.email !== 'N/A') {
+          serviceEngineerEmails.push(userInfo.email);
+        }
+
+        // Add dealer email if exists
+        if (userInfo?.dealerEmail && userInfo.dealerEmail !== 'N/A') {
+          serviceEngineerEmails.push(userInfo.dealerEmail);
+        }
+
+        // Add manager emails
+        if (Array.isArray(userInfo?.manageremail)) {
+          userInfo.manageremail.forEach(email => {
+            if (email && !serviceEngineerEmails.includes(email)) {
+              serviceEngineerEmails.push(email);
+            }
+          });
+        }
+
+        // 11) Send email to SERVICE ENGINEERS (First Template)
+        const serviceEngineerMailOptions = {
           from: "webadmin@skanray-access.com",
-          to: toEmails,
-          subject: "Final Complaint Details with Service Report",
-          html: `
-          <div style="font-family: Arial, sans-serif; margin: 10px; font-size:16px;">
-            <p><strong>Kindly Close,</strong></p>
-            <p>Dear CIC, Notification as below:</p>
-            <table style="border-collapse: collapse; font-size:16px;">
-              <tr>
-                <td style="padding: 4px;"><strong>Notification No:</strong></td>
-                <td style="padding: 4px;">${complaintNumber || "N/A"}</td>
-              </tr>
-              <tr>
-                <td style="padding: 4px;"><strong>Notification Date:</strong></td>
-                <td style="padding: 4px;">${notificationDate || "N/A"}</td>
-
-              </tr>
-              <tr>
-                <td style="padding: 4px;"><strong>Serial No:</strong></td>
-                <td style="padding: 4px;">${serialNumber || "N/A"}</td>
-              </tr>
-              <tr>
-                <td style="padding: 4px;"><strong>Problem Reported:</strong></td>
-                <td style="padding: 4px;">${reportedProblem || "N/A"}</td>
-              </tr>
-              <tr>
-                <td style="padding: 4px;"><strong>Action Taken:</strong></td>
-                <td style="padding: 4px;">${actionTaken || "N/A"}</td>
-              </tr>
-              <tr>
-                <td style="padding: 4px;"><strong>Instruction to Customer:</strong></td>
-                <td style="padding: 4px;">${instructionToCustomer || "N/A"}</td>
-              </tr>
-            </table>
-            <br/>
-            <p><strong>Service Engineer Name:</strong> ${userInfo?.firstName && userInfo?.lastName
-              ? `${userInfo.firstName} ${userInfo.lastName}`
-              : "N/A"
-            }</p>
-            <p><strong>Service Engineer Phone:</strong> ${userInfo?.mobileNumber || "N/A"
-            }</p>
-            <p><strong>Service Engineer Email:</strong> ${userInfo?.email || "N/A"
-            }</p>
-            <p>The <strong>Service Report</strong> is attached below as a PDF report.</p>
-            <p>Please consider the Environment before printing this e-mail.</p>
-          </div>
-        `,
+          to: serviceEngineerEmails.join(','),
+          subject: 'Close Notification - ' + complaintNumber,
+          html: serviceEngineersEmailHTML,
           attachments: [
             {
               filename: pdfFileName,
               content: pdfBuffer,
+              contentType: 'application/pdf'
             },
           ],
         };
 
-        await transporter.sendMail(mailOptions);
+        await transporter.sendMail(serviceEngineerMailOptions);
 
-        // 8) DELETE the pending complaint after successful email send
+        // 12) Send email to CUSTOMER (Second Template with PDF)
+        if (customerEmail) {
+          const customerMailOptions = {
+            from: "webadmin@skanray-access.com",
+            to: customerEmail,
+            subject: 'Service Request Closure - ' + complaintNumber,
+            html: customerEmailHTML,
+            attachments: [
+              {
+                filename: pdfFileName,
+                content: pdfBuffer,
+                contentType: 'application/pdf'
+              },
+            ],
+          };
+
+          await transporter.sendMail(customerMailOptions);
+        }
+
+        // 13) DELETE the pending complaint after successful email send
         let deletedComplaint = null;
         let deletionError = null;
 
         try {
-          // Try to find and delete the pending complaint using complaint number
           deletedComplaint = await PendingComplaints.findOneAndDelete({
             notification_complaintid: complaintNumber
           });
@@ -1773,13 +2220,15 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         }
 
         return res.status(200).json({
-          message: "OTP verified, email sent successfully with PDF attached!",
+          message: "OTP verified, emails sent successfully!",
           complaintClosed: true,
+          serviceEngineerRecipients: serviceEngineerEmails,
+          customerEmail: customerEmail,
           pendingComplaintDeleted: deletedComplaint ? true : false,
-          deletedComplaintId: deletedComplaint ? deletedComplaint.notification_complaintid : null,
           deletionError: deletionError,
           finalData: req.body,
         });
+
       } catch (emailErr) {
         console.error("Error sending email:", emailErr);
         return res.status(500).json({

@@ -357,7 +357,8 @@ router.put('/pms/:id', getPMById, async (req, res) => {
     'pmVendorCode',
     'pmEngineerCode',
     'pmStatus',
-    'partNumber' // Added partNumber to the update list
+    'partNumber',
+    'status' // Added status to the update list
   ];
 
   updates.forEach(field => {
@@ -373,6 +374,7 @@ router.put('/pms/:id', getPMById, async (req, res) => {
     res.status(400).json({ message: err.message });
   }
 });
+
 
 
 // DELETE a PM record

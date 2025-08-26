@@ -9,7 +9,7 @@ const PMSchema = new mongoose.Schema(
     pmNumber: {
       type: String,
       unique: true,
-      sparse: true,  
+      sparse: true,
     },
     materialDescription: {
       type: String,
@@ -50,6 +50,10 @@ const PMSchema = new mongoose.Schema(
     },
     partNumber: {
       type: String,
+    },
+    status: {
+      type: String,
+      default: 'Active',
     },
   },
   {
