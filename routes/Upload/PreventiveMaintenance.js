@@ -55,7 +55,177 @@ async function checkDuplicatePMNumber(req, res, next) {
   next();
 }
 
+router.get('/pms/filter', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      dateFrom,
+      dateTo,
+      pmStatus,
+      region
+    } = req.query;
 
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // Build aggregation pipeline
+    const pipeline = [];
+
+    // Stage 1: Convert pmDoneDate string to Date for filtering
+    pipeline.push({
+      $addFields: {
+        pmDoneDateConverted: {
+          $cond: {
+            if: { $and: [{ $ne: ["$pmDoneDate", null] }, { $ne: ["$pmDoneDate", ""] }] },
+            then: {
+              $dateFromString: {
+                dateString: "$pmDoneDate",
+                format: "%d/%m/%Y",
+                onError: null
+              }
+            },
+            else: null
+          }
+        }
+      }
+    });
+
+    // Stage 2: Build match conditions
+    const matchConditions = {};
+
+    // Date range filter
+    if (dateFrom || dateTo) {
+      matchConditions.pmDoneDateConverted = {};
+      if (dateFrom) {
+        const startDate = new Date(dateFrom);
+        startDate.setHours(0, 0, 0, 0);
+        matchConditions.pmDoneDateConverted.$gte = startDate;
+      }
+      if (dateTo) {
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        matchConditions.pmDoneDateConverted.$lte = endDate;
+      }
+    }
+
+    // Status filter
+    if (pmStatus && pmStatus !== 'all') {
+      matchConditions.pmStatus = { $regex: pmStatus, $options: 'i' };
+    }
+
+    // Region filter
+    if (region && region !== 'all') {
+      matchConditions.region = { $regex: region, $options: 'i' };
+    }
+
+    // Add match stage if there are conditions
+    if (Object.keys(matchConditions).length > 0) {
+      pipeline.push({ $match: matchConditions });
+    }
+
+    // Stage 3: Sort
+    pipeline.push({ $sort: { createdAt: -1 } });
+
+    // Execute aggregation for total count
+    const totalCountPipeline = [...pipeline, { $count: "total" }];
+    const totalCountResult = await PM.aggregate(totalCountPipeline);
+    const totalCount = totalCountResult.length > 0 ? totalCountResult[0].total : 0;
+
+    // Execute aggregation for paginated data
+    pipeline.push({ $skip: skip });
+    pipeline.push({ $limit: limitNumber });
+
+    const pms = await PM.aggregate(pipeline);
+
+    // Remove the converted field from results
+    const cleanedPMs = pms.map(pm => {
+      const { pmDoneDateConverted, ...rest } = pm;
+      return rest;
+    });
+
+    // Enrich with customer data (existing code)
+    const customerCodes = [...new Set(cleanedPMs.map(pm => pm.customerCode).filter(Boolean))];
+    const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
+      .select('customercodeid customername hospitalname street city region email')
+      .lean();
+
+    const customerMap = customers.reduce((map, customer) => {
+      map[customer.customercodeid] = customer;
+      return map;
+    }, {});
+
+    const enrichedPMs = cleanedPMs.map(pm => {
+      const customer = customerMap[pm.customerCode];
+      if (customer) {
+        return {
+          ...pm,
+          email: customer.email?.trim() || null,
+          customercodeid: customer.customercodeid,
+          customername: customer.customername,
+          hospitalname: customer.hospitalname,
+          street: customer.street,
+          city: customer.city,
+          customerRegion: customer.region
+        };
+      }
+      return pm;
+    });
+
+    const totalPages = Math.ceil(totalCount / limitNumber);
+
+    res.json({
+      success: true,
+      data: enrichedPMs,
+      pagination: {
+        currentPage: pageNumber,
+        totalPages,
+        totalRecords: totalCount,
+        recordsPerPage: limitNumber,
+        hasNextPage: pageNumber < totalPages,
+        hasPrevPage: pageNumber > 1,
+        recordsOnCurrentPage: enrichedPMs.length
+      },
+      filters: {
+        applied: Object.keys(matchConditions).length > 0,
+        dateFrom: dateFrom || null,
+        dateTo: dateTo || null,
+        pmStatus: pmStatus || null,
+        region: region || null
+      }
+    });
+
+  } catch (err) {
+    console.error('Filter API error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch filtered PM records',
+      error: err.message
+    });
+  }
+});
+
+
+// GET available regions for autocomplete
+router.get('/pms/regions', async (req, res) => {
+  try {
+    const regions = await PM.distinct('region');
+    const validRegions = regions.filter(region => region && region.trim() !== '');
+
+    res.json({
+      success: true,
+      regions: validRegions.sort()
+    });
+  } catch (err) {
+    console.error('Regions API error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch regions',
+      error: err.message
+    });
+  }
+});
 
 // BULK DELETE PM entries - PLACE THIS BEFORE THE /:id ROUTES
 router.delete('/pms/bulk', async (req, res) => {
@@ -662,6 +832,11 @@ router.post("/otp/verify", async (req, res) => {
 //   3) Stores the PDF buffer into pdfStore[customerCode] so that we can later
 //      attach them all in the final email route.
 //
+// GET filtered PM records with advanced filtering and pagination
+// GET filtered PM records - Simple 3 filters only
+
+
+
 router.post("/reportAndUpdate", async (req, res) => {
   try {
     const { pmData, checklistData, customerCode, globalRemark, userInfo } = req.body;

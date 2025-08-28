@@ -16,8 +16,8 @@ const PM = require("../../Model/UploadSchema/PMSchema")
 const Product = require("../../Model/MasterSchema/ProductSchema")
 const AMCContract = require("../../Model/UploadSchema/AMCContractSchema")
 const Customer = require("../../Model/UploadSchema/CustomerSchema")
-const JobProgress = require("../../Model/BulkUplaod/EquipmentJobProgressSchema") // New schema
-const JobResult = require("../../Model//BulkUplaod/EquipmentJobResultSchema") // New schema
+const JobProgress = require("../../Model/BulkUplaod/EquipmentJobProgressSchema")
+const JobResult = require("../../Model//BulkUplaod/EquipmentJobResultSchema")
 
 // Enhanced multer configuration with disk storage for large files
 const storage = multer.diskStorage({
@@ -61,7 +61,6 @@ const upload = multer({
   },
 })
 
-// Enhanced field mappings for better flexibility (keep your existing FIELD_MAPPINGS)
 const FIELD_MAPPINGS = {
   materialcode: [
     "material code",
@@ -204,16 +203,31 @@ const ERROR_CATEGORIES = {
   DATE_FORMAT_ERROR: "DateFormatError",
 }
 
-// Processing configuration
 const CONFIG = {
-  EQUIPMENT_BATCH_SIZE: 1000,
-  PM_BATCH_SIZE: 5000,
+  EQUIPMENT_BATCH_SIZE: 500, // Reduced from 1000
+  PM_BATCH_SIZE: 2000, // Reduced from 5000
   MAX_RETRIES: 3,
   RETRY_DELAY: 1000,
-  MEMORY_THRESHOLD: 0.8, // 80% memory usage threshold
-}
+  MEMORY_THRESHOLD: 0.6, // Reduced from 0.8
+  MAX_EQUIPMENT_RESULTS_PER_CHUNK: 1500, // Reduced from 3000
+  MAX_DOCUMENT_SIZE_MB: 10, // Reduced from 14
+  CHUNK_SIZE_CHECK_INTERVAL: 200, // Reduced from 500
+  FORCE_GC_INTERVAL: 1000, // Force garbage collection every 1000 records
+};
+// Enhanced memory cleanup
+function aggressiveMemoryCleanup() {
+  if (global.gc) {
+    global.gc();
+  }
 
-// Keep all your existing utility functions (generateEquipmentId, normalizeFieldNames, etc.)
+  // Clear any large objects from memory
+  if (process.memoryUsage().heapUsed > 400 * 1024 * 1024) { // 400MB threshold
+    console.log('Aggressive memory cleanup triggered');
+    global.gc && global.gc();
+    setTimeout(() => global.gc && global.gc(), 100);
+  }
+}
+// Utility functions (keeping all existing ones)
 function generateEquipmentId(serialnumber, materialcode) {
   const timestamp = Date.now().toString()
   const random = Math.random().toString(36).substring(2, 8).toUpperCase()
@@ -290,7 +304,390 @@ function getDetailedChanges(existingRecord, newRecord) {
   return { hasChanges, changes }
 }
 
-// Keep all your existing parsing functions (parseFile, parseCSVFile, parseExcelFile, etc.)
+// NEW: Helper function to estimate document size
+function estimateDocumentSize(obj) {
+  try {
+    return Buffer.byteLength(JSON.stringify(obj), 'utf8');
+  } catch (error) {
+    // Fallback estimation
+    return JSON.stringify(obj).length * 2;
+  }
+}
+
+// FIXED: Complete corrected function
+async function saveJobResultsInChunks(jobId, equipmentResults, pmResults, summary, errors, warnings) {
+  const maxChunkSize = CONFIG.MAX_EQUIPMENT_RESULTS_PER_CHUNK;
+  const maxSizeBytes = CONFIG.MAX_DOCUMENT_SIZE_MB * 1024 * 1024;
+
+  console.log(`Preparing to save ${equipmentResults.length} equipment results for job ${jobId}`);
+
+  const mainDocument = {
+    jobId,
+    equipmentResults: [],
+    pmResults: [],
+    summary,
+    errors: errors.slice(0, 500),
+    warnings: warnings.slice(0, 500),
+    totalChunks: 0,
+    totalEquipmentResults: equipmentResults.length,
+    totalPMResults: pmResults.length,
+    isChunk: false,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+
+  // FIXED: Proper size estimation
+  const sampleSize = Math.min(50, equipmentResults.length);
+  if (sampleSize === 0) {
+    await JobResult.create(mainDocument);
+    return;
+  }
+
+  const sampleData = equipmentResults.slice(0, sampleSize);
+  const avgRecordSize = estimateDocumentSize({ equipmentResults: sampleData }) / sampleSize;
+  const estimatedTotalSize = avgRecordSize * equipmentResults.length;
+
+  const needsChunking = equipmentResults.length > maxChunkSize || estimatedTotalSize > maxSizeBytes;
+
+  if (!needsChunking) {
+    console.log(`Small dataset (${equipmentResults.length} results). Saving without chunking.`);
+    mainDocument.equipmentResults = equipmentResults;
+    mainDocument.pmResults = pmResults;
+    await JobResult.create(mainDocument);
+    return;
+  }
+
+  // FIXED: Use correct variable names
+  console.log(`Large dataset detected (${equipmentResults.length} results, ~${Math.round(estimatedTotalSize / (1024 * 1024))}MB). Using chunking strategy.`);
+
+  // Rest of the chunking logic remains the same...
+  const chunks = [];
+  let currentChunk = [];
+  let currentChunkSize = 0;
+  let chunkIndex = 0;
+
+  for (let i = 0; i < equipmentResults.length; i++) {
+    const result = equipmentResults[i];
+
+    // Simplify result to reduce memory footprint
+    const simplifiedResult = {
+      ...result,
+      pmResults: result.pmResults ? result.pmResults.slice(0, 50) : []
+    };
+    const resultSize = estimateDocumentSize(simplifiedResult);
+
+    if ((currentChunk.length >= maxChunkSize) ||
+      (currentChunkSize + resultSize > maxSizeBytes && currentChunk.length > 0)) {
+
+      chunks.push({
+        equipmentResults: currentChunk,
+        chunkSize: currentChunkSize,
+        chunkIndex: chunkIndex++,
+        resultCount: currentChunk.length
+      });
+
+      currentChunk = [result];
+      currentChunkSize = resultSize;
+    } else {
+      currentChunk.push(result);
+      currentChunkSize += resultSize;
+    }
+
+    // Memory cleanup during chunking
+    if (i % 500 === 0 && i > 0) {
+      aggressiveMemoryCleanup();
+      console.log(`Processed ${i}/${equipmentResults.length} results for chunking (Memory: ${checkMemoryUsage().heapUsed}MB)`);
+    }
+  }
+
+  // Add final chunk
+  if (currentChunk.length > 0) {
+    chunks.push({
+      equipmentResults: currentChunk,
+      chunkSize: currentChunkSize,
+      chunkIndex: chunkIndex++,
+      resultCount: currentChunk.length
+    });
+  }
+
+  mainDocument.totalChunks = chunks.length;
+  console.log(`Splitting into ${chunks.length} chunks`);
+
+  // Save main document
+  await JobResult.create(mainDocument);
+  console.log(`Saved main document for job ${jobId}`);
+
+  // Save chunks
+  for (const chunk of chunks) {
+    try {
+      await JobResult.create({
+        jobId: `${jobId}_chunk_${chunk.chunkIndex}`,
+        parentJobId: jobId,
+        equipmentResults: chunk.equipmentResults,
+        pmResults: [],
+        summary: null,
+        errors: [],
+        warnings: [],
+        isChunk: true,
+        chunkIndex: chunk.chunkIndex,
+        chunkSize: Math.round(chunk.chunkSize / (1024 * 1024) * 100) / 100,
+        resultCount: chunk.resultCount,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      aggressiveMemoryCleanup();
+      console.log(`Saved chunk ${chunk.chunkIndex + 1}/${chunks.length} (${chunk.resultCount} results, ${Math.round(chunk.chunkSize / (1024 * 1024) * 100) / 100}MB)`);
+
+    } catch (chunkError) {
+      console.error(`Failed to save chunk ${chunk.chunkIndex}:`, chunkError);
+      throw new Error(`Chunk save failed: ${chunkError.message}`);
+    }
+  }
+
+  console.log(`Successfully saved ${chunks.length} chunks for job ${jobId}`);
+}
+
+
+
+// Enhanced getJobResults function with optimized chunked data retrieval
+async function getJobResults(jobId, type, page, limit) {
+  try {
+    const mainJobResult = await JobResult.findOne({ jobId, isChunk: { $ne: true } });
+    if (!mainJobResult) return { data: [], pagination: {} };
+
+    let data = [];
+
+    if (type === "equipment") {
+      if (mainJobResult.totalChunks && mainJobResult.totalChunks > 0) {
+        // FIXED: Proper chunk-based pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + limit;
+
+        // Get total count first
+        const totalCount = mainJobResult.totalEquipmentResults || 0;
+
+        if (startIndex >= totalCount) {
+          return {
+            data: [],
+            pagination: {
+              currentPage: page,
+              totalPages: Math.ceil(totalCount / limit),
+              totalRecords: totalCount,
+              recordsPerPage: limit,
+              hasNext: false,
+              hasPrev: page > 1,
+              startRecord: 0,
+              endRecord: 0,
+            }
+          };
+        }
+
+        let processedCount = 0;
+        let collectedData = [];
+
+        // Get chunks in order
+        const chunks = await JobResult.find(
+          { parentJobId: jobId, isChunk: true },
+          { chunkIndex: 1, resultCount: 1, _id: 1 }
+        ).sort({ chunkIndex: 1 });
+
+        for (const chunkMeta of chunks) {
+          const chunkStart = processedCount;
+          const chunkEnd = processedCount + (chunkMeta.resultCount || 0);
+
+          // Check if this chunk overlaps with our pagination window
+          if (chunkEnd > startIndex && chunkStart < endIndex) {
+            // Calculate slice within this chunk
+            const skipInChunk = Math.max(0, startIndex - chunkStart);
+            const takeFromChunk = Math.min(
+              limit - collectedData.length,
+              chunkEnd - Math.max(startIndex, chunkStart)
+            );
+
+            if (takeFromChunk > 0) {
+              const chunk = await JobResult.findOne(
+                { parentJobId: jobId, isChunk: true, chunkIndex: chunkMeta.chunkIndex }
+              );
+
+              if (chunk && chunk.equipmentResults) {
+                const slicedData = chunk.equipmentResults.slice(
+                  skipInChunk,
+                  skipInChunk + takeFromChunk
+                );
+                collectedData.push(...slicedData);
+              }
+            }
+          }
+
+          processedCount = chunkEnd;
+
+          // Stop if we have enough data
+          if (collectedData.length >= limit) break;
+        }
+        return {
+          data: collectedData,
+          pagination: {
+            currentPage: page,
+            totalPages: Math.ceil(totalCount / limit),
+            totalRecords: totalCount,
+            recordsPerPage: limit,
+            hasNext: endIndex < totalCount,
+            hasPrev: page > 1,
+            startRecord: startIndex + 1,
+            endRecord: Math.min(endIndex, totalCount),
+          },
+        };
+      } else {
+        // Non-chunked data
+        data = mainJobResult.equipmentResults || [];
+      }
+    } else if (type === "pm") {
+      // For PM data, extract from equipment results
+      if (mainJobResult.totalChunks && mainJobResult.totalChunks > 0) {
+        const chunks = await JobResult.find(
+          { parentJobId: jobId, isChunk: true },
+          { equipmentResults: 1 }
+        ).sort({ chunkIndex: 1 });
+
+        // Extract PM results from equipment results in chunks
+        data = chunks.reduce((acc, chunk) => {
+          (chunk.equipmentResults || []).forEach(equipment => {
+            if (equipment.pmResults && equipment.pmResults.length > 0) {
+              acc.push(...equipment.pmResults.map(pm => ({
+                ...pm,
+                serialNumber: equipment.serialnumber,
+                equipmentId: equipment.equipmentid
+              })));
+            }
+          });
+          return acc;
+        }, []);
+      } else {
+        data = mainJobResult.pmResults || [];
+      }
+    } else if (type === "errors") {
+      // Handle errors from both main document and chunks
+      data = [...(mainJobResult.errors || [])];
+
+      if (mainJobResult.totalChunks && mainJobResult.totalChunks > 0) {
+        const chunks = await JobResult.find(
+          { parentJobId: jobId, isChunk: true },
+          { equipmentResults: 1 }
+        );
+
+        chunks.forEach(chunk => {
+          (chunk.equipmentResults || []).forEach((equipment, index) => {
+            // Add equipment-level errors
+            if (equipment.allErrors && equipment.allErrors.length > 0) {
+              equipment.allErrors.forEach(error => {
+                data.push({
+                  ...error,
+                  serialNumber: equipment.serialnumber,
+                  equipmentId: equipment.equipmentid,
+                  lineNumber: equipment.lineNumber,
+                  source: 'equipment',
+                  recordIndex: index
+                });
+              });
+            }
+
+            // Add equipment general errors
+            if (equipment.status === 'Failed' && equipment.error) {
+              data.push({
+                category: equipment.category || 'ProcessingError',
+                field: null,
+                message: equipment.error,
+                serialNumber: equipment.serialnumber,
+                equipmentId: equipment.equipmentid,
+                lineNumber: equipment.lineNumber,
+                source: 'equipment',
+                recordIndex: index
+              });
+            }
+
+            // Add PM-related errors
+            if (equipment.pmResults && equipment.pmResults.length > 0) {
+              equipment.pmResults.forEach(pm => {
+                if (pm.status === 'Failed' || pm.error) {
+                  data.push({
+                    category: pm.category || 'PM_Error',
+                    field: pm.pmType,
+                    message: pm.error || pm.reason || 'PM task failed',
+                    serialNumber: equipment.serialnumber,
+                    equipmentId: equipment.equipmentid,
+                    lineNumber: equipment.lineNumber,
+                    pmType: pm.pmType,
+                    source: 'pm',
+                    recordIndex: index
+                  });
+                }
+              });
+            }
+          });
+        });
+      }
+    } else if (type === "warnings") {
+      // Handle warnings from both main document and chunks
+      data = [...(mainJobResult.warnings || [])];
+
+      if (mainJobResult.totalChunks && mainJobResult.totalChunks > 0) {
+        const chunks = await JobResult.find(
+          { parentJobId: jobId, isChunk: true },
+          { equipmentResults: 1 }
+        );
+
+        chunks.forEach(chunk => {
+          (chunk.equipmentResults || []).forEach((equipment, index) => {
+            if (equipment.warnings && equipment.warnings.length > 0) {
+              equipment.warnings.forEach(warning => {
+                data.push({
+                  ...warning,
+                  serialNumber: equipment.serialnumber,
+                  equipmentId: equipment.equipmentid,
+                  lineNumber: equipment.lineNumber,
+                  source: 'equipment',
+                  recordIndex: index
+                });
+              });
+            }
+          });
+        });
+      }
+    } else {
+      // Default case - return equipment results
+      if (mainJobResult.totalChunks && mainJobResult.totalChunks > 0) {
+        return await getJobResults(jobId, "equipment", page, limit);
+      } else {
+        data = mainJobResult.equipmentResults || [];
+      }
+    }
+
+    // Apply pagination to the combined data (for non-equipment types or non-chunked data)
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedData = data.slice(startIndex, endIndex);
+
+    return {
+      data: paginatedData,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(data.length / limit),
+        totalRecords: data.length,
+        recordsPerPage: limit,
+        hasNext: endIndex < data.length,
+        hasPrev: page > 1,
+        startRecord: startIndex + 1,
+        endRecord: Math.min(endIndex, data.length),
+      },
+    };
+  } catch (error) {
+    console.error("Error getting job results:", error);
+    return { data: [], pagination: {} };
+  }
+}
+
+// Enhanced file parsing functions (keeping existing code)
 async function parseFile(filePath, fileExtension) {
   const startTime = Date.now()
   let records = []
@@ -425,7 +822,7 @@ async function parseXMLFile(filePath) {
   }
 }
 
-// Keep all your existing date and PM utility functions
+// Date and PM utility functions (keeping existing code)
 function parseUniversalDate(dateInput) {
   if (dateInput == null || dateInput === "") return null
 
@@ -436,7 +833,6 @@ function parseUniversalDate(dateInput) {
   if (typeof dateInput === "number") {
     try {
       if (dateInput > 25567) {
-        // Excel epoch
         const excelDate = new Date((dateInput - 25567) * 86400 * 1000)
         return excelDate
       } else {
@@ -632,6 +1028,13 @@ function checkMemoryUsage() {
   }
 }
 
+// NEW: Memory optimization function
+function optimizeMemoryUsage() {
+  if (global.gc) {
+    global.gc();
+  }
+}
+
 function cleanupTempFile(filePath) {
   try {
     if (fs.existsSync(filePath)) {
@@ -651,483 +1054,7 @@ async function updateJobProgress(jobId, updateData) {
   }
 }
 
-// Helper function to get job results with pagination
-async function getJobResults(jobId, type, page, limit) {
-  try {
-    const jobResult = await JobResult.findOne({ jobId })
-    if (!jobResult) return { data: [], pagination: {} }
-
-    let data = []
-    switch (type) {
-      case "equipment":
-        data = jobResult.equipmentResults || []
-        break
-      case "pm":
-        data = jobResult.pmResults || []
-        break
-      case "errors":
-        data = jobResult.errors || []
-        break
-      case "warnings":
-        data = jobResult.warnings || []
-        break
-      default:
-        data = []
-    }
-
-    const startIndex = (page - 1) * limit
-    const endIndex = startIndex + limit
-    const paginatedData = data.slice(startIndex, endIndex)
-
-    return {
-      data: paginatedData,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(data.length / limit),
-        totalRecords: data.length,
-        recordsPerPage: limit,
-        hasNext: endIndex < data.length,
-        hasPrev: page > 1,
-        startRecord: startIndex + 1,
-        endRecord: Math.min(endIndex, data.length),
-      },
-    }
-  } catch (error) {
-    console.error("Error getting job results:", error)
-    return { data: [], pagination: {} }
-  }
-}
-
-// ==============================================
-// NEW API 1: START BULK UPLOAD (Background Processing)
-// ==============================================
-router.post("/start", upload.single("file"), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "No file uploaded",
-        error: "FILE_MISSING",
-      })
-    }
-
-    // Generate unique job ID
-    const jobId = `bulk_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    const fileExtension = path.extname(req.file.originalname).toLowerCase()
-
-    // Initial field mapping analysis
-    let detectedFields = []
-    let mappedFields = []
-    let unmappedFields = []
-
-    try {
-      // Quick parse for field detection
-      const sampleResult = await parseFile(req.file.path, fileExtension)
-      if (sampleResult.records.length > 0) {
-        const firstRecord = sampleResult.records[0]
-        detectedFields = Object.keys(firstRecord)
-        mappedFields = detectedFields.filter((key) =>
-          Object.values(FIELD_MAPPINGS).some((variations) =>
-            variations.some(
-              (variation) =>
-                key.toLowerCase().trim() === variation.toLowerCase() ||
-                key.toLowerCase().replace(/[_\s\-.]/g, "") === variation.toLowerCase().replace(/[_\s\-.]/g, ""),
-            ),
-          ),
-        )
-        unmappedFields = detectedFields.filter((field) => !mappedFields.includes(field))
-      }
-    } catch (parseError) {
-      console.error("Quick parse error:", parseError)
-    }
-
-    // Save initial job progress in database
-    await JobProgress.create({
-      jobId,
-      status: "PROCESSING",
-      fileName: req.file.originalname,
-      fileSize: Math.round((req.file.size / 1024 / 1024) * 100) / 100, // MB
-      totalRecords: 0,
-      processedRecords: 0,
-      createdCount: 0,
-      updatedCount: 0,
-      failedCount: 0,
-      pmCount: 0,
-      progressPercentage: 5,
-      currentOperation: "File uploaded. Starting validation...",
-      startTime: new Date(),
-      estimatedEndTime: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes estimate
-      fieldMappingInfo: {
-        detectedFields,
-        mappedFields,
-        unmappedFields,
-      },
-    })
-
-    // Start background processing (don't await)
-    processFileAsync(jobId, req.file.path, fileExtension).catch((error) => {
-      console.error(`Background processing failed for job ${jobId}:`, error)
-    })
-
-    // Immediate response to frontend
-    res.status(202).json({
-      // 202 = Accepted
-      success: true,
-      jobId,
-      message: "File upload started. Processing in background.",
-      fileInfo: {
-        name: req.file.originalname,
-        size: `${Math.round((req.file.size / 1024 / 1024) * 100) / 100} MB`,
-        type: fileExtension.toUpperCase(),
-      },
-      fieldMapping: {
-        detected: detectedFields.length,
-        mapped: mappedFields.length,
-        unmapped: unmappedFields.length,
-      },
-      statusUrl: `/api/bulk-upload/status/${jobId}`,
-      estimatedTime: "2-5 minutes",
-      pollingInterval: "Check status every 3-5 seconds",
-    })
-  } catch (error) {
-    console.error("Bulk upload start error:", error)
-    res.status(500).json({
-      success: false,
-      message: "Failed to start bulk upload",
-      error: error.message,
-    })
-  }
-})
-
-// ==============================================
-// NEW API 2: CHECK STATUS & GET RESULTS (Polling)
-// ==============================================
-router.get("/status/:jobId", async (req, res) => {
-  try {
-    const { jobId } = req.params
-    const page = Number.parseInt(req.query.page) || 1
-    const limit = Number.parseInt(req.query.limit) || 50
-    const type = req.query.type || "summary" // summary, equipment, pm, errors, warnings
-
-    // Get job progress
-    const jobProgress = await JobProgress.findOne({ jobId })
-
-    if (!jobProgress) {
-      return res.status(404).json({
-        success: false,
-        message: "Job not found",
-        error: "JOB_NOT_FOUND",
-      })
-    }
-
-    const response = {
-      success: true,
-      jobId,
-      status: jobProgress.status, // PROCESSING, COMPLETED, FAILED
-      progress: {
-        percentage: jobProgress.progressPercentage,
-        totalRecords: jobProgress.totalRecords,
-        processedRecords: jobProgress.processedRecords,
-        currentOperation: jobProgress.currentOperation,
-      },
-      counts: {
-        created: jobProgress.createdCount,
-        updated: jobProgress.updatedCount,
-        failed: jobProgress.failedCount,
-        pmGenerated: jobProgress.pmCount,
-      },
-      timing: {
-        startTime: jobProgress.startTime,
-        endTime: jobProgress.endTime,
-        estimatedEndTime: jobProgress.estimatedEndTime,
-        duration: jobProgress.endTime ? Math.round((jobProgress.endTime - jobProgress.startTime) / 1000) : null,
-        elapsedTime: Math.round((new Date() - jobProgress.startTime) / 1000),
-      },
-      fileInfo: {
-        name: jobProgress.fileName,
-        size: `${jobProgress.fileSize} MB`,
-      },
-    }
-
-    // If still processing, return progress info
-    if (jobProgress.status === "PROCESSING") {
-      response.message = jobProgress.currentOperation
-      response.nextPoll = 3000 // Suggest 3 seconds
-      return res.json(response)
-    }
-
-    // If failed, return error details
-    if (jobProgress.status === "FAILED") {
-      response.error = jobProgress.errorMessage
-      response.message = "Processing failed"
-      if (jobProgress.errorSummary && jobProgress.errorSummary.length > 0) {
-        response.errorDetails = jobProgress.errorSummary
-      }
-      return res.json(response)
-    }
-
-    // If completed, provide data based on requested type
-    // In your /status/:jobId endpoint, add this in the COMPLETED section:
-    if (jobProgress.status === "COMPLETED") {
-      response.message = "Processing completed successfully"
-
-      // Add field mapping info
-      if (jobProgress.fieldMappingInfo) {
-        response.fieldMapping = jobProgress.fieldMappingInfo
-      }
-
-      // Add error summary for quick access
-      const jobResult = await JobResult.findOne({ jobId }, {
-        summary: 1,
-        equipmentResults: 1
-      })
-
-      if (jobResult) {
-        // Extract error counts from equipment results
-        const failedEquipment = jobResult.equipmentResults?.filter(eq => eq.status === 'Failed') || []
-        const totalEquipmentErrors = failedEquipment.reduce((sum, eq) => {
-          return sum + (eq.allErrors?.length || 0)
-        }, 0)
-
-        const totalPMErrors = jobResult.equipmentResults?.reduce((sum, eq) => {
-          return sum + (eq.pmResults?.filter(pm => pm.status === 'Failed').length || 0)
-        }, 0) || 0
-
-        response.errorSummary = {
-          totalErrors: totalEquipmentErrors + totalPMErrors + (jobResult.errors?.length || 0),
-          equipmentErrors: totalEquipmentErrors,
-          pmErrors: totalPMErrors,
-          processingErrors: jobResult.errors?.length || 0,
-          failedRecords: failedEquipment.length,
-          errorBreakdown: jobResult.summary?.errorBreakdown || {}
-        }
-
-        if (type === "summary") {
-          response.summary = jobResult.summary
-        } else {
-          const results = await getJobResults(jobId, type, page, limit)
-          response.data = results.data
-          response.pagination = results.pagination
-        }
-      }
-    }
-
-
-    res.json(response)
-  } catch (error) {
-    console.error("Status check error:", error)
-    res.status(500).json({
-      success: false,
-      message: "Failed to get job status",
-      error: error.message,
-    })
-  }
-})
-
-router.get("/results/:jobId", async (req, res) => {
-  try {
-    const { jobId } = req.params
-    const type = req.query.type || "all"
-    const page = Number.parseInt(req.query.page) || 1
-    const limit = Math.min(Number.parseInt(req.query.limit) || 10, 500)
-
-    // Get job result from database
-    const jobResult = await JobResult.findOne({ jobId })
-
-    if (!jobResult) {
-      return res.status(404).json({
-        success: false,
-        message: "Job results not found",
-        error: "RESULTS_NOT_FOUND",
-      })
-    }
-
-    // Extract all errors from equipment results
-    const extractAllErrors = (equipmentResults) => {
-      const allErrors = []
-      const allWarnings = []
-
-      equipmentResults.forEach((equipment, index) => {
-        // Add equipment-level errors
-        if (equipment.allErrors && equipment.allErrors.length > 0) {
-          equipment.allErrors.forEach(error => {
-            allErrors.push({
-              ...error,
-              serialNumber: equipment.serialnumber,
-              equipmentId: equipment.equipmentid,
-              lineNumber: equipment.lineNumber,
-              source: 'equipment',
-              recordIndex: index
-            });
-          });
-        }
-
-        // Add equipment-level warnings  
-        if (equipment.warnings && equipment.warnings.length > 0) {
-          equipment.warnings.forEach(warning => {
-            allWarnings.push({
-              ...warning,
-              serialNumber: equipment.serialnumber,
-              equipmentId: equipment.equipmentid,
-              lineNumber: equipment.lineNumber,
-              source: 'equipment',
-              recordIndex: index
-            });
-          });
-        }
-
-        // Add equipment general error if status is Failed
-        if (equipment.status === 'Failed' && equipment.error) {
-          allErrors.push({
-            category: equipment.category || 'ProcessingError',
-            field: null,
-            message: equipment.error,
-            serialNumber: equipment.serialnumber,
-            equipmentId: equipment.equipmentid,
-            lineNumber: equipment.lineNumber,
-            source: 'equipment',
-            recordIndex: index
-          });
-        }
-
-        // Add PM-related errors
-        if (equipment.pmResults && equipment.pmResults.length > 0) {
-          equipment.pmResults.forEach(pm => {
-            if (pm.status === 'Failed' || pm.error) {
-              allErrors.push({
-                category: pm.category || 'PM_Error',
-                field: pm.pmType,
-                message: pm.error || pm.reason || 'PM task failed',
-                serialNumber: equipment.serialnumber,
-                equipmentId: equipment.equipmentid,
-                lineNumber: equipment.lineNumber,
-                pmType: pm.pmType,
-                source: 'pm',
-                recordIndex: index
-              });
-            }
-          });
-        }
-      });
-
-      return { allErrors, allWarnings };
-    };
-
-    // Get all errors from equipment results
-    const { allErrors: equipmentErrors, allWarnings: equipmentWarnings } =
-      extractAllErrors(jobResult.equipmentResults || []);
-
-    // Combine with processing-level errors
-    const combinedErrors = [
-      ...(jobResult.errors || []).map((error, index) => ({
-        id: `proc_${index}`,
-        message: typeof error === 'string' ? error : error.message || JSON.stringify(error),
-        source: 'processing',
-        category: error.category || 'ProcessingError',
-        serialNumber: error.serialnumber || null,
-        timestamp: error.timestamp || null
-      })),
-      ...equipmentErrors.map((error, index) => ({
-        id: `eq_${index}`,
-        ...error
-      }))
-    ];
-
-    const combinedWarnings = [
-      ...(jobResult.warnings || []).map((warning, index) => ({
-        id: `proc_warn_${index}`,
-        message: typeof warning === 'string' ? warning : warning.message || JSON.stringify(warning),
-        source: 'processing',
-        category: warning.category || 'ProcessingWarning',
-        serialNumber: warning.serialnumber || null
-      })),
-      ...equipmentWarnings.map((warning, index) => ({
-        id: `eq_warn_${index}`,
-        ...warning
-      }))
-    ];
-
-    // Paginated data for equipment/pm
-    let data = []
-    if (type === "equipment") {
-      data = jobResult.equipmentResults || []
-    } else if (type === "pm") {
-      data = jobResult.pmResults || []
-    } else if (type === "errors") {
-      // For errors, return all without pagination
-      return res.json({
-        success: true,
-        jobId,
-        type: 'errors',
-        data: combinedErrors,
-        warnings: combinedWarnings,
-        totalErrors: combinedErrors.length,
-        totalWarnings: combinedWarnings.length,
-        errorBreakdown: jobResult.summary?.errorBreakdown || {},
-        createdAt: jobResult.createdAt,
-        updatedAt: jobResult.updatedAt,
-      })
-    } else if (type === "warnings") {
-      // For warnings, return all without pagination
-      return res.json({
-        success: true,
-        jobId,
-        type: 'warnings',
-        data: combinedWarnings,
-        totalWarnings: combinedWarnings.length,
-        createdAt: jobResult.createdAt,
-        updatedAt: jobResult.updatedAt,
-      })
-    } else {
-      data = jobResult.equipmentResults || []
-    }
-
-    const total = data.length
-    const startIndex = (page - 1) * limit
-    const endIndex = startIndex + limit
-    const paginatedData = data.slice(startIndex, endIndex)
-
-    res.json({
-      success: true,
-      jobId,
-      type,
-      data: paginatedData,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNext: endIndex < total,
-        hasPrev: page > 1,
-        startRecord: startIndex + 1,
-        endRecord: Math.min(endIndex, total),
-      },
-      // Always include error summary for frontend
-      errorSummary: {
-        totalErrors: combinedErrors.length,
-        totalWarnings: combinedWarnings.length,
-        errorBreakdown: jobResult.summary?.errorBreakdown || {},
-        errorsByCategory: combinedErrors.reduce((acc, error) => {
-          acc[error.category] = (acc[error.category] || 0) + 1;
-          return acc;
-        }, {})
-      },
-      createdAt: jobResult.createdAt,
-      updatedAt: jobResult.updatedAt,
-    })
-  } catch (error) {
-    console.error("Results fetch error:", error)
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch job results",
-      error: error.message,
-    })
-  }
-})
-
-
-
-
+// MAIN PROCESSING FUNCTION - Updated with chunking and optimization
 async function processFileAsync(jobId, filePath, fileExtension) {
   let session = null
   const startTime = Date.now()
@@ -1239,13 +1166,21 @@ async function processFileAsync(jobId, filePath, fileExtension) {
       const record = jsonData[i]
       const lineNumber = i + 2
 
-      // Progress update every 100 records
+      // Enhanced progress update with memory monitoring
       if (i % 100 === 0) {
         const progressPercentage = 30 + Math.round((i / jsonData.length) * 30) // 30-60%
+
+        // Check memory usage and cleanup if needed
+        const memUsage = checkMemoryUsage();
+        if (memUsage.usagePercentage > 70) {
+          console.log(`High memory usage detected: ${memUsage.usagePercentage}%. Running cleanup.`);
+          optimizeMemoryUsage();
+        }
+
         await updateJobProgress(jobId, {
           processedRecords: i,
           progressPercentage,
-          currentOperation: `Processing record ${i + 1} of ${jsonData.length}...`,
+          currentOperation: `Processing record ${i + 1} of ${jsonData.length}... (Memory: ${memUsage.heapUsed}MB)`,
         })
       }
 
@@ -1501,7 +1436,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
       failedCount: response.summary.operationBreakdown.failed,
     })
 
-    // Generate PMs (keeping your existing PM generation logic)
+    // Generate PMs with enhanced memory management
     console.log(`Starting PM generation for ${recordsForPMGeneration.length} records`)
     const pmProcessStartTime = Date.now()
 
@@ -1533,15 +1468,31 @@ async function processFileAsync(jobId, filePath, fileExtension) {
       const allPMs = []
 
       for (let recordIndex = 0; recordIndex < recordsForPMGeneration.length; recordIndex++) {
-        const record = recordsForPMGeneration[recordIndex]
+        const record = recordsForPMGeneration[recordIndex];
 
-        // Update progress every 50 records
+        if (recordIndex % CONFIG.FORCE_GC_INTERVAL === 0 && recordIndex > 0) {
+          aggressiveMemoryCleanup();
+        }
+
         if (recordIndex % 50 === 0) {
-          const progressPercentage = 75 + Math.round((recordIndex / recordsForPMGeneration.length) * 15) // 75-90%
+          const progressPercentage = 75 + Math.round((recordIndex / recordsForPMGeneration.length) * 15);
+
+          const memUsage = checkMemoryUsage();
+          if (memUsage.usagePercentage > 60) { // Reduced threshold
+            console.log(`High memory usage detected: ${memUsage.usagePercentage}%. Running cleanup.`);
+            aggressiveMemoryCleanup();
+          }
+
+
           await updateJobProgress(jobId, {
             progressPercentage,
-            currentOperation: `Generating PMs: ${recordIndex + 1}/${recordsForPMGeneration.length}...`,
-          })
+            currentOperation: `Generating PMs: ${recordIndex + 1}/${recordsForPMGeneration.length}... (Memory: ${memUsage.heapUsed}MB)`,
+          });
+        }
+
+        // Batch process monitoring
+        if (recordIndex % 1000 === 0 && recordIndex > 0) {
+          console.log(`Processed ${recordIndex}/${recordsForPMGeneration.length} records for PM generation. Memory usage: ${checkMemoryUsage().heapUsed}MB`);
         }
 
         const equipmentResult = response.equipmentResults.find((r) => r.serialnumber === record.serialnumber)
@@ -1570,7 +1521,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
           const amc = amcMap.get(serialnumber)
           const frequencyMonths = getPMFrequencyMonths(product.frequency)
 
-          // Generate Customer Warranty PMs (keeping your existing logic)
+          // Generate Customer Warranty PMs
           if (record.custWarrantystartdate && record.custWarrantyenddate) {
             const startDate = parseUniversalDate(record.custWarrantystartdate)
             const endDate = parseUniversalDate(record.custWarrantyenddate)
@@ -1633,7 +1584,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
             }
           }
 
-          // Generate Extended/Dealer Warranty PMs (keeping your existing logic)
+          // Generate Extended/Dealer Warranty PMs
           if (record.dealerwarrantystartdate && record.dealerwarrantyenddate) {
             const startDate = parseUniversalDate(record.dealerwarrantystartdate)
             const endDate = parseUniversalDate(record.dealerwarrantyenddate)
@@ -1696,7 +1647,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
             }
           }
 
-          // Generate AMC Contract PMs (keeping your existing logic)
+          // Generate AMC Contract PMs
           if (amc && amc.startdate && amc.enddate) {
             const startDate = parseUniversalDate(amc.startdate)
             const endDate = parseUniversalDate(amc.enddate)
@@ -1859,15 +1810,19 @@ async function processFileAsync(jobId, filePath, fileExtension) {
     response.endTime = new Date()
     response.duration = `${Math.round(response.summary.performance.totalTime / 1000)}s`
 
-    // Save final results to database
-    await JobResult.create({
+    // FIXED: Save final results using chunking strategy to avoid BSON limit
+    console.log(`Saving results for job ${jobId}: ${response.equipmentResults.length} equipment results`);
+
+    await saveJobResultsInChunks(
       jobId,
-      equipmentResults: response.equipmentResults,
-      pmResults: response.pmResults,
-      summary: response.summary,
-      errors: response.errors,
-      warnings: response.warnings,
-    })
+      response.equipmentResults,
+      response.pmResults,
+      response.summary,
+      response.errors,
+      response.warnings
+    );
+
+    console.log(`Successfully saved all results for job ${jobId}`);
 
     // Update final job progress
     await updateJobProgress(jobId, {
@@ -1912,6 +1867,408 @@ async function processFileAsync(jobId, filePath, fileExtension) {
     console.log(`Final memory usage for job ${jobId}: ${finalMemUsage.heapUsed}MB (${finalMemUsage.usagePercentage}%)`)
   }
 }
+
+// API Routes (keeping all existing routes)
+router.post("/start", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No file uploaded",
+        error: "FILE_MISSING",
+      })
+    }
+
+    // Generate unique job ID
+    const jobId = `bulk_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const fileExtension = path.extname(req.file.originalname).toLowerCase()
+
+    // Initial field mapping analysis
+    let detectedFields = []
+    let mappedFields = []
+    let unmappedFields = []
+
+    try {
+      // Quick parse for field detection
+      const sampleResult = await parseFile(req.file.path, fileExtension)
+      if (sampleResult.records.length > 0) {
+        const firstRecord = sampleResult.records[0]
+        detectedFields = Object.keys(firstRecord)
+        mappedFields = detectedFields.filter((key) =>
+          Object.values(FIELD_MAPPINGS).some((variations) =>
+            variations.some(
+              (variation) =>
+                key.toLowerCase().trim() === variation.toLowerCase() ||
+                key.toLowerCase().replace(/[_\s\-.]/g, "") === variation.toLowerCase().replace(/[_\s\-.]/g, ""),
+            ),
+          ),
+        )
+        unmappedFields = detectedFields.filter((field) => !mappedFields.includes(field))
+      }
+    } catch (parseError) {
+      console.error("Quick parse error:", parseError)
+    }
+
+    // Save initial job progress in database
+    await JobProgress.create({
+      jobId,
+      status: "PROCESSING",
+      fileName: req.file.originalname,
+      fileSize: Math.round((req.file.size / 1024 / 1024) * 100) / 100, // MB
+      totalRecords: 0,
+      processedRecords: 0,
+      createdCount: 0,
+      updatedCount: 0,
+      failedCount: 0,
+      pmCount: 0,
+      progressPercentage: 5,
+      currentOperation: "File uploaded. Starting validation...",
+      startTime: new Date(),
+      estimatedEndTime: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes estimate
+      fieldMappingInfo: {
+        detectedFields,
+        mappedFields,
+        unmappedFields,
+      },
+    })
+
+    // Start background processing (don't await)
+    processFileAsync(jobId, req.file.path, fileExtension).catch((error) => {
+      console.error(`Background processing failed for job ${jobId}:`, error)
+    })
+
+    // Immediate response to frontend
+    res.status(202).json({
+      // 202 = Accepted
+      success: true,
+      jobId,
+      message: "File upload started. Processing in background.",
+      fileInfo: {
+        name: req.file.originalname,
+        size: `${Math.round((req.file.size / 1024 / 1024) * 100) / 100} MB`,
+        type: fileExtension.toUpperCase(),
+      },
+      fieldMapping: {
+        detected: detectedFields.length,
+        mapped: mappedFields.length,
+        unmapped: unmappedFields.length,
+      },
+      statusUrl: `/api/bulk-upload/status/${jobId}`,
+      estimatedTime: "2-5 minutes",
+      pollingInterval: "Check status every 3-5 seconds",
+    })
+  } catch (error) {
+    console.error("Bulk upload start error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to start bulk upload",
+      error: error.message,
+    })
+  }
+})
+
+// UPDATED: Status endpoint with proper chunked data handling
+router.get("/status/:jobId", async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100); // Reduced max limit
+    const type = req.query.type || "summary";
+
+    const jobProgress = await JobProgress.findOne({ jobId });
+
+    if (!jobProgress) {
+      return res.status(404).json({
+        success: false,
+        message: "Job not found",
+        error: "JOB_NOT_FOUND",
+      });
+    }
+
+    const response = {
+      success: true,
+      jobId,
+      status: jobProgress.status,
+      progress: {
+        percentage: jobProgress.progressPercentage,
+        totalRecords: jobProgress.totalRecords,
+        processedRecords: jobProgress.processedRecords,
+        currentOperation: jobProgress.currentOperation,
+      },
+      counts: {
+        created: jobProgress.createdCount,
+        updated: jobProgress.updatedCount,
+        failed: jobProgress.failedCount,
+        pmGenerated: jobProgress.pmCount,
+      },
+      timing: {
+        startTime: jobProgress.startTime,
+        endTime: jobProgress.endTime,
+        duration: jobProgress.endTime ? Math.round((jobProgress.endTime - jobProgress.startTime) / 1000) : null,
+        elapsedTime: Math.round((new Date() - jobProgress.startTime) / 1000),
+      },
+      fileInfo: {
+        name: jobProgress.fileName,
+        size: `${jobProgress.fileSize} MB`,
+      },
+    };
+
+    if (jobProgress.status === "COMPLETED" && type !== "summary") {
+      // FIXED: Use optimized getJobResults function
+      const results = await getJobResults(jobId, type, page, limit);
+      response.data = results.data;
+      response.pagination = results.pagination;
+
+      // Add chunk info for debugging
+      const mainJobResult = await JobResult.findOne({ jobId, isChunk: { $ne: true } });
+      if (mainJobResult && mainJobResult.totalChunks) {
+        response.chunkInfo = {
+          totalChunks: mainJobResult.totalChunks,
+          totalEquipmentResults: mainJobResult.totalEquipmentResults,
+          isChunked: true
+        };
+      }
+    }
+
+    res.json(response);
+  } catch (error) {
+    console.error("Status check error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to get job status",
+      error: error.message,
+    });
+  }
+});
+
+
+router.get("/results/:jobId", async (req, res) => {
+  try {
+    const { jobId } = req.params
+    const type = req.query.type || "all"
+
+    // Get job result from database
+    const jobResult = await JobResult.findOne({ jobId })
+
+    if (!jobResult) {
+      return res.status(404).json({
+        success: false,
+        message: "Job results not found",
+        error: "RESULTS_NOT_FOUND",
+      })
+    }
+
+    // Extract all errors from equipment results
+    const extractAllErrors = (equipmentResults) => {
+      const allErrors = []
+      const allWarnings = []
+
+      equipmentResults.forEach((equipment, index) => {
+        // Add equipment-level errors
+        if (equipment.allErrors && equipment.allErrors.length > 0) {
+          equipment.allErrors.forEach(error => {
+            allErrors.push({
+              ...error,
+              serialNumber: equipment.serialnumber,
+              equipmentId: equipment.equipmentid,
+              lineNumber: equipment.lineNumber,
+              source: 'equipment',
+              recordIndex: index
+            });
+          });
+        }
+
+        // Add equipment-level warnings  
+        if (equipment.warnings && equipment.warnings.length > 0) {
+          equipment.warnings.forEach(warning => {
+            allWarnings.push({
+              ...warning,
+              serialNumber: equipment.serialnumber,
+              equipmentId: equipment.equipmentid,
+              lineNumber: equipment.lineNumber,
+              source: 'equipment',
+              recordIndex: index
+            });
+          });
+        }
+
+        // Add equipment general error if status is Failed
+        if (equipment.status === 'Failed' && equipment.error) {
+          allErrors.push({
+            category: equipment.category || 'ProcessingError',
+            field: null,
+            message: equipment.error,
+            serialNumber: equipment.serialnumber,
+            equipmentId: equipment.equipmentid,
+            lineNumber: equipment.lineNumber,
+            source: 'equipment',
+            recordIndex: index
+          });
+        }
+
+        // Add PM-related errors
+        if (equipment.pmResults && equipment.pmResults.length > 0) {
+          equipment.pmResults.forEach(pm => {
+            if (pm.status === 'Failed' || pm.error) {
+              allErrors.push({
+                category: pm.category || 'PM_Error',
+                field: pm.pmType,
+                message: pm.error || pm.reason || 'PM task failed',
+                serialNumber: equipment.serialnumber,
+                equipmentId: equipment.equipmentid,
+                lineNumber: equipment.lineNumber,
+                pmType: pm.pmType,
+                source: 'pm',
+                recordIndex: index
+              });
+            }
+          });
+        }
+      });
+
+      return { allErrors, allWarnings };
+    };
+
+    // Get all errors from equipment results
+    const { allErrors: equipmentErrors, allWarnings: equipmentWarnings } =
+      extractAllErrors(jobResult.equipmentResults || []);
+
+    // Combine with processing-level errors
+    const combinedErrors = [
+      ...(jobResult.errors || []).map((error, index) => ({
+        id: `proc_${index}`,
+        message: typeof error === 'string' ? error : error.message || JSON.stringify(error),
+        source: 'processing',
+        category: error.category || 'ProcessingError',
+        serialNumber: error.serialnumber || null,
+        timestamp: error.timestamp || null
+      })),
+      ...equipmentErrors.map((error, index) => ({
+        id: `eq_${index}`,
+        ...error
+      }))
+    ];
+
+    const combinedWarnings = [
+      ...(jobResult.warnings || []).map((warning, index) => ({
+        id: `proc_warn_${index}`,
+        message: typeof warning === 'string' ? warning : warning.message || JSON.stringify(warning),
+        source: 'processing',
+        category: warning.category || 'ProcessingWarning',
+        serialNumber: warning.serialnumber || null
+      })),
+      ...equipmentWarnings.map((warning, index) => ({
+        id: `eq_warn_${index}`,
+        ...warning
+      }))
+    ];
+
+    // Calculate totals
+    const allEquipment = jobResult.equipmentResults || [];
+    const totals = {
+      totalEquipment: allEquipment.length,
+      successfulEquipment: allEquipment.filter(eq => eq.status === 'Completed' || eq.status === 'Success').length,
+      failedEquipment: allEquipment.filter(eq => eq.status === 'Failed').length,
+      equipmentWithWarnings: allEquipment.filter(eq => eq.warnings && eq.warnings.length > 0).length,
+      equipmentWithErrors: allEquipment.filter(eq => eq.allErrors && eq.allErrors.length > 0).length,
+      totalPMGenerated: allEquipment.reduce((count, eq) => count + (eq.pmResults?.length || 0), 0),
+      successfulPM: allEquipment.reduce((count, eq) => count + (eq.pmResults?.filter(pm => pm.status === 'Success' || pm.status === 'Completed').length || 0), 0),
+      failedPM: allEquipment.reduce((count, eq) => count + (eq.pmResults?.filter(pm => pm.status === 'Failed').length || 0), 0)
+    };
+
+    // Filter data based on type - only show problematic records
+    let data = []
+    if (type === "equipment") {
+      // Only return equipment with errors, warnings, or failed status
+      data = allEquipment.filter(equipment =>
+        equipment.status === 'Failed' ||
+        (equipment.allErrors && equipment.allErrors.length > 0) ||
+        (equipment.warnings && equipment.warnings.length > 0)
+      );
+    } else if (type === "pm") {
+      // Only return failed PM results
+      const problematicPMs = [];
+      allEquipment.forEach(equipment => {
+        if (equipment.pmResults && equipment.pmResults.length > 0) {
+          equipment.pmResults.forEach(pm => {
+            if (pm.status === 'Failed' || pm.error) {
+              problematicPMs.push({
+                ...pm,
+                serialNumber: equipment.serialnumber,
+                equipmentId: equipment.equipmentid,
+                lineNumber: equipment.lineNumber
+              });
+            }
+          });
+        }
+      });
+      data = problematicPMs;
+    } else if (type === "errors") {
+      return res.json({
+        success: true,
+        jobId,
+        type: 'errors',
+        data: combinedErrors,
+        warnings: combinedWarnings,
+        totalErrors: combinedErrors.length,
+        totalWarnings: combinedWarnings.length,
+        totals,
+        errorBreakdown: jobResult.summary?.errorBreakdown || {},
+        createdAt: jobResult.createdAt,
+        updatedAt: jobResult.updatedAt,
+      })
+    } else if (type === "warnings") {
+      return res.json({
+        success: true,
+        jobId,
+        type: 'warnings',
+        data: combinedWarnings,
+        totalWarnings: combinedWarnings.length,
+        totals,
+        createdAt: jobResult.createdAt,
+        updatedAt: jobResult.updatedAt,
+      })
+    } else {
+      // For "all" type, return equipment with issues
+      data = allEquipment.filter(equipment =>
+        equipment.status === 'Failed' ||
+        (equipment.allErrors && equipment.allErrors.length > 0) ||
+        (equipment.warnings && equipment.warnings.length > 0)
+      );
+    }
+
+    res.json({
+      success: true,
+      jobId,
+      type,
+      data: data, // Only problematic records
+      total: data.length,
+      totals, // Complete statistics
+      // Always include error summary for frontend
+      errorSummary: {
+        totalErrors: combinedErrors.length,
+        totalWarnings: combinedWarnings.length,
+        errorBreakdown: jobResult.summary?.errorBreakdown || {},
+        errorsByCategory: combinedErrors.reduce((acc, error) => {
+          acc[error.category] = (acc[error.category] || 0) + 1;
+          return acc;
+        }, {})
+      },
+      createdAt: jobResult.createdAt,
+      updatedAt: jobResult.updatedAt,
+    })
+  } catch (error) {
+    console.error("Results fetch error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch job results",
+      error: error.message,
+    })
+  }
+})
+
+
+
 // New dedicated endpoint for errors only
 router.get("/errors/:jobId", async (req, res) => {
   try {
@@ -2095,7 +2452,7 @@ router.get("/errors/:jobId", async (req, res) => {
   }
 })
 
-// Keep your existing endpoint for backward compatibility (optional)
+// Keep existing endpoint for backward compatibility (optional)
 router.post("/bulk-upload", upload.single("file"), async (req, res) => {
   return res.status(400).json({
     success: false,
