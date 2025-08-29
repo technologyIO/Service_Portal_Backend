@@ -18,7 +18,7 @@ const HubStockSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        default: 'Available',
+        default: 'Active',
     },
     createdAt: {
         type: Date,

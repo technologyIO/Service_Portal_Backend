@@ -44,8 +44,7 @@ const upload = multer({
     }
 });
 
-// Updated: Field mappings to match schema field names
-// Updated: Field mappings to match schema field names - UPDATED with status
+ 
 const FIELD_MAPPINGS = {
     'subgrp': new Set([
         'subgrp', 'sub_grp', 'subgroup', 'sub_group', 'group',

@@ -4,30 +4,58 @@ const router = express.Router();
 const multer = require('multer');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
+const path = require('path');
 const HubStock = require('../../Model/UploadSchema/HubStockSchema');
 
 // Optimized: Pre-compiled regex patterns
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
 const MULTISPACE_REGEX = /\s+/g;
 
-// Memory storage with optimized settings
+// Enhanced file type detection
+function getFileExtension(filename) {
+    return path.extname(filename).toLowerCase();
+}
+
+function isValidFileType(file) {
+    const validMimeTypes = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        'application/vnd.ms-excel', // .xls
+        'application/excel', // .xls (alternative)
+        'text/csv', // .csv
+        'application/csv', // .csv (alternative)
+        'text/plain', // .csv (sometimes detected as plain text)
+        'application/octet-stream' // Generic binary (fallback)
+    ];
+
+    const validExtensions = ['.xlsx', '.xls', '.csv'];
+    const fileExt = getFileExtension(file.originalname);
+
+    // Check MIME type first
+    const mimeTypeValid = validMimeTypes.includes(file.mimetype);
+
+    // Check extension as fallback
+    const extensionValid = validExtensions.includes(fileExt);
+
+    // Accept file if either MIME type or extension is valid
+    return mimeTypeValid || extensionValid;
+}
+
+// Memory storage with enhanced settings
 const storage = multer.memoryStorage();
 const upload = multer({
     storage,
     fileFilter: (req, file, cb) => {
-        const ext = file.originalname.toLowerCase().slice(-4);
-        if (
-            file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // .xlsx
-            file.mimetype === 'application/vnd.ms-excel' || // .xls
-            file.mimetype === 'text/csv' || // .csv
-            file.mimetype === 'application/csv' ||
-            ext === '.csv' ||
-            ext === '.xlsx' ||
-            ext === '.xls'
-        ) {
+        console.log('File details:', {
+            originalname: file.originalname,
+            mimetype: file.mimetype,
+            extension: getFileExtension(file.originalname)
+        });
+
+        if (isValidFileType(file)) {
             cb(null, true);
         } else {
-            cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
+            const fileExt = getFileExtension(file.originalname);
+            cb(new Error(`Unsupported file type. File: ${file.originalname}, MIME: ${file.mimetype}, Extension: ${fileExt}. Only Excel (.xlsx, .xls) and CSV files are allowed`), false);
         }
     },
     limits: {
@@ -40,9 +68,9 @@ const FIELD_MAPPINGS = {
     'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'code', 'item_code', 'product_code']),
     'materialdescription': new Set(['materialdescription', 'material_description', 'description', 'desc', 'product_description', 'item_description', 'material_desc']),
     'quantity': new Set(['quantity', 'qty', 'stock', 'stockquantity', 'stock_quantity', 'available_quantity', 'availablequantity', 'amount']),
-    'storagelocation': new Set(['storagelocation', 'storage_location', 'location', 'warehouse', 'depot', 'storagearea', 'storage_area', 'bin', 'zone'])
+    'storagelocation': new Set(['storagelocation', 'storage_location', 'location', 'warehouse', 'depot', 'storagearea', 'storage_area', 'bin', 'zone']),
+    'status': new Set(['status', 'state', 'condition', 'active', 'inactive'])
 };
-
 // Optimized normalizeFieldName with memoization
 const normalizedFieldCache = new Map();
 function normalizeFieldName(fieldName) {
@@ -82,35 +110,149 @@ function mapHeaders(headers) {
     return mappedHeaders;
 }
 
-// Optimized Excel parsing with buffer reuse
-function parseExcelFile(buffer) {
+// Enhanced Excel parsing with better error handling
+function parseExcelFile(buffer, originalname) {
     try {
-        const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+        console.log('Parsing Excel file:', originalname);
+        const workbook = XLSX.read(buffer, {
+            type: 'buffer',
+            cellDates: true,
+            cellStyles: false, // Disable styles for better performance
+            cellHTML: false,   // Disable HTML for better performance
+            raw: false         // Convert values to strings
+        });
+
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+            throw new Error('No sheets found in Excel file');
+        }
+
         const sheetName = workbook.SheetNames[0];
-        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: false });
+        const worksheet = workbook.Sheets[sheetName];
+
+        if (!worksheet) {
+            throw new Error(`Sheet "${sheetName}" not found`);
+        }
+
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+            defval: '',
+            raw: false,
+            header: 1 // Get array of arrays first
+        });
+
+        if (jsonData.length === 0) {
+            throw new Error('No data found in Excel sheet');
+        }
+
+        // Convert array of arrays to array of objects
+        const headers = jsonData[0];
+        const dataRows = jsonData.slice(1);
+
+        return dataRows.map(row => {
+            const obj = {};
+            headers.forEach((header, index) => {
+                obj[header] = row[index] || '';
+            });
+            return obj;
+        });
+
     } catch (error) {
+        console.error('Excel parsing error:', error);
         throw new Error(`Excel parsing error: ${error.message}`);
     }
 }
 
-// Optimized CSV parsing with stream control
-function parseCSVFile(buffer) {
+// Enhanced CSV parsing
+function parseCSVFile(buffer, originalname) {
     return new Promise((resolve, reject) => {
+        console.log('Parsing CSV file:', originalname);
         const results = [];
-        const stream = Readable.from(buffer.toString())
-            .pipe(csv({
-                mapValues: ({ value }) => value.trim(),
-                strict: true,
-                skipLines: 0,
-                skipEmptyLines: true
-            }))
-            .on('data', (data) => results.push(data))
-            .on('end', () => resolve(results))
-            .on('error', reject);
 
-        // Ensure stream is properly destroyed on errors
-        stream.on('error', () => stream.destroy());
+        try {
+            const csvString = buffer.toString('utf8');
+
+            if (!csvString.trim()) {
+                reject(new Error('CSV file is empty'));
+                return;
+            }
+
+            const stream = Readable.from(csvString)
+                .pipe(csv({
+                    mapValues: ({ value }) => value ? value.trim() : '',
+                    strict: false, // Be more lenient with CSV parsing
+                    skipLines: 0,
+                    skipEmptyLines: true,
+                    headers: true // Automatically detect headers
+                }))
+                .on('data', (data) => {
+                    // Filter out completely empty rows
+                    const hasData = Object.values(data).some(val => val && val.trim());
+                    if (hasData) {
+                        results.push(data);
+                    }
+                })
+                .on('end', () => {
+                    console.log(`CSV parsing completed. Found ${results.length} records`);
+                    resolve(results);
+                })
+                .on('error', (error) => {
+                    console.error('CSV parsing error:', error);
+                    reject(new Error(`CSV parsing error: ${error.message}`));
+                });
+
+            // Set timeout for CSV parsing
+            setTimeout(() => {
+                if (!stream.destroyed) {
+                    stream.destroy();
+                    reject(new Error('CSV parsing timeout'));
+                }
+            }, 30000); // 30 second timeout
+
+        } catch (error) {
+            console.error('CSV setup error:', error);
+            reject(new Error(`CSV setup error: ${error.message}`));
+        }
     });
+}
+
+// Enhanced file type detection and parsing
+async function parseUploadedFile(file) {
+    const fileExt = getFileExtension(file.originalname);
+    const fileName = file.originalname.toLowerCase();
+
+    console.log('Processing file:', {
+        name: file.originalname,
+        size: file.buffer.length,
+        mimetype: file.mimetype,
+        extension: fileExt
+    });
+
+    try {
+        // Detect file type by extension primarily, then by MIME type
+        if (fileExt === '.csv' || fileName.includes('.csv')) {
+            return await parseCSVFile(file.buffer, file.originalname);
+        } else if (fileExt === '.xlsx' || fileExt === '.xls' ||
+            file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+            file.mimetype === 'application/vnd.ms-excel') {
+            return parseExcelFile(file.buffer, file.originalname);
+        } else {
+            // Try to detect by file signature (magic numbers)
+            const fileSignature = file.buffer.slice(0, 4);
+            const signature = Array.from(fileSignature).map(b => b.toString(16).padStart(2, '0')).join('');
+
+            // Excel file signatures
+            if (signature.startsWith('504b') || signature.startsWith('d0cf')) {
+                console.log('Detected Excel file by signature');
+                return parseExcelFile(file.buffer, file.originalname);
+            }
+
+            // Try CSV as last resort
+            console.log('Attempting CSV parsing as fallback');
+            return await parseCSVFile(file.buffer, file.originalname);
+        }
+    } catch (parseError) {
+        console.error('File parsing failed:', parseError);
+        throw new Error(`Unable to parse file "${file.originalname}": ${parseError.message}`);
+    }
 }
 
 // Optimized record validation with early exits
@@ -170,15 +312,29 @@ function validateRecord(record, headerMapping) {
         cleanedRecord.quantity = quantity;
     }
 
-    // Default status
-    if (!cleanedRecord.status) {
-        cleanedRecord.status = 'Active';
+    // Status validation - accept if provided, validate if present
+    if (cleanedRecord.status) {
+        // Validate status values if needed
+        const validStatuses = ['Active', 'Inactive', 'Pending', 'Blocked', 'Suspended'];
+        if (!validStatuses.includes(cleanedRecord.status)) {
+            // If invalid status provided, you can either:
+            // Option 1: Add error
+            // errors.push(`Invalid status. Valid values: ${validStatuses.join(', ')}`);
+
+            // Option 2: Set to default (uncomment below line)
+            // cleanedRecord.status = 'Active';
+
+            // Option 3: Keep as-is (current behavior - accepts any status value)
+        }
     }
+    // If status is not provided, it will remain undefined and won't be included in the record
 
     return { cleanedRecord, errors, providedFields };
 }
 
-// MAIN ROUTE - Optimized with parallel processing and bulk operations
+
+
+// MAIN ROUTE - Complete implementation
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     const BATCH_SIZE = 2000; // Increased batch size for better performance
     const PARALLEL_BATCHES = 3; // Process multiple batches in parallel
@@ -202,6 +358,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         headerMapping: {},
         errors: [],
         warnings: [],
+        fileInfo: {}, // Add file info
         deletionPhase: {
             status: 'pending',
             totalExisting: 0,
@@ -223,6 +380,14 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             return res.status(400).json(response);
         }
 
+        // Add file information to response
+        response.fileInfo = {
+            originalName: req.file.originalname,
+            size: req.file.size,
+            mimeType: req.file.mimetype,
+            extension: getFileExtension(req.file.originalname)
+        };
+
         // Set headers for streaming response
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Transfer-Encoding', 'chunked');
@@ -230,31 +395,24 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
 
-        // Parse file with optimized method selection
+        // Parse file with enhanced method
         let jsonData;
-        const fileName = req.file.originalname.toLowerCase();
-        const fileExt = fileName.slice(-4);
-
         try {
-            if (fileExt === '.csv') {
-                jsonData = await parseCSVFile(req.file.buffer);
-            } else if (fileExt === '.xlsx' || fileExt === '.xls') {
-                jsonData = parseExcelFile(req.file.buffer);
-            } else {
-                throw new Error('Unsupported file format');
-            }
+            jsonData = await parseUploadedFile(req.file);
         } catch (parseError) {
+            console.error('File parsing failed:', parseError);
             response.status = 'failed';
-            response.errors.push(`File parsing error: ${parseError.message}`);
+            response.errors.push(parseError.message);
             return res.status(400).json(response);
         }
 
         if (!jsonData || jsonData.length === 0) {
             response.status = 'failed';
-            response.errors.push('No data found in file');
+            response.errors.push('No valid data found in file');
             return res.status(400).json(response);
         }
 
+        console.log(`Successfully parsed file. Found ${jsonData.length} records`);
         response.totalRecords = jsonData.length;
         response.batchProgress.totalBatches = Math.ceil(jsonData.length / BATCH_SIZE);
 
@@ -266,7 +424,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Check for required fields with optimized lookup
         const requiredFields = ['materialcode', 'materialdescription', 'quantity', 'storagelocation'];
         const missingFields = requiredFields.filter(field => !Object.values(headerMapping).includes(field));
-        
+
         if (missingFields.length > 0) {
             const fieldDisplayNames = {
                 'materialcode': 'Material Code',
@@ -289,24 +447,24 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         response.deletionPhase.status = 'processing';
         const totalExisting = await HubStock.estimatedDocumentCount(); // Faster than countDocuments
         response.deletionPhase.totalExisting = totalExisting;
-        
+
         if (totalExisting > 0) {
             res.write(JSON.stringify({
                 ...response,
                 deletionPhase: { ...response.deletionPhase, status: 'deleting' }
             }) + '\n');
-            
+
             // Use collection.drop() for faster deletion when we're replacing all data
             await HubStock.collection.drop();
             await HubStock.createCollection(); // Recreate collection immediately
-            
+
             response.deletionPhase.deleted = totalExisting;
             response.summary.deletedExisting = totalExisting;
         }
-        
+
         response.deletionPhase.status = 'completed';
         response.deletionPhase.progress = 100;
-        
+
         res.write(JSON.stringify({
             ...response,
             deletionPhase: response.deletionPhase
@@ -343,6 +501,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     recordResult.quantity = cleanedRecord.quantity || 0;
                     recordResult.storagelocation = cleanedRecord.storagelocation || 'N/A';
 
+                    // Show the actual status from file or 'Not Provided' if empty
+                    recordResult.fileStatus = cleanedRecord.status || 'Not Provided';
+
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
                         recordResult.error = errors.join(', ');
@@ -353,7 +514,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     }
 
                     const uniqueKey = `${cleanedRecord.materialcode}_${cleanedRecord.storagelocation}`;
-                    
+
                     if (processedKeys.has(uniqueKey)) {
                         recordResult.status = 'Skipped';
                         recordResult.error = 'Duplicate combination in file';
@@ -366,12 +527,12 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
                     processedKeys.add(uniqueKey);
                     validRecords.push(cleanedRecord);
-                    
+
                     recordResult.status = 'Created';
                     recordResult.action = 'Created new record';
                     batchResults.push(recordResult);
                     batchCreated++;
-                    
+
                 } catch (err) {
                     recordResult.status = 'Failed';
                     recordResult.action = 'Validation error';
@@ -385,22 +546,22 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             if (validRecords.length > 0) {
                 try {
                     // Use insertMany with ordered: false for better performance
-                    const insertResult = await HubStock.insertMany(validRecords, { 
+                    const insertResult = await HubStock.insertMany(validRecords, {
                         ordered: false,
                         lean: true
                     });
-                    
+
                     batchCreated = insertResult.length;
-                    
+
                 } catch (insertError) {
                     // Handle MongoDB BulkWriteError properly
                     if (insertError.name === 'BulkWriteError' || insertError.name === 'MongoBulkWriteError') {
                         const insertedCount = insertError.result?.insertedCount || 0;
                         const failedCount = validRecords.length - insertedCount;
-                        
+
                         batchCreated = insertedCount;
                         batchFailed += failedCount;
-                        
+
                         // Update record statuses based on actual results
                         if (insertError.writeErrors && insertError.writeErrors.length > 0) {
                             insertError.writeErrors.forEach((writeError) => {
@@ -421,7 +582,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                                 result.error = insertError.message;
                             }
                         });
-                        
+
                         batchFailed += validRecords.length;
                         batchCreated = 0;
                     }

@@ -17,7 +17,7 @@ router.get('/export-sparemaster', async (req, res) => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Spare Master Data');
 
-        // Headers define kariye
+        // Headers define kariye - Status field added
         worksheet.columns = [
             { header: 'S.No', key: 'sno', width: 8 },
             { header: 'Sub Group', key: 'Sub_grp', width: 20 },
@@ -27,6 +27,7 @@ router.get('/export-sparemaster', async (req, res) => {
             { header: 'Rate (MRP)', key: 'Rate', width: 15 },
             { header: 'DP (Dealer Price)', key: 'DP', width: 18 },
             { header: 'Charges (Exchange Price)', key: 'Charges', width: 22 },
+            { header: 'Status', key: 'status', width: 12 }, // Status field added
             { header: 'Spare Image URL', key: 'spareiamegUrl', width: 30 },
             { header: 'Created At', key: 'createdAt', width: 18 },
             { header: 'Updated At', key: 'updatedAt', width: 18 }
@@ -65,6 +66,7 @@ router.get('/export-sparemaster', async (req, res) => {
                 Rate: spare.Rate || '',
                 DP: spare.DP || '',
                 Charges: chargesValue,
+                status: spare.status || 'Active', // Status field added
                 spareiamegUrl: spare.spareiamegUrl || '',
                 createdAt: spare.createdAt ? new Date(spare.createdAt).toLocaleDateString('en-IN') : '',
                 updatedAt: spare.updatedAt ? new Date(spare.updatedAt).toLocaleDateString('en-IN') : ''
@@ -93,7 +95,19 @@ router.get('/export-sparemaster', async (req, res) => {
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
                 } else if (colNumber === 4) { // Description column - wrap text
                     cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
-                } else if (colNumber === 9) { // Image URL column - wrap text
+                } else if (colNumber === 9) { // Status column - center align
+                    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                    
+                    // Status-based conditional formatting
+                    const statusValue = cell.value;
+                    if (statusValue === 'Active') {
+                        cell.font = { color: { argb: '008000' }, bold: true }; // Green for Active
+                    } else if (statusValue === 'Inactive') {
+                        cell.font = { color: { argb: 'FF0000' }, bold: true }; // Red for Inactive
+                    } else {
+                        cell.font = { color: { argb: 'FF8C00' }, bold: true }; // Orange for other statuses
+                    }
+                } else if (colNumber === 10) { // Image URL column - wrap text (shifted due to status addition)
                     cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
                 } else if ([6, 7, 8].includes(colNumber)) { // Price columns - right align
                     cell.alignment = { vertical: 'middle', horizontal: 'right' };

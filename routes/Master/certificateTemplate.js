@@ -101,7 +101,8 @@ module.exports = function getCertificateHTML(data) {
     const stateNamesText = userInfo.stateNames ? userInfo.stateNames.join(", ") : "";
     installedBySection = `
       <span class="install-label">Installed by:</span> <span class="install-data">${employeeId}</span><br />
-      <p>Skanray Technologies Limited</p>
+      <span class="install-label">Engineer:</span> <span class="install-data">${firstName} ${lastName}</span><br />
+      <span class="install-label"></span> <span class="install-data">Skanray Technologies Limited</span><br />
       <span class="install-label">States:</span> <span class="install-data">${stateNamesText}</span>
     `;
   } else {
