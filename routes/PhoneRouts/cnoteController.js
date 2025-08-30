@@ -10,6 +10,12 @@ const User = require('../../Model/MasterSchema/UserSchema');
 
 const router = express.Router();
 
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, '../../uploads/cnotes');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 // Email transporter configuration
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -20,12 +26,15 @@ const transporter = nodemailer.createTransport({
 });
 
 // Function to generate HTML template from CNote data
-const generateHtmlTemplate = (cnoteData) => {
+const generateHtmlTemplate = (cnoteData, userInfo, dealerInfo) => {
+    // Fix for undefined product description
+    console.log('Template received userInfo:', userInfo);
+    console.log('Template received dealerInfo:', dealerInfo);
     const itemsHtml = cnoteData.items.map((item, index) => `
         <tr>
             <td>${index + 1}</td>
-            <td>${item.equipment.name}</td>
-            <td>${item.equipment.materialcode}</td>
+            <td>${item.equipment?.materialdescription || 'N/A'}</td>
+            <td>${item.equipment?.materialcode || 'N/A'}</td>
             <td>${item.years * 12}</td>
             <td>1</td>
             <td>${item.pricePerYear.toLocaleString('en-IN')}</td>
@@ -34,6 +43,14 @@ const generateHtmlTemplate = (cnoteData) => {
     `).join('');
 
     const totalInWords = numberToWords(cnoteData.finalAmount);
+
+    // Extract user name from userInfo
+    const engineerName = userInfo ? `${userInfo.firstname} ${userInfo.lastname}` : 'N/A';
+
+    const dealerName = dealerInfo?.dealerName || '';
+    const dealerId = dealerInfo?.dealerId || '';
+    console.log('Final dealer values - Name:', dealerName, 'ID:', dealerId); // Debug log
+
 
     return `
     <!DOCTYPE html>
@@ -110,21 +127,21 @@ const generateHtmlTemplate = (cnoteData) => {
         <table>
             <tr>
                 <td>CRM-CNote Number / Date</td>
-                <td>${cnoteData.cnoteNumber} / ${new Date(cnoteData.createdAt).toLocaleDateString('en-GB')}</td>
+                <td>${cnoteData.cnoteNumber} / ${new Date(cnoteData.updatedAt).toLocaleDateString('en-GB')}</td>
                 <td>Region / Branch</td>
                 <td>South Karnataka / MYS</td>
             </tr>
             <tr>
                 <td>Engineer PS No</td>
-                <td>IT276</td>
+                <td>${userInfo?.employeeid || 'N/A'}</td>
                 <td>Engineer Name</td>
-                <td>Sony Ponnanna_Sales</td>
+                <td>${engineerName}</td>
             </tr>
             <tr>
                 <td>Dealer Code</td>
-                <td></td>
+                <td>${dealerId}</td>
                 <td>Dealer Name</td>
-                <td></td>
+                <td>${dealerName}</td>
             </tr>
             <tr>
                 <td>Purchase Order No</td>
@@ -237,17 +254,17 @@ const generateHtmlTemplate = (cnoteData) => {
 
         <div class="page-break"></div>
 
-        <p>The undersigned hereby orders that afore-mentioned goods from Skamray Technologies Limited (Healthcare Division). The goods specified above to be delivered as per the condition of sales and terms of business set out in this contract. Seller's terms of business as printed overleaf are considered to form part of contract unless expressly overruled by any of the conditions stipulated therein.</p>
+        <p>The undersigned hereby orders that afore-mentioned goods from Skanray Technologies Limited (Healthcare Division). The goods specified above to be delivered as per the condition of sales and terms of business set out in this contract. Seller's terms of business as printed overleaf are considered to form part of contract unless expressly overruled by any of the conditions stipulated therein.</p>
 
         <table class="signature-table">
             <tr>
                 <th width="33%">Customer Signature and seal</th>
-                <th width="34%">Accepted on behalf of Skamray Technologies Limited</th>
+                <th width="34%">Accepted on behalf of Skanray Technologies Limited</th>
                 <th width="33%">Regulatory Approval (If Applicable)</th>
             </tr>
             <tr>
                 <td>Date:</td>
-                <td>Digitally Accepted by SE: Sony Ponnanna_Sales :<br>Date: ${new Date().toLocaleDateString('en-GB')}</td>
+                <td>Digitally Accepted by SE: ${engineerName} :<br>Date: ${new Date().toLocaleDateString('en-GB')}</td>
                 <td>Date:</td>
             </tr>
         </table>
@@ -259,12 +276,14 @@ const generateHtmlTemplate = (cnoteData) => {
         </div>
 
         <div class="footer">
-            <p>Skamray Technologies Limited, Regd. Office: Plot #15-17, Hebbal Industrial Area, Mysuru - 570016, INDIA. P +91 8212415559 CIN U72206KA2007PLC041774 Healthcare Division: #360, KIADB Industrial Area, Hebbal, Mysuru - 570018, INDIA. P +91 8212407000 E office@skamray.com W www.skamray.com</p>
+            <p>Skanray Technologies Limited, Regd. Office: Plot #15-17, Hebbal Industrial Area, Mysuru - 570016, INDIA. P +91 8212415559 CIN U72206KA2007PLC041774 Healthcare Division: #360, KIADB Industrial Area, Hebbal, Mysuru - 570018, INDIA. P +91 8212407000 E office@skanray.com W www.skanray.com</p>
         </div>
     </body>
     </html>
     `;
 };
+
+
 
 // Helper function to convert numbers to words
 function numberToWords(num) {
@@ -303,97 +322,125 @@ function numberToWords(num) {
     return words.trim() + ' Only';
 }
 
-// Function to generate PDF using Puppeteer and send email
-const generateAndSendPdf = async (cnoteData, res) => {
+// ✅ Fixed PDF Generation Function
+const generatePdfFromHtml = async (htmlContent, cnoteNumber) => {
     let browser;
-    let page;
-    const maxRetries = 3;
-    let retryCount = 0;
-    let pdfBuffer = null;
-
     try {
-        const htmlContent = generateHtmlTemplate(cnoteData);
-
+        // Launch puppeteer browser
         browser = await puppeteer.launch({
-            headless: 'new',
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage'
-            ]
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 
-        while (retryCount < maxRetries && !pdfBuffer) {
-            try {
-                page = await browser.newPage();
-                await page.setContent(htmlContent, {
-                    waitUntil: ['load', 'domcontentloaded', 'networkidle0']
-                });
+        const page = await browser.newPage();
 
-                await page.waitForSelector('.total-row', { timeout: 5000 });
+        // Set page content
+        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
 
-                pdfBuffer = await page.pdf({
-                    format: 'A4',
-                    printBackground: true,
-                    margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' }
-                });
-
-            } catch (attemptError) {
-                retryCount++;
-                console.error(`PDF attempt ${retryCount} failed:`, attemptError);
-
-                if (page && !page.isClosed()) await page.close();
-
-                if (retryCount === maxRetries) {
-                    throw new Error(`PDF generation failed after ${maxRetries} attempts`);
-                }
+        // Generate PDF
+        const pdfBuffer = await page.pdf({
+            format: 'A4',
+            printBackground: true,
+            margin: {
+                top: '20px',
+                right: '20px',
+                bottom: '20px',
+                left: '20px'
             }
+        });
+
+        // Save PDF to uploads folder
+        const fileName = `CNote_${cnoteNumber}_${Date.now()}.pdf`;
+        const filePath = path.join(uploadsDir, fileName);
+
+        fs.writeFileSync(filePath, pdfBuffer);
+
+        // Return both buffer and file info
+        return {
+            pdfBuffer,
+            fileName,
+            filePath,
+            fileUrl: `/uploads/cnotes/${fileName}` // URL to access the file
+        };
+
+    } catch (error) {
+        console.error('PDF generation error:', error);
+        throw error;
+    } finally {
+        if (browser) {
+            await browser.close();
+        }
+    }
+};
+
+// ✅ Updated generateAndSendPdf function
+// ✅ Updated generateAndSendPdf function
+const generateAndSendPdf = async (cnote, userEmail, userInfo, dealerInfo) => {
+    try {
+        // Generate HTML content with user and dealer info
+        const htmlContent = generateHtmlTemplate(cnote, userInfo, dealerInfo);
+
+        // Generate PDF and save to uploads folder
+        const pdfResult = await generatePdfFromHtml(htmlContent, cnote.cnoteNumber);
+
+        // Send email with PDF attachment
+        if (userEmail) {
+            await sendEmailToUser(userEmail, cnote, pdfResult.pdfBuffer);
         }
 
-        if (!pdfBuffer) {
-            throw new Error('PDF generation failed');
+        // Return the PDF file info to save URL in database
+        return {
+            pdfUrl: pdfResult.fileUrl,
+            fileName: pdfResult.fileName
+        };
+
+    } catch (error) {
+        console.error('PDF generation or email sending error:', error);
+        throw error;
+    }
+};
+
+
+// ✅ Function to send email to specific user only
+const sendEmailToUser = async (userEmail, cnote, pdfBuffer) => {
+    try {
+        if (!userEmail) {
+            throw new Error('User email is required');
         }
-
-
 
         const mailOptions = {
             from: 'webadmin@skanray-access.com',
-            to: 'ftshivamtiwari222@gmail.com',
-            subject: `CNote Generated - ${cnoteData.cnoteNumber}`,
-            text: `CNote ${cnoteData.cnoteNumber} for ${cnoteData.customer.customername}`,
+            to: userEmail,
+            subject: `CNote ${cnote.cnoteNumber} Generated Successfully`,
+            html: `
+                <h2>CNote Generated</h2>
+                <p>Dear User,</p>
+                <p>Your CNote <strong>${cnote.cnoteNumber}</strong> has been generated successfully.</p>
+                <p>Please find the PDF attached.</p>
+                <br>
+                <p>Best regards,<br>Skanray Technologies Team</p>
+            `,
             attachments: [
                 {
-                    filename: `CNote_${cnoteData.cnoteNumber}_${Date.now()}.pdf`,
+                    filename: `CNote_${cnote.cnoteNumber}.pdf`,
                     content: pdfBuffer,
                     contentType: 'application/pdf'
                 }
             ]
         };
 
-        await transporter.sendMail(mailOptions);
-
-        res.status(201).json({
-            message: 'CNote created and email sent',
-            cnote: cnoteData
-        });
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`Email sent successfully to: ${userEmail}`, info.messageId);
+        return info;
 
     } catch (error) {
-        console.error('Final PDF generation failure:', error);
-
-        res.status(500).json({
-            message: 'CNote creation aborted - PDF generation failed',
-            error: error.message
-        });
-    } finally {
-        if (page && !page.isClosed()) await page.close();
-        if (browser) await browser.close();
+        console.error('Email sending failed:', error);
+        throw error;
     }
 };
-
-// API endpoint to create CNote and send PDF
 router.post('/', async (req, res) => {
     try {
-        const { proposalId } = req.body;
+        const { proposalId, user } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(proposalId)) {
             return res.status(400).json({ message: 'Invalid proposal ID format' });
@@ -434,11 +481,10 @@ router.post('/', async (req, res) => {
         const cnote = new CNote({
             ...cnoteData,
             status: 'draft',
-            issuedBy: req.user?.id || null,
+            issuedBy: req.user?.id || user?.id || null,
             cnoteNumber
         });
 
-        // Use session for transaction to ensure both operations succeed
         const session = await mongoose.startSession();
 
         try {
@@ -446,7 +492,7 @@ router.post('/', async (req, res) => {
                 // Save CNote
                 await cnote.save({ session });
 
-                // Update Proposal with cnoteNumber
+                // ✅ Update Proposal with cnoteNumber only (PDF info will be added later)
                 await Proposal.findByIdAndUpdate(
                     proposalId,
                     { cnoteNumber: cnoteNumber },
@@ -454,8 +500,102 @@ router.post('/', async (req, res) => {
                 );
             });
 
+            // Extract dealer info from user object correctly
+            const userInfo = {
+                firstname: user?.firstname || '',
+                lastname: user?.lastname || '',
+                employeeid: user?.employeeid || '',
+                email: user?.email || ''
+            };
+
+            const dealerInfo = {
+                dealerName: user?.dealerName || '',
+                dealerId: user?.dealerId || '',
+                dealerEmail: user?.dealerEmail || ''
+            };
+
+            console.log('User Info:', userInfo);
+            console.log('Dealer Info:', dealerInfo);
+
             // Generate PDF and send email
-            await generateAndSendPdf(cnote, res);
+            try {
+                const pdfResult = await generateAndSendPdf(cnote, user?.email, userInfo, dealerInfo);
+
+                // ✅ Update both CNote and Proposal with PDF URL and filename
+                await Promise.all([
+                    // Update CNote with PDF info
+                    CNote.findByIdAndUpdate(
+                        cnote._id,
+                        {
+                            pdfUrl: pdfResult.pdfUrl,
+                            pdfFileName: pdfResult.fileName
+                        }
+                    ),
+                    // ✅ Update Proposal with PDF info
+                    Proposal.findByIdAndUpdate(
+                        proposalId,
+                        {
+                            pdfUrl: pdfResult.pdfUrl,
+                            pdfFileName: pdfResult.fileName
+                        }
+                    )
+                ]);
+
+                res.status(201).json({
+                    success: true,
+                    message: 'CNote created and email sent successfully',
+                    data: {
+                        ...cnote.toObject(),
+                        pdfUrl: pdfResult.pdfUrl,
+                        pdfFileName: pdfResult.fileName
+                    }
+                });
+
+            } catch (emailError) {
+                console.error('Email sending failed:', emailError);
+
+                // Generate PDF anyway and save URL
+                try {
+                    const htmlContent = generateHtmlTemplate(cnote, userInfo, dealerInfo);
+                    const pdfResult = await generatePdfFromHtml(htmlContent, cnote.cnoteNumber);
+
+                    // ✅ Update both CNote and Proposal with PDF info even if email fails
+                    await Promise.all([
+                        // Update CNote with PDF info
+                        CNote.findByIdAndUpdate(
+                            cnote._id,
+                            {
+                                pdfUrl: pdfResult.pdfUrl,
+                                pdfFileName: pdfResult.fileName
+                            }
+                        ),
+                        // ✅ Update Proposal with PDF info
+                        Proposal.findByIdAndUpdate(
+                            proposalId,
+                            {
+                                pdfUrl: pdfResult.pdfUrl,
+                                pdfFileName: pdfResult.fileName
+                            }
+                        )
+                    ]);
+
+                    res.status(201).json({
+                        success: true,
+                        message: 'CNote created successfully, but email failed to send',
+                        error: emailError.message,
+                        data: {
+                            ...cnote.toObject(),
+                            pdfUrl: pdfResult.pdfUrl,
+                            pdfFileName: pdfResult.fileName
+                        }
+                    });
+                } catch (pdfError) {
+                    res.status(500).json({
+                        message: 'CNote created but PDF generation and email failed',
+                        error: pdfError.message
+                    });
+                }
+            }
 
         } catch (transactionError) {
             await session.abortTransaction();
@@ -469,6 +609,33 @@ router.post('/', async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
+
+
+
+
+// ✅ Add route to serve PDF files
+router.get('/download/:fileName', (req, res) => {
+    try {
+        const fileName = req.params.fileName;
+        const filePath = path.join(uploadsDir, fileName);
+
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ message: 'PDF file not found' });
+        }
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+
+    } catch (error) {
+        console.error('PDF download error:', error);
+        res.status(500).json({ message: 'Error downloading PDF' });
+    }
+});
+
+// REST OF YOUR EXISTING ROUTES (GET, PUT, DELETE, etc.)
 // GET /paginated - Paginated list of CNotes
 router.get('/paginated', async (req, res) => {
     try {
@@ -512,6 +679,7 @@ router.get('/paginated', async (req, res) => {
         });
     }
 });
+
 // GET /search - Paginated search for CNotes
 router.get('/search', async (req, res) => {
     try {
@@ -522,10 +690,9 @@ router.get('/search', async (req, res) => {
 
         let baseQuery = {};
 
-        // Build search query if search term is provided
         if (searchTerm.trim()) {
             const searchRegex = new RegExp(searchTerm.trim(), 'i');
-            
+
             baseQuery.$or = [
                 { cnoteNumber: searchRegex },
                 { proposalNumber: searchRegex },
@@ -541,7 +708,6 @@ router.get('/search', async (req, res) => {
             ];
         }
 
-        // Additional filters if needed
         if (req.query.status) {
             baseQuery.status = req.query.status;
         }
@@ -550,7 +716,6 @@ router.get('/search', async (req, res) => {
             baseQuery.issuedBy = req.query.issuedBy;
         }
 
-        // Date range filter
         if (req.query.startDate || req.query.endDate) {
             baseQuery.createdAt = {};
             if (req.query.startDate) {
@@ -561,15 +726,14 @@ router.get('/search', async (req, res) => {
             }
         }
 
-        // Amount range filter
         if (req.query.minAmount) {
             baseQuery.finalAmount = { $gte: parseFloat(req.query.minAmount) };
         }
 
         if (req.query.maxAmount) {
-            baseQuery.finalAmount = { 
+            baseQuery.finalAmount = {
                 ...baseQuery.finalAmount,
-                $lte: parseFloat(req.query.maxAmount) 
+                $lte: parseFloat(req.query.maxAmount)
             };
         }
 
@@ -624,7 +788,6 @@ router.get('/search', async (req, res) => {
         });
     }
 });
-
 
 // Get all CNotes
 router.get('/', async (req, res) => {
@@ -738,24 +901,36 @@ router.delete('/:cnoteNumber', async (req, res) => {
     try {
         const { cnoteNumber } = req.params;
 
-        // Use session for transaction
         const session = await mongoose.startSession();
 
         try {
             let deletedCNote;
 
             await session.withTransaction(async () => {
-                // Find and delete CNote
                 deletedCNote = await CNote.findOneAndDelete({ cnoteNumber }, { session });
 
                 if (!deletedCNote) {
                     throw new Error('CNote not found');
                 }
 
-                // Clear cnoteNumber from corresponding Proposal
+                // Delete PDF file if exists
+                if (deletedCNote.pdfFileName) {
+                    const pdfPath = path.join(uploadsDir, deletedCNote.pdfFileName);
+                    if (fs.existsSync(pdfPath)) {
+                        fs.unlinkSync(pdfPath);
+                    }
+                }
+
+                // ✅ Clear both cnoteNumber and PDF info from proposal
                 await Proposal.findOneAndUpdate(
                     { proposalNumber: deletedCNote.proposalNumber },
-                    { $unset: { cnoteNumber: "" } }, // This will remove the field or set it to null
+                    {
+                        $unset: {
+                            cnoteNumber: "",
+                            pdfUrl: "",
+                            pdfFileName: ""
+                        }
+                    },
                     { session }
                 );
             });
@@ -784,5 +959,48 @@ router.delete('/:cnoteNumber', async (req, res) => {
     }
 });
 
+// Route to download CNote PDF by proposal number
+router.get('/proposal/:proposalNumber/cnote-pdf', async (req, res) => {
+    try {
+        const { proposalNumber } = req.params;
+
+        // Find the proposal to get the PDF filename
+        const proposal = await Proposal.findOne({ proposalNumber });
+
+        if (!proposal) {
+            return res.status(404).json({ message: 'Proposal not found' });
+        }
+
+        if (!proposal.pdfFileName || !proposal.pdfUrl) {
+            return res.status(404).json({ message: 'CNote PDF not found for this proposal' });
+        }
+
+        // Construct the full file path
+        const filePath = path.join(uploadsDir, proposal.pdfFileName);
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ message: 'PDF file not found on server' });
+        }
+
+        // Set headers for PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${proposal.pdfFileName}"`);
+
+        // Send the file for download
+        res.download(filePath, proposal.pdfFileName, (err) => {
+            if (err) {
+                console.error('Error downloading PDF:', err);
+                if (!res.headersSent) {
+                    res.status(500).json({ message: 'Error downloading PDF file' });
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('PDF download error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
 
 module.exports = router;

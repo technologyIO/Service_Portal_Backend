@@ -25,6 +25,76 @@ const transporter = nodemailer.createTransport({
     pass: 'rdzegwmzirvbjcpm'
   }
 });
+router.get('/pms/search', async (req, res) => {
+  try {
+    const {
+      q = '',
+      page = 1,
+      limit = 10,
+      pmType,
+      region,
+      city,
+      pmStatus
+    } = req.query;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    let searchQuery = {}; // REMOVE status filter from default query
+
+    // General search in multiple fields
+    if (q && q.trim()) {
+      searchQuery.$or = [
+        { pmNumber: new RegExp(q, 'i') },
+        { serialNumber: new RegExp(q, 'i') },
+        { materialDescription: new RegExp(q, 'i') },
+        { customerCode: new RegExp(q, 'i') },
+        { pmVendorCode: new RegExp(q, 'i') },
+        { pmEngineerCode: new RegExp(q, 'i') },
+        { partNumber: new RegExp(q, 'i') },
+        { documentnumber: new RegExp(q, 'i') },
+        { region: new RegExp(q, 'i') },      // Add region to search
+        { city: new RegExp(q, 'i') },        // Add city to search
+        { pmType: new RegExp(q, 'i') },      // Add pmType to search
+        { pmStatus: new RegExp(q, 'i') }     // Add pmStatus to search
+      ];
+    }
+
+    // Apply filters
+    if (pmType) searchQuery.pmType = pmType;
+    if (region) searchQuery.region = region;
+    if (city) searchQuery.city = city;
+    if (pmStatus) searchQuery.pmStatus = pmStatus;
+
+    // Execute search
+    const [results, totalCount] = await Promise.all([
+      PM.find(searchQuery)
+        .lean()
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
+      PM.countDocuments(searchQuery)
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    res.json({
+      success: true,
+      pms: results,
+      totalPages: totalPages,
+      totalPms: totalCount,
+      currentPage: parseInt(page),
+      hasNext: parseInt(page) < totalPages,
+      hasPrev: parseInt(page) > 1
+    });
+
+  } catch (error) {
+    console.error('Search error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Search failed',
+      error: error.message
+    });
+  }
+});
 
 // Middleware to get a PM by ID
 async function getPMById(req, res, next) {
@@ -561,7 +631,6 @@ router.delete('/pms/:id', getPMById, async (req, res) => {
 });
 
 
-// SEARCH PM records with pagination
 router.get('/pmsearch', async (req, res) => {
   try {
     const { q, page = 1, limit = 10 } = req.query;
@@ -666,6 +735,9 @@ router.get('/pmsearch', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+
+
 
 
 

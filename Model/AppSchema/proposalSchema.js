@@ -13,7 +13,8 @@ const equipmentSchema = new mongoose.Schema({
     materialcode: String,
     materialdescription: String,
     dealer: String,
-    status: { type: String, enum: ['Pending', 'Approved'], default: 'Pending' }
+    serialnumber: String,
+    status: { type: String, default: 'Pending' }
 }, { _id: false });
 
 // Customer Schema
@@ -86,6 +87,9 @@ const proposalSchema = new mongoose.Schema({
     CoNumber: String,
     serialNumber: String,
     cnoteNumber: { type: String, default: null },
+    pdfUrl: { type: String, default: null },
+    pdfFileName: { type: String, default: null },
+
     grandSubTotal: { type: Number, min: [0, 'Subtotal cannot be negative'] },
     discountAmount: { type: Number, min: [0, 'Discount cannot be negative'] },
     afterDiscount: { type: Number, min: [0, 'Value cannot be negative'] },

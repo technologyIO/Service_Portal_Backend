@@ -15,6 +15,7 @@ const equipmentItemSchema = new mongoose.Schema({
         materialcode: String,
         materialdescription: String,
         dealer: String,
+        serialnumber: String,
         status: String,
     },
     warrantyType: String,
@@ -80,6 +81,14 @@ const CNoteSchema = new mongoose.Schema({
     afterTds: Number,
     gstAmount: Number,
     finalAmount: Number,
+    pdfUrl: {
+        type: String,
+        default: null
+    },
+    pdfFileName: {
+        type: String,
+        default: null
+    },
     status: {
         type: String,
         enum: ['draft', 'issued', 'cancelled'],

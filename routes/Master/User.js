@@ -156,7 +156,7 @@ router.post('/forgot-password', async (req, res) => {
 
         // Send email with OTP
         const mailOptions = {
-            from: process.env.EMAIL_USER,
+            from: 'webadmin@skanray-access.com',
             to: user.email,
             subject: 'Password Reset OTP',
             text: `Your OTP for password reset is: ${otp}. This OTP is valid for 5 minutes.`
@@ -341,7 +341,7 @@ router.post('/resend-otp', async (req, res) => {
 
         // Send email with new OTP
         const mailOptions = {
-            from: process.env.EMAIL_USER,
+            from: 'webadmin@skanray-access.com',
             to: user.email,
             subject: 'New Password Reset OTP',
             text: `Your new OTP for password reset is: ${otp}. This OTP is valid for 5 minutes.`

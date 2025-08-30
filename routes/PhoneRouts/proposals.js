@@ -895,9 +895,350 @@ router.get('/:id/revisions', async (req, res) => {
     }
 });
 // Approve by RSH (updated version)
+// Bulk RSH Approval Route
+router.put('/:id/bulk-approve-rsh', async (req, res) => {
+    try {
+        const { userId, itemIds, remark } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+
+        if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Item IDs array is required'
+            });
+        }
+
+        const proposal = await Proposal.findById(req.params.id);
+        if (!proposal) {
+            return res.status(404).json({
+                success: false,
+                message: 'Proposal not found'
+            });
+        }
+
+        const updatedItems = [];
+
+        // Process each item
+        for (const itemId of itemIds) {
+            const item = proposal.items.id(itemId);
+            if (item) {
+                item.RSHApproval = {
+                    approved: true,
+                    approvedBy: userId,
+                    approvedAt: new Date(),
+                    remark: remark || ''
+                };
+
+                // Update equipment status if conditions are met
+                const requiresNSHApproval = proposal.discountPercentage > 10;
+                if ((requiresNSHApproval && item.NSHApproval?.approved) || (!requiresNSHApproval)) {
+                    item.equipment.status = 'Approved';
+                }
+
+                updatedItems.push(itemId);
+            }
+        }
+
+        // Update revision status
+        const currentRevision = proposal.revisions.find(rev => rev.revisionNumber === proposal.currentRevision);
+        if (currentRevision) {
+            currentRevision.approvalHistory.push({
+                status: 'approved',
+                changedAt: new Date(),
+                changedBy: userId,
+                approvalType: 'RSH',
+                remark: remark || '',
+                itemIds: updatedItems,
+                bulkAction: true
+            });
+
+            // Check if revision should be marked as approved
+            const requiresNSHApproval = proposal.discountPercentage > 10;
+            if (!requiresNSHApproval) {
+                const allRSHApproved = proposal.items.every(item => item.RSHApproval?.approved);
+                if (allRSHApproved) {
+                    currentRevision.status = 'approved';
+                }
+            } else {
+                // Check if both RSH and NSH have approved all items
+                const allRSHApproved = proposal.items.every(item => item.RSHApproval?.approved);
+                const allNSHApproved = proposal.items.every(item => item.NSHApproval?.approved);
+                if (allRSHApproved && allNSHApproved) {
+                    currentRevision.status = 'approved';
+                }
+            }
+        }
+
+        // Update proposal status
+        const requiresNSHApproval = proposal.discountPercentage > 10;
+        let allApproved = true;
+
+        for (const item of proposal.items) {
+            if (requiresNSHApproval) {
+                if (!item.RSHApproval?.approved || !item.NSHApproval?.approved) {
+                    allApproved = false;
+                    break;
+                }
+            } else {
+                if (!item.RSHApproval?.approved) {
+                    allApproved = false;
+                    break;
+                }
+            }
+        }
+
+        proposal.approvalProposalStatus = allApproved ? 'Approved' : 'InProgress';
+        proposal.updatedAt = new Date();
+        await proposal.save();
+
+        res.json({
+            success: true,
+            message: `${updatedItems.length} items approved by RSH`,
+            data: proposal
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Server error during bulk RSH approval',
+            error: error.message
+        });
+    }
+});
+
+// Bulk NSH Approval Route
+router.put('/:id/bulk-approve-nsh', async (req, res) => {
+    try {
+        const { userId, itemIds, remark } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+
+        if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Item IDs array is required'
+            });
+        }
+
+        const proposal = await Proposal.findById(req.params.id);
+        if (!proposal) {
+            return res.status(404).json({
+                success: false,
+                message: 'Proposal not found'
+            });
+        }
+
+        const updatedItems = [];
+
+        // Process each item
+        for (const itemId of itemIds) {
+            const item = proposal.items.id(itemId);
+            if (item) {
+                item.NSHApproval = {
+                    approved: true,
+                    approvedBy: userId,
+                    approvedAt: new Date(),
+                    remark: remark || ''
+                };
+
+                // Update equipment status if conditions are met
+                const requiresNSHApproval = proposal.discountPercentage > 10;
+                if ((requiresNSHApproval && item.RSHApproval?.approved) || !requiresNSHApproval) {
+                    item.equipment.status = 'Approved';
+                }
+
+                updatedItems.push(itemId);
+            }
+        }
+
+        // Update revision status
+        const currentRevision = proposal.revisions.find(rev => rev.revisionNumber === proposal.currentRevision);
+        if (currentRevision) {
+            currentRevision.approvalHistory.push({
+                status: 'approved',
+                changedAt: new Date(),
+                changedBy: userId,
+                approvalType: 'NSH',
+                remark: remark || '',
+                itemIds: updatedItems,
+                bulkAction: true
+            });
+
+            // Check if revision should be marked as approved
+            const requiresNSHApproval = proposal.discountPercentage > 10;
+            if (requiresNSHApproval) {
+                const allRSHApproved = proposal.items.every(item => item.RSHApproval?.approved);
+                const allNSHApproved = proposal.items.every(item => item.NSHApproval?.approved);
+                if (allRSHApproved && allNSHApproved) {
+                    currentRevision.status = 'approved';
+                }
+            } else {
+                const allRSHApproved = proposal.items.every(item => item.RSHApproval?.approved);
+                if (allRSHApproved) {
+                    currentRevision.status = 'approved';
+                }
+            }
+        }
+
+        // Update proposal status
+        const requiresNSHApproval = proposal.discountPercentage > 10;
+        let allApproved = true;
+
+        for (const item of proposal.items) {
+            if (requiresNSHApproval) {
+                if (!item.RSHApproval?.approved || !item.NSHApproval?.approved) {
+                    allApproved = false;
+                    break;
+                }
+            } else {
+                if (!item.RSHApproval?.approved) {
+                    allApproved = false;
+                    break;
+                }
+            }
+        }
+
+        proposal.approvalProposalStatus = allApproved ? 'Approved' : 'InProgress';
+        proposal.updatedAt = new Date();
+        await proposal.save();
+
+        res.json({
+            success: true,
+            message: `${updatedItems.length} items approved by NSH`,
+            data: proposal
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Server error during bulk NSH approval',
+            error: error.message
+        });
+    }
+});
+
+// Bulk Reject Route
+router.put('/:id/bulk-reject-revision', async (req, res) => {
+    try {
+        const { userId, reason, approvalType, itemIds } = req.body;
+
+        if (!userId || !reason) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID and rejection reason are required'
+            });
+        }
+
+        if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Item IDs array is required'
+            });
+        }
+
+        const proposal = await Proposal.findById(req.params.id);
+        if (!proposal) {
+            return res.status(404).json({
+                success: false,
+                message: 'Proposal not found'
+            });
+        }
+
+        const currentRevision = proposal.revisions.find(rev =>
+            rev.revisionNumber === proposal.currentRevision
+        );
+
+        if (!currentRevision) {
+            return res.status(404).json({
+                success: false,
+                message: 'Current revision not found'
+            });
+        }
+
+        const rejectedItems = [];
+
+        // Process each item
+        for (const itemId of itemIds) {
+            const item = proposal.items.id(itemId);
+            if (item) {
+                if (approvalType === 'RSH') {
+                    item.RSHApproval = {
+                        approved: false,
+                        rejected: true,
+                        rejectedBy: userId,
+                        rejectedAt: new Date(),
+                        reason: reason
+                    };
+                } else if (approvalType === 'NSH') {
+                    item.NSHApproval = {
+                        approved: false,
+                        rejected: true,
+                        rejectedBy: userId,
+                        rejectedAt: new Date(),
+                        reason: reason
+                    };
+                }
+
+                // Update equipment status to rejected/pending
+                item.equipment.status = 'Rejected';
+                rejectedItems.push(itemId);
+            }
+        }
+
+        // Update revision approval history
+        currentRevision.approvalHistory.push({
+            approvalType: approvalType || 'revision',
+            status: 'rejected',
+            changedAt: new Date(),
+            changedBy: userId,
+            remark: reason,
+            itemIds: rejectedItems,
+            bulkAction: true
+        });
+
+        // Update revision and proposal status
+        proposal.approvalProposalStatus = 'InProgress';
+
+        // Check if entire revision should be marked as rejected
+        const totalItems = proposal.items.length;
+        const rejectedRSHItems = proposal.items.filter(item => item.RSHApproval?.rejected).length;
+        const rejectedNSHItems = proposal.items.filter(item => item.NSHApproval?.rejected).length;
+
+        if (rejectedRSHItems > 0 || rejectedNSHItems > 0) {
+            // If any items are rejected, mark revision as needs revision
+            currentRevision.status = 'needs_revision';
+        }
+
+        proposal.updatedAt = new Date();
+        await proposal.save();
+
+        res.json({
+            success: true,
+            message: `${rejectedItems.length} items rejected by ${approvalType}`,
+            data: proposal
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Server error during bulk rejection',
+            error: error.message
+        });
+    }
+});
+
+// Updated single item routes to include remark support
 router.put('/:id/approve-rsh', async (req, res) => {
     try {
-        const { userId, itemId } = req.body;
+        const { userId, itemId, remark } = req.body;
 
         if (!userId) {
             return res.status(400).json({
@@ -927,15 +1268,23 @@ router.put('/:id/approve-rsh', async (req, res) => {
             item.RSHApproval = {
                 approved: true,
                 approvedBy: userId,
-                approvedAt: new Date()
+                approvedAt: new Date(),
+                remark: remark || ''
             };
+
+            // Update equipment status if conditions are met
+            const requiresNSHApproval = proposal.discountPercentage > 10;
+            if ((requiresNSHApproval && item.NSHApproval?.approved) || (!requiresNSHApproval)) {
+                item.equipment.status = 'Approved';
+            }
         } else {
             // Update all items
             proposal.items.forEach(item => {
                 item.RSHApproval = {
                     approved: true,
                     approvedBy: userId,
-                    approvedAt: new Date()
+                    approvedAt: new Date(),
+                    remark: remark || ''
                 };
 
                 const requiresNSHApproval = proposal.discountPercentage > 10;
@@ -943,7 +1292,6 @@ router.put('/:id/approve-rsh', async (req, res) => {
                     item.equipment.status = 'Approved';
                 }
             });
-
         }
 
         // Update revision status
@@ -953,143 +1301,28 @@ router.put('/:id/approve-rsh', async (req, res) => {
                 status: 'approved',
                 changedAt: new Date(),
                 changedBy: userId,
-                approvalType: 'RSH'
+                approvalType: 'RSH',
+                remark: remark || '',
+                itemId: itemId || null
             });
 
             // Check if revision should be marked as approved
             const requiresNSHApproval = proposal.discountPercentage > 10;
             if (!requiresNSHApproval) {
-                currentRevision.status = 'approved';
+                const allRSHApproved = proposal.items.every(item => item.RSHApproval?.approved);
+                if (allRSHApproved) {
+                    currentRevision.status = 'approved';
+                }
             } else {
-                // Check if NSH has also approved
-                const nshApproved = proposal.items.every(item => item.NSHApproval.approved);
-                if (nshApproved) {
+                const allRSHApproved = proposal.items.every(item => item.RSHApproval?.approved);
+                const allNSHApproved = proposal.items.every(item => item.NSHApproval?.approved);
+                if (allRSHApproved && allNSHApproved) {
                     currentRevision.status = 'approved';
                 }
             }
         }
 
-        // Check if proposal approval status should be updated
-        const requiresNSHApproval = proposal.discountPercentage > 10;
-        let allApproved = true;
-
-        for (const item of proposal.items) {
-            if (requiresNSHApproval) {
-                if (!item.RSHApproval.approved || !item.NSHApproval.approved) {
-                    allApproved = false;
-                    break;
-                }
-            } else {
-                if (!item.RSHApproval.approved) {
-                    allApproved = false;
-                    break;
-                }
-            }
-        }
-
-        proposal.approvalProposalStatus = allApproved ? 'Approved' : 'InProgress';
-        proposal.updatedAt = new Date();
-        await proposal.save();
-
-        res.json({
-            success: true,
-            data: proposal
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Server error during approval',
-            error: error.message
-        });
-    }
-});
-
-router.put('/:id/approve-nsh', async (req, res) => {
-    try {
-        const { userId, itemId } = req.body;
-
-        if (!userId) {
-            return res.status(400).json({
-                success: false,
-                message: 'User ID is required'
-            });
-        }
-
-        const proposal = await Proposal.findById(req.params.id);
-        if (!proposal) {
-            return res.status(404).json({
-                success: false,
-                message: 'Proposal not found'
-            });
-        }
-
-        // If itemId is provided, update specific item
-        if (itemId) {
-            const item = proposal.items.id(itemId);
-            if (!item) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Item not found'
-                });
-            }
-
-            item.NSHApproval = {
-                approved: true,
-                approvedBy: userId,
-                approvedAt: new Date()
-            };
-
-            // Update equipment status if both approvals are done (when required)
-            const requiresNSHApproval = proposal.discountPercentage > 10;
-            if ((requiresNSHApproval && item.RSHApproval?.approved) || !requiresNSHApproval) {
-                item.equipment.status = 'Approved';
-            }
-        } else {
-            // Update all items
-            proposal.items.forEach(item => {
-                item.NSHApproval = {
-                    approved: true,
-                    approvedBy: userId,
-                    approvedAt: new Date()
-                };
-
-                // Update equipment status if both approvals are done (when required)
-                const requiresNSHApproval = proposal.discountPercentage > 10;
-                if ((requiresNSHApproval && item.RSHApproval?.approved) || !requiresNSHApproval) {
-                    item.equipment.status = 'Approved';
-                }
-            });
-        }
-
-        // Update revision status
-        const currentRevision = proposal.revisions.find(rev => rev.revisionNumber === proposal.currentRevision);
-        if (currentRevision) {
-            currentRevision.approvalHistory.push({
-                status: 'approved',
-                changedAt: new Date(),
-                changedBy: userId,
-                approvalType: 'NSH'
-            });
-
-            // Check if revision should be marked as approved
-            const requiresNSHApproval = proposal.discountPercentage > 10;
-            if (requiresNSHApproval) {
-                // For discounts >10%, need both RSH and NSH approvals
-                const rshApproved = proposal.items.every(item => item.RSHApproval?.approved);
-                const nshApproved = proposal.items.every(item => item.NSHApproval?.approved);
-                if (rshApproved && nshApproved) {
-                    currentRevision.status = 'approved';
-                }
-            } else {
-                // For discounts ≤10%, only RSH approval is needed
-                const rshApproved = proposal.items.every(item => item.RSHApproval?.approved);
-                if (rshApproved) {
-                    currentRevision.status = 'approved';
-                }
-            }
-        }
-
-        // Check if proposal approval status should be updated
+        // Update proposal status
         const requiresNSHApproval = proposal.discountPercentage > 10;
         let allApproved = true;
 
@@ -1123,6 +1356,129 @@ router.put('/:id/approve-nsh', async (req, res) => {
         });
     }
 });
+
+router.put('/:id/approve-nsh', async (req, res) => {
+    try {
+        const { userId, itemId, remark } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+
+        const proposal = await Proposal.findById(req.params.id);
+        if (!proposal) {
+            return res.status(404).json({
+                success: false,
+                message: 'Proposal not found'
+            });
+        }
+
+        // If itemId is provided, update specific item
+        if (itemId) {
+            const item = proposal.items.id(itemId);
+            if (!item) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Item not found'
+                });
+            }
+
+            item.NSHApproval = {
+                approved: true,
+                approvedBy: userId,
+                approvedAt: new Date(),
+                remark: remark || ''
+            };
+
+            // Update equipment status if conditions are met
+            const requiresNSHApproval = proposal.discountPercentage > 10;
+            if ((requiresNSHApproval && item.RSHApproval?.approved) || !requiresNSHApproval) {
+                item.equipment.status = 'Approved';
+            }
+        } else {
+            // Update all items
+            proposal.items.forEach(item => {
+                item.NSHApproval = {
+                    approved: true,
+                    approvedBy: userId,
+                    approvedAt: new Date(),
+                    remark: remark || ''
+                };
+
+                // Update equipment status if conditions are met
+                const requiresNSHApproval = proposal.discountPercentage > 10;
+                if ((requiresNSHApproval && item.RSHApproval?.approved) || !requiresNSHApproval) {
+                    item.equipment.status = 'Approved';
+                }
+            });
+        }
+
+        // Update revision status
+        const currentRevision = proposal.revisions.find(rev => rev.revisionNumber === proposal.currentRevision);
+        if (currentRevision) {
+            currentRevision.approvalHistory.push({
+                status: 'approved',
+                changedAt: new Date(),
+                changedBy: userId,
+                approvalType: 'NSH',
+                remark: remark || '',
+                itemId: itemId || null
+            });
+
+            // Check if revision should be marked as approved
+            const requiresNSHApproval = proposal.discountPercentage > 10;
+            if (requiresNSHApproval) {
+                const allRSHApproved = proposal.items.every(item => item.RSHApproval?.approved);
+                const allNSHApproved = proposal.items.every(item => item.NSHApproval?.approved);
+                if (allRSHApproved && allNSHApproved) {
+                    currentRevision.status = 'approved';
+                }
+            } else {
+                const allRSHApproved = proposal.items.every(item => item.RSHApproval?.approved);
+                if (allRSHApproved) {
+                    currentRevision.status = 'approved';
+                }
+            }
+        }
+
+        // Update proposal status
+        const requiresNSHApproval = proposal.discountPercentage > 10;
+        let allApproved = true;
+
+        for (const item of proposal.items) {
+            if (requiresNSHApproval) {
+                if (!item.RSHApproval?.approved || !item.NSHApproval?.approved) {
+                    allApproved = false;
+                    break;
+                }
+            } else {
+                if (!item.RSHApproval?.approved) {
+                    allApproved = false;
+                    break;
+                }
+            }
+        }
+
+        proposal.approvalProposalStatus = allApproved ? 'Approved' : 'InProgress';
+        proposal.updatedAt = new Date();
+        await proposal.save();
+
+        res.json({
+            success: true,
+            data: proposal
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Server error during approval',
+            error: error.message
+        });
+    }
+});
+
 // Add a new route to reject a revision
 router.put('/:id/reject-revision', async (req, res) => {
     try {

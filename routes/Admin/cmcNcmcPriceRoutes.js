@@ -43,6 +43,18 @@ router.get('/', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+router.get('/all', async (req, res) => {
+    try {
+
+
+        const records = await CmcNcmcPrice.find();
+
+
+        res.json({ records});
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 // Add this search route to your existing CMC/NCMC price routes
 router.get('/searchprices', async (req, res) => {
     try {

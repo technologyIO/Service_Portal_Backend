@@ -16,6 +16,7 @@ const AMCContract = require('../../Model/UploadSchema/AMCContractSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust the path as necessary
 const Product = require('../../Model/MasterSchema/ProductSchema');
 const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
+const PM = require('../../Model/UploadSchema/PMSchema');
 const mongoose = require('mongoose');
 
 
@@ -255,12 +256,17 @@ router.get('/equipment-details/:serialnumber', async (req, res) => {
         // 1. Retrieve equipment data using the serial number
         const equipmentData = await Equipment.findOne({ serialnumber });
         if (!equipmentData) {
-            return res.status(404).json({ message: 'No equipment data found for the provided serial number' });
+            return res.status(404).json({
+                message: 'No equipment data found for the provided serial number'
+            });
         }
 
-        // 2. Using the material code from the equipment, find AMC contract data (only startdate and enddate)
+        // 2. Using the material code from the equipment, find AMC contract data
         const materialCode = equipmentData.materialcode;
-        const amcContract = await AMCContract.findOne({ materialcode: materialCode });
+        const amcContract = await AMCContract.findOne(
+            { materialcode: materialCode },
+            { startdate: 1, enddate: 1, _id: 0 }
+        );
         const amcContractDates = amcContract
             ? { startdate: amcContract.startdate, enddate: amcContract.enddate }
             : {};
@@ -268,16 +274,28 @@ router.get('/equipment-details/:serialnumber', async (req, res) => {
         // 3. Using the current customer code from the equipment, find customer details
         const customerCode = equipmentData.currentcustomer;
         const customerData = await Customer.findOne({ customercodeid: customerCode });
-        const customerDetails = customerData
-            ? {
-                hospitalname: customerData.hospitalname,
-                city: customerData.city,
-                pincode: customerData.postalcode, // Assuming postalcode is used as pincode
-                telephone: customerData.telephone,
-                email: customerData.email,
-                street: customerData.street,
-            }
-            : {};
+
+        // ✅ Fixed: Properly structure customer details with all fields
+        const customerDetails = customerData ? {
+            customercodeid: customerData.customercodeid,
+            customername: customerData.customername,
+            hospitalname: customerData.hospitalname,
+            street: customerData.street,
+            city: customerData.city,
+            postalcode: customerData.postalcode,
+            district: customerData.district,
+            state: customerData.state,
+            region: customerData.region,
+            country: customerData.country,
+            telephone: customerData.telephone,
+            taxnumber1: customerData.taxnumber1,
+            taxnumber2: customerData.taxnumber2,
+            email: customerData.email,
+            status: customerData.status,
+            customertype: customerData.customertype,
+            createdAt: customerData.createdAt,
+            modifiedAt: customerData.modifiedAt
+        } : {};
 
         // 4. Find all equipments that have used this same customer code
         const customerEquipments = await Equipment.find(
@@ -290,14 +308,24 @@ router.get('/equipment-details/:serialnumber', async (req, res) => {
             equipment: equipmentData,
             amcContract: amcContractDates,
             customer: customerDetails,
-            customerEquipments // Array of equipments with serial number, material code, and name
+            customerEquipments
         };
 
-        res.json(combinedData);
+        return res.status(200).json({
+            success: true,
+            data: combinedData
+        });
+
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        console.error('Error in equipment-details endpoint:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: err.message
+        });
     }
 });
+
 
 router.get('/checkequipments/:customerCode', async (req, res) => {
     try {
@@ -509,6 +537,9 @@ router.get('/equipment/:id', getEquipmentById, (req, res) => {
     res.json(res.equipment);
 });
 
+
+
+// Send OTP Endpoint - Only backend logic enhanced, template unchanged
 router.post('/send-otp', async (req, res) => {
     const {
         email,
@@ -519,61 +550,71 @@ router.post('/send-otp', async (req, res) => {
     } = req.body;
 
     if (!email) {
-        return res.status(400).json({ message: 'Email is required' });
+        return res.status(400).json({
+            success: false,
+            message: 'Email is required'
+        });
     }
 
-    // Generate a 4-digit OTP (matching your template format)
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    try {
+        // Generate a 4-digit OTP (matching your template format)
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
-    // Store OTP with a 5-minute expiry
-    otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
+        // Store OTP with a 5-minute expiry
+        const expiryTime = Date.now() + 5 * 60 * 1000;
+        otpStore[email] = {
+            otp,
+            expiresAt: expiryTime,
+            createdAt: new Date().toISOString(),
+            attempts: 0
+        };
 
-    // Create products warranty list for email template
-    const warrantyList = products && products.length > 0
-        ? products.map(product =>
-            `${product.serialNumber}  ${product.description} Warranty from ${product.warrantyStartDate} to ${product.warrantyEndDate}`
-        ).join('\n')
-        : 'No products specified';
+        // Create products warranty list for email template
+        const warrantyList = products && products.length > 0
+            ? products.map(product =>
+                `${product.serialNumber}  ${product.description} Warranty from ${product.warrantyStartDate} to ${product.warrantyEndDate}`
+            ).join('\n')
+            : 'No products specified';
 
-    // Create installation address
-    const installationAddress = installationLocation?.formattedAddress ||
-        `${customerDetails?.customerName || 'Customer Address'}\n${installationLocation?.city || ''}\n${installationLocation?.region || ''}`;
+        // Create installation address
+        const installationAddress = installationLocation?.formattedAddress ||
+            `${customerDetails?.customerName || 'Customer Address'}\n${installationLocation?.city || ''}\n${installationLocation?.region || ''}`;
 
-    // Create HTML email template
-    const htmlTemplate = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd;">
-        <div style="border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
-            <h3 style="margin: 0;">OTP Template Installation (Email)</h3>
-            <p style="margin: 5px 0; font-size: 12px;">To be sent to customer's & Email selected during the Installation.</p>
-            <p style="margin: 5px 0; font-weight: bold;">Subject: OTP for Installation.</p>
+        // Your EXACT original HTML template - NO CHANGES
+        const htmlTemplate = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd;">
+            <div style="border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
+                <h3 style="margin: 0;">OTP Template Installation (Email)</h3>
+                <p style="margin: 5px 0; font-size: 12px;">To be sent to customer's & Email selected during the Installation.</p>
+                <p style="margin: 5px 0; font-weight: bold;">Subject: OTP for Installation.</p>
+            </div>
+            
+            <p><strong>Dear Customer,</strong></p>
+            
+            <p><strong>Below products with warranty</strong></p>
+            <div style="background-color: #ffff99; padding: 10px; margin: 10px 0; font-family: monospace;">
+                ${warrantyList.split('\n').map(line => `<div>${line}</div>`).join('')}
+            </div>
+            
+            <p><strong>will be installed at</strong></p>
+            <div style="background-color: #ffff99; padding: 10px; margin: 10px 0; font-family: monospace;">
+                ${installationAddress.split('\n').map(line => `<div>${line}</div>`).join('')}
+            </div>
+            
+            <p>Kindly provide the Acceptance token ID /OTP (<strong style="color: #ff0000;">${otp}</strong>) to the service team acknowledging the installation and warranty terms.</p>
+            <p>You will receive a digitally signed Installation report in your email</p>
+            
+            <p>Regards,<br/>
+            Skanray Service Support team</p>
+            
+            <div style="border-top: 1px solid #333; margin-top: 30px; padding-top: 10px;">
+                <p style="font-size: 12px; color: #666;">This OTP is valid for 5 minutes only.</p>
+            </div>
         </div>
-        
-        <p><strong>Dear Customer,</strong></p>
-        
-        <p><strong>Below products with warranty</strong></p>
-        <div style="background-color: #ffff99; padding: 10px; margin: 10px 0; font-family: monospace;">
-            ${warrantyList.split('\n').map(line => `<div>${line}</div>`).join('')}
-        </div>
-        
-        <p><strong>will be installed at</strong></p>
-        <div style="background-color: #ffff99; padding: 10px; margin: 10px 0; font-family: monospace;">
-            ${installationAddress.split('\n').map(line => `<div>${line}</div>`).join('')}
-        </div>
-        
-        <p>Kindly provide the Acceptance token ID /OTP (<strong style="color: #ff0000;">${otp}</strong>) to the service team acknowledging the installation and warranty terms.</p>
-        <p>You will receive a digitally signed Installation report in your email</p>
-        
-        <p>Regards,<br/>
-        Skanray Service Support team</p>
-        
-        <div style="border-top: 1px solid #333; margin-top: 30px; padding-top: 10px;">
-            <p style="font-size: 12px; color: #666;">This OTP is valid for 5 minutes only.</p>
-        </div>
-    </div>
-    `;
+        `;
 
-    // Plain text version (fallback)
-    const textTemplate = `
+        // Your EXACT original plain text template - NO CHANGES
+        const textTemplate = `
 OTP Template Installation (Email)
 To be sent to customer's & Email selected during the Installation.
 Subject: OTP for Installation.
@@ -593,58 +634,138 @@ Regards,
 Skanray Service Support team
 
 This OTP is valid for 5 minutes only.
-    `;
+        `;
 
-    const mailOptions = {
-        from: 'webadmin@skanray-access.com',
-        to: email,
-        subject: 'OTP for Installation',
-        text: textTemplate,
-        html: htmlTemplate
-    };
+        const mailOptions = {
+            from: 'webadmin@skanray-access.com',
+            to: email,
+            subject: 'OTP for Installation',
+            text: textTemplate,
+            html: htmlTemplate
+        };
 
-    try {
         await transporter.sendMail(mailOptions);
         console.log(`OTP ${otp} sent to ${email} for installation`);
+
         res.status(200).json({
+            success: true,
             message: 'OTP sent successfully',
             details: {
                 email: email,
+                otpSentAt: new Date().toISOString(),
+                expiresAt: new Date(expiryTime).toISOString(),
                 productsCount: products?.length || 0,
                 customerName: customerDetails?.customerName || 'N/A'
             }
         });
+
     } catch (error) {
         console.error('Failed to send OTP email:', error);
+
+        // Remove failed OTP from store
+        if (otpStore[email]) {
+            delete otpStore[email];
+        }
+
         res.status(500).json({
+            success: false,
             message: 'Failed to send OTP',
             error: error.message
         });
     }
 });
 
-
-// Endpoint to verify OTP
+// Verify OTP Endpoint - Enhanced with proper expiry handling
 router.post('/verify-otp', (req, res) => {
     const { email, otp } = req.body;
+
+    // Input validation
     if (!email || !otp) {
-        return res.status(400).json({ message: 'Email and OTP are required' });
+        return res.status(400).json({
+            success: false,
+            message: 'Email and OTP are required',
+            code: 'MISSING_FIELDS'
+        });
     }
+
+    // Check if OTP record exists
     const record = otpStore[email];
     if (!record) {
-        return res.status(400).json({ message: 'No OTP found for this email' });
+        return res.status(400).json({
+            success: false,
+            message: 'No OTP found for this email. Please request a new OTP.',
+            code: 'OTP_NOT_FOUND',
+            expired: true
+        });
     }
-    if (Date.now() > record.expiresAt) {
+
+    // Check if OTP has expired (5 minutes)
+    const currentTime = Date.now();
+    if (currentTime > record.expiresAt) {
+        // Remove expired OTP from store
         delete otpStore[email];
-        return res.status(400).json({ message: 'OTP has expired' });
+
+        return res.status(400).json({
+            success: false,
+            message: 'OTP has expired. Please request a new OTP.',
+            code: 'OTP_EXPIRED',
+            expired: true,
+            expiredAt: new Date(record.expiresAt).toISOString()
+        });
     }
+
+    // Increment attempt counter
+    record.attempts = (record.attempts || 0) + 1;
+
+    // Check for too many attempts (security feature)
+    if (record.attempts > 5) {
+        delete otpStore[email];
+        return res.status(400).json({
+            success: false,
+            message: 'Too many failed attempts. Please request a new OTP.',
+            code: 'TOO_MANY_ATTEMPTS',
+            expired: true
+        });
+    }
+
+    // Verify OTP
     if (record.otp !== otp) {
-        return res.status(400).json({ message: 'Invalid OTP' });
+        const remainingTime = Math.ceil((record.expiresAt - currentTime) / (60 * 1000));
+
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid OTP. Please try again.',
+            code: 'INVALID_OTP',
+            expired: false,
+            attemptsRemaining: Math.max(0, 5 - record.attempts),
+            timeRemaining: remainingTime
+        });
     }
-    // If verified, remove OTP from store and return success
+
+    // OTP is valid - remove from store to prevent reuse
     delete otpStore[email];
-    res.status(200).json({ message: 'OTP verified successfully' });
+
+    console.log(`✅ OTP verified successfully for ${email}`);
+
+    res.status(200).json({
+        success: true,
+        message: 'OTP verified successfully',
+        verifiedAt: new Date().toISOString()
+    });
 });
+
+// Optional: Cleanup expired OTPs periodically (prevents memory leaks)
+setInterval(() => {
+    const now = Date.now();
+    Object.keys(otpStore).forEach(email => {
+        if (otpStore[email].expiresAt < now) {
+            delete otpStore[email];
+            console.log(`🧹 Cleaned up expired OTP for ${email}`);
+        }
+    });
+}, 60 * 1000); // Run every minute
+
+module.exports = router;
 
 
 // Usage remains the same as before
@@ -1044,6 +1165,13 @@ router.post("/equipment/bulk", async (req, res) => {
 
 // UPDATE equipment
 router.put('/equipment/:id', getEquipmentById, async (req, res) => {
+    // Track if status changed
+    let statusChanged = false;
+    if (req.body.status != null && req.body.status !== res.equipment.status) {
+        statusChanged = true;
+    }
+
+    // Update equipment fields as before
     if (req.body.name != null) {
         res.equipment.name = req.body.name;
     }
@@ -1092,6 +1220,21 @@ router.put('/equipment/:id', getEquipmentById, async (req, res) => {
 
     try {
         const updatedEquipment = await res.equipment.save();
+
+        // NEW: If status changed, update related PM documents
+        if (statusChanged) {
+            const serialNumber = updatedEquipment.serialnumber;
+
+            if (serialNumber) {
+                const pmUpdateResult = await PM.updateMany(
+                    { serialNumber: serialNumber },
+                    { $set: { status: req.body.status } }
+                );
+
+                console.log(`Updated ${pmUpdateResult.modifiedCount} PM records for serial ${serialNumber} to status ${req.body.status}`);
+            }
+        }
+
         res.json(updatedEquipment);
     } catch (err) {
         res.status(400).json({ message: err.message });
