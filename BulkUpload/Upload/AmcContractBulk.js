@@ -16,16 +16,17 @@ const storage = multer.memoryStorage();
 const upload = multer({
     storage,
     fileFilter: (req, file, cb) => {
-        const ext = file.originalname.toLowerCase().slice(-4);
-        if (
-            file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // .xlsx
-            file.mimetype === 'application/vnd.ms-excel' || // .xls
-            file.mimetype === 'text/csv' || // .csv
-            file.mimetype === 'application/csv' ||
-            ext === '.csv' ||
-            ext === '.xlsx' ||
-            ext === '.xls'
-        ) {
+        const fileName = file.originalname.toLowerCase();
+        const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+        const isCSV = fileName.endsWith('.csv');
+        const validMimeTypes = [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+            'application/vnd.ms-excel', // .xls
+            'text/csv', // .csv
+            'application/csv'
+        ];
+        
+        if (isExcel || isCSV || validMimeTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
             cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
@@ -36,15 +37,21 @@ const upload = multer({
     }
 });
 
-// Optimized: Predefined field mappings for faster access
+// Optimized: Predefined field mappings for faster access - ADDED STATUS FIELD
 const FIELD_MAPPINGS = {
     'salesdoc': new Set(['salesdoc', 'sales_doc', 'salesdocument', 'sales_document', 'document', 'docno', 'doc_no']),
     'startdate': new Set(['startdate', 'start_date', 'begin_date', 'begindate', 'fromdate', 'from_date']),
     'enddate': new Set(['enddate', 'end_date', 'finish_date', 'finishdate', 'todate', 'to_date', 'expiry_date', 'expirydate']),
     'satypeZDRC_ZDRN': new Set(['satype', 'sa_type', 'satypezdrc_zdrn', 'satype_zdrc_zdrn', 'type', 'satypezdrczdrn']),
     'serialnumber': new Set(['serialnumber', 'serial_number', 'serialno', 'serial_no', 'sno']),
-    'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'code', 'item_code', 'product_code'])
+    'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'code', 'item_code', 'product_code']),
+    'status': new Set(['status', 'record_status', 'contract_status', 'amc_status', 'current_status', 'state'])
 };
+
+// Helper function to get file extension
+function getFileExtension(filename) {
+    return filename.toLowerCase().split('.').pop();
+}
 
 // Optimized normalizeFieldName with memoization
 const normalizedFieldCache = new Map();
@@ -164,7 +171,7 @@ function parseCSVFile(buffer) {
         const stream = Readable.from(buffer.toString())
             .pipe(csv({
                 mapValues: ({ value }) => value.trim(),
-                strict: true,
+                strict: false, // Changed from true to handle more CSV variations
                 skipLines: 0,
                 skipEmptyLines: true
             }))
@@ -197,7 +204,7 @@ function createCompositeKey(record) {
     return keyParts.join('|').toLowerCase();
 }
 
-// Optimized record validation with early exits
+// Optimized record validation with early exits - UPDATED WITH STATUS HANDLING
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
     const providedFields = [];
@@ -246,13 +253,13 @@ function validateRecord(record, headerMapping) {
     }
 
     // Length validation
-    if (cleanedRecord.salesdoc.length > 50) {
+    if (cleanedRecord.salesdoc && cleanedRecord.salesdoc.length > 50) {
         errors.push('Sales Doc too long (max 50 characters)');
     }
-    if (cleanedRecord.serialnumber.length > 50) {
+    if (cleanedRecord.serialnumber && cleanedRecord.serialnumber.length > 50) {
         errors.push('Serial Number too long (max 50 characters)');
     }
-    if (cleanedRecord.materialcode.length > 50) {
+    if (cleanedRecord.materialcode && cleanedRecord.materialcode.length > 50) {
         errors.push('Material Code too long (max 50 characters)');
     }
 
@@ -261,13 +268,15 @@ function validateRecord(record, headerMapping) {
         errors.push('Start Date cannot be later than End Date');
     }
 
-    // Default status
-    cleanedRecord.status = 'Active';
+    // Set default status only if not provided in file
+    if (!cleanedRecord.status || cleanedRecord.status.trim() === '') {
+        cleanedRecord.status = 'Active';
+    }
 
     return { cleanedRecord, errors, providedFields };
 }
 
-// Enhanced comparison function for all fields
+// Enhanced comparison function for all fields - UPDATED WITH STATUS FIELD
 function checkForChanges(existingRecord, newRecord, providedFields) {
     let hasAnyChange = false;
     const changeDetails = [];
@@ -295,7 +304,7 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
                 newValue = newDate ? newDate.toLocaleDateString('en-GB') : '';
             }
         } else {
-            // String comparison for non-date fields
+            // String comparison for non-date fields (including status)
             existingValue = existingRecord[field] ? String(existingRecord[field]).trim() : '';
             newValue = newRecord[field] ? String(newRecord[field]).trim() : '';
             isEqual = existingValue === newValue;
@@ -314,12 +323,13 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
     return { hasChanges: hasAnyChange, changeDetails };
 }
 
-// MAIN ROUTE - Complete implementation with composite key handling
+// MAIN ROUTE - Complete implementation with status handling
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     const BATCH_SIZE = 2000; // Reduced for better memory management
     const PARALLEL_BATCHES = 3; // Reduced for stability
+    const BULK_WRITE_BATCH_SIZE = 500; // MongoDB bulk write batch size
 
-    // Initialize response object
+    // Initialize response object - UPDATED WITH STATUS TRACKING
     const response = {
         status: 'processing',
         startTime: new Date(),
@@ -336,7 +346,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             existingRecords: 0,
             skippedTotal: 0,
             noChangesSkipped: 0,
-            invalidDates: 0
+            invalidDates: 0,
+            statusUpdates: {
+                total: 0,
+                byStatus: {}
+            }
         },
         headerMapping: {},
         errors: [],
@@ -363,18 +377,20 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
 
-        // Parse file
+        // Parse file with optimized method selection - FIXED FILE EXTENSION LOGIC
         let jsonData;
         const fileName = req.file.originalname.toLowerCase();
-        const fileExt = fileName.slice(-4);
+        const fileExtension = getFileExtension(fileName);
+
+        console.log(`Processing file: ${fileName}, Extension: ${fileExtension}`);
 
         try {
-            if (fileExt === '.csv') {
+            if (fileExtension === 'csv') {
                 jsonData = await parseCSVFile(req.file.buffer);
-            } else if (fileExt === '.xlsx' || fileExt === '.xls') {
+            } else if (fileExtension === 'xlsx' || fileExtension === 'xls') {
                 jsonData = parseExcelFile(req.file.buffer);
             } else {
-                throw new Error('Unsupported file format');
+                throw new Error(`Unsupported file format: ${fileExtension}. Only CSV, XLS, and XLSX files are supported.`);
             }
         } catch (parseError) {
             response.status = 'failed';
@@ -391,21 +407,33 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         response.totalRecords = jsonData.length;
         response.batchProgress.totalBatches = Math.ceil(jsonData.length / BATCH_SIZE);
 
-        // Map headers
+        // Map headers with optimized method
         const headers = Object.keys(jsonData[0] || {});
         const headerMapping = mapHeaders(headers);
         response.headerMapping = headerMapping;
 
-        // Check for required fields
-        const hasRequiredFields = ['salesdoc', 'serialnumber', 'satypeZDRC_ZDRN', 'materialcode'].every(field => 
-            Object.values(headerMapping).includes(field)
-        );
-        if (!hasRequiredFields) {
+        console.log('Available headers:', headers);
+        console.log('Mapped headers:', headerMapping);
+
+        // Check for required fields with optimized lookup - status is NOT required
+        const requiredSchemaFields = ['salesdoc', 'serialnumber', 'satypeZDRC_ZDRN', 'materialcode'];
+        const mappedSchemaFields = Object.values(headerMapping);
+        const missingFields = requiredSchemaFields.filter(field => !mappedSchemaFields.includes(field));
+
+        if (missingFields.length > 0) {
             response.status = 'failed';
             response.errors.push(
-                `Required headers not found. Available headers: ${headers.join(', ')}`
+                `Required fields not found: ${missingFields.join(', ')}. Available mapped fields: ${mappedSchemaFields.join(', ')}`
             );
             return res.status(400).json(response);
+        }
+
+        // Check if status field is available
+        const hasStatusField = mappedSchemaFields.includes('status');
+        if (hasStatusField) {
+            response.warnings.push('Status field detected in file and will be processed');
+        } else {
+            response.warnings.push('Status field not found in file. Default status "Active" will be assigned to new records');
         }
 
         // Send initial response
@@ -435,13 +463,16 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     status: 'Processing',
                     action: '',
                     error: null,
-                    warnings: []
+                    warnings: [],
+                    assignedStatus: null, // Track assigned status
+                    statusChanged: false // Track if status was changed
                 };
 
                 try {
                     const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
                     recordResult.salesdoc = cleanedRecord.salesdoc || 'Unknown';
                     recordResult.serialnumber = cleanedRecord.serialnumber || 'Unknown';
+                    recordResult.assignedStatus = cleanedRecord.status;
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -505,7 +536,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 });
 
                 // Prepare bulk operations
-                const bulkOps = [];
+                const bulkCreateOps = [];
+                const bulkUpdateOps = [];
                 const now = new Date();
 
                 for (const { cleanedRecord, recordResult, providedFields, compositeKey } of validRecords) {
@@ -513,6 +545,16 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
                     if (existingRecord) {
                         response.summary.existingRecords++;
+
+                        // Handle status for existing records
+                        const statusFromFile = providedFields.includes('status');
+                        if (!statusFromFile) {
+                            // Keep existing status if not provided in file
+                            cleanedRecord.status = existingRecord.status;
+                            recordResult.assignedStatus = existingRecord.status;
+                        } else if (cleanedRecord.status !== existingRecord.status) {
+                            recordResult.statusChanged = true;
+                        }
 
                         const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields);
 
@@ -522,7 +564,12 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                                 updateData[field] = cleanedRecord[field];
                             });
 
-                            bulkOps.push({
+                            // Update status if provided in file
+                            if (statusFromFile) {
+                                updateData.status = cleanedRecord.status;
+                            }
+
+                            bulkUpdateOps.push({
                                 updateOne: {
                                     filter: { _id: existingRecord._id },
                                     update: { $set: updateData }
@@ -539,6 +586,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                             recordResult.changesText = changesList;
                             recordResult.warnings.push(`Changes detected: ${changesList}`);
 
+                            if (recordResult.statusChanged) {
+                                recordResult.warnings.push(`Status changed: ${existingRecord.status} → ${cleanedRecord.status}`);
+                            }
+
                             batchUpdated++;
                         } else {
                             recordResult.status = 'Skipped';
@@ -550,7 +601,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                             batchSkippedNoChanges++;
                         }
                     } else {
-                        bulkOps.push({
+                        bulkCreateOps.push({
                             insertOne: {
                                 document: {
                                     ...cleanedRecord,
@@ -571,34 +622,41 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     batchResults.push(recordResult);
                 }
 
-                // Execute bulk operations if any
-                if (bulkOps.length > 0) {
-                    try {
-                        await AMCContract.bulkWrite(bulkOps, { ordered: false });
-                    } catch (bulkError) {
-                        console.error('Bulk write error:', bulkError);
-                        
-                        // Handle individual bulk errors
-                        if (bulkError.writeErrors) {
-                            bulkError.writeErrors.forEach(error => {
-                                // Find the corresponding record and mark as failed
-                                const errorIndex = error.index;
-                                if (errorIndex < batchResults.length) {
-                                    const failedRecord = batchResults[errorIndex];
-                                    const originalStatus = failedRecord.status;
-                                    
-                                    failedRecord.status = 'Failed';
-                                    failedRecord.action = 'Database operation failed';
-                                    failedRecord.error = error.errmsg || 'Unknown database error';
-                                    
-                                    batchFailed++;
-                                    if (originalStatus === 'Created') batchCreated--;
-                                    if (originalStatus === 'Updated') batchUpdated--;
-                                }
-                            });
+                // Execute bulk operations in smaller chunks
+                const executeBulkWrite = async (operations, operationType) => {
+                    for (let i = 0; i < operations.length; i += BULK_WRITE_BATCH_SIZE) {
+                        const chunk = operations.slice(i, i + BULK_WRITE_BATCH_SIZE);
+                        try {
+                            await AMCContract.bulkWrite(chunk, { ordered: false });
+                        } catch (bulkError) {
+                            console.error(`Bulk ${operationType} error:`, bulkError);
+                            // Handle bulk errors by marking affected records as failed
+                            if (bulkError.writeErrors) {
+                                bulkError.writeErrors.forEach(error => {
+                                    const errorIndex = error.index;
+                                    if (errorIndex < batchResults.length) {
+                                        const failedRecord = batchResults[errorIndex];
+                                        const originalStatus = failedRecord.status;
+                                        
+                                        failedRecord.status = 'Failed';
+                                        failedRecord.action = `Database ${operationType} failed`;
+                                        failedRecord.error = error.errmsg || error.message || 'Unknown database error';
+                                        
+                                        batchFailed++;
+                                        if (originalStatus === 'Created') batchCreated--;
+                                        if (originalStatus === 'Updated') batchUpdated--;
+                                    }
+                                });
+                            }
                         }
                     }
-                }
+                };
+
+                // Execute create and update operations in parallel
+                await Promise.all([
+                    bulkCreateOps.length > 0 ? executeBulkWrite(bulkCreateOps, 'create') : Promise.resolve(),
+                    bulkUpdateOps.length > 0 ? executeBulkWrite(bulkUpdateOps, 'update') : Promise.resolve()
+                ]);
             }
 
             return {
@@ -612,26 +670,21 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             };
         };
 
-        // Process all batches
-        const allBatches = [];
-        for (let batchIndex = 0; batchIndex < response.batchProgress.totalBatches; batchIndex++) {
-            const startIdx = batchIndex * BATCH_SIZE;
-            const endIdx = Math.min(startIdx + BATCH_SIZE, jsonData.length);
-            const batch = jsonData.slice(startIdx, endIdx);
-            allBatches.push({ batch, batchIndex });
-        }
-
-        // Process batches with controlled parallelism
-        for (let i = 0; i < allBatches.length; i += PARALLEL_BATCHES) {
+        // Process all batches with controlled concurrency
+        for (let batchIndex = 0; batchIndex < response.batchProgress.totalBatches; batchIndex += PARALLEL_BATCHES) {
             const batchPromises = [];
             
-            for (let j = 0; j < PARALLEL_BATCHES && (i + j) < allBatches.length; j++) {
-                const { batch, batchIndex } = allBatches[i + j];
+            // Create batch promises for parallel processing
+            for (let j = 0; j < PARALLEL_BATCHES && (batchIndex + j) < response.batchProgress.totalBatches; j++) {
+                const currentBatchIndex = batchIndex + j;
+                const startIdx = currentBatchIndex * BATCH_SIZE;
+                const endIdx = Math.min(startIdx + BATCH_SIZE, jsonData.length);
+                const batch = jsonData.slice(startIdx, endIdx);
                 
-                response.batchProgress.currentBatch = batchIndex + 1;
+                response.batchProgress.currentBatch = currentBatchIndex + 1;
                 response.batchProgress.currentBatchRecords = batch.length;
                 
-                batchPromises.push(processBatch(batch, batchIndex));
+                batchPromises.push(processBatch(batch, currentBatchIndex));
             }
 
             // Wait for current batch group to complete
@@ -649,14 +702,27 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 response.summary.noChangesSkipped += completedBatch.batchSkippedNoChanges;
                 response.summary.invalidDates += completedBatch.batchInvalidDates;
                 response.summary.skippedTotal += completedBatch.batchSkippedDuplicates + completedBatch.batchSkippedNoChanges;
+
+                // Track status updates
+                const statusChanges = completedBatch.batchResults.filter(r => r.statusChanged);
+                response.summary.statusUpdates.total += statusChanges.length;
+                statusChanges.forEach(change => {
+                    const status = change.assignedStatus;
+                    if (!response.summary.statusUpdates.byStatus[status]) {
+                        response.summary.statusUpdates.byStatus[status] = 0;
+                    }
+                    response.summary.statusUpdates.byStatus[status]++;
+                });
+
                 response.results.push(...completedBatch.batchResults);
             }
 
             // Send progress update
             res.write(JSON.stringify({
-                ...response,
+                type: 'batch_completed',
                 batchCompleted: true,
                 batchProgress: response.batchProgress,
+                summary: response.summary,
                 latestProcessedRecords: response.results.slice(-5) // Show last 5 processed records
             }) + '\n');
         }
@@ -673,6 +739,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             `File Duplicates: ${response.summary.duplicatesInFile}, ` +
             `No Changes Skipped: ${response.summary.noChangesSkipped}, ` +
             `Invalid Dates: ${response.summary.invalidDates}, ` +
+            `Status Updates: ${response.summary.statusUpdates.total}, ` +
             `Total Skipped: ${response.summary.skippedTotal}`;
 
         // Final response

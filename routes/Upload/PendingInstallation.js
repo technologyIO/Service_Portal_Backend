@@ -97,41 +97,41 @@ router.get('/pendinginstallations/serialnumbers', async (req, res) => {
 
 // GET PendingInstallation by Serial Number
 router.get('/pendinginstallations/serial/:serialnumber', async (req, res) => {
-  try {
-    const { serialnumber } = req.params;
+    try {
+        const { serialnumber } = req.params;
 
-    // 1) Find pending installation by serial
-    const pending = await PendingInstallation.findOne({ serialnumber }).lean();
-    if (!pending) {
-      return res.status(404).json({ message: 'No Pending Installation found with the provided serial number.' });
+        // 1) Find pending installation by serial
+        const pending = await PendingInstallation.findOne({ serialnumber }).lean();
+        if (!pending) {
+            return res.status(404).json({ message: 'No Pending Installation found with the provided serial number.' });
+        }
+
+        // 2) Prepare lookups (in parallel)
+        const [warrantyCode, aerbRecord, customer] = await Promise.all([
+            pending.mtl_grp4 ? WarrantyCode.findOne({ warrantycodeid: pending.mtl_grp4 }).lean() : null,
+            pending.material ? Aerb.findOne({ materialcode: pending.material }).lean() : null,
+            // 3) Match currentcustomerid -> Customer.customercodeid
+            pending.currentcustomerid
+                ? Customer.findOne({ customercodeid: String(pending.currentcustomerid).trim() }).lean()
+                : null
+        ]);
+
+        // 4) Build response
+        const resp = {
+            ...pending,
+            warrantyMonths: warrantyCode?.months || 0,
+            Customer: customer?.customername || "N/A",
+            City: customer?.city || "N/A",
+            PinCode: customer?.postalcode || "N/A",
+        };
+
+        // Hide palnumber if not in AERB
+        if (!aerbRecord) delete resp.palnumber;
+
+        return res.json(resp);
+    } catch (err) {
+        return res.status(500).json({ message: err.message || 'Server error' });
     }
-
-    // 2) Prepare lookups (in parallel)
-    const [warrantyCode, aerbRecord, customer] = await Promise.all([
-      pending.mtl_grp4 ? WarrantyCode.findOne({ warrantycodeid: pending.mtl_grp4 }).lean() : null,
-      pending.material ? Aerb.findOne({ materialcode: pending.material }).lean() : null,
-      // 3) Match currentcustomerid -> Customer.customercodeid
-      pending.currentcustomerid
-        ? Customer.findOne({ customercodeid: String(pending.currentcustomerid).trim() }).lean()
-        : null
-    ]);
-
-    // 4) Build response
-    const resp = {
-      ...pending,
-      warrantyMonths: warrantyCode?.months || 0,
-      Customer: customer?.customername || "N/A",
-      City: customer?.city || "N/A",
-      PinCode: customer?.postalcode || "N/A",
-    };
-
-    // Hide palnumber if not in AERB
-    if (!aerbRecord) delete resp.palnumber;
-
-    return res.json(resp);
-  } catch (err) {
-    return res.status(500).json({ message: err.message || 'Server error' });
-  }
 });
 
 
@@ -160,9 +160,10 @@ router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, r
             return res.status(404).json({ message: 'No part numbers found in user skills' });
         }
 
-        // 3. Build query for pending installations
+        // 3. Build query for pending installations (exclude inactive)
         let query = {
-            material: { $in: partNumbers }
+            material: { $in: partNumbers },
+            status: { $ne: "Inactive" }  // ✅ exclude inactive
         };
 
         // Add search functionality if search term is provided
@@ -219,6 +220,7 @@ router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, r
         res.status(500).json({ message: err.message });
     }
 });
+
 
 // DELETE PendingInstallation by Serial Number
 router.delete('/pendinginstallations/serial/:serialnumber', async (req, res) => {

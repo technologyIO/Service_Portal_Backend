@@ -11,8 +11,10 @@ const getChecklistHTML = ({
   documentRevNo,
   formatChlNo,
   formatRevNo,
+  // Add new parameters for service engineer details
+  userInfo,
 }) => {
-  const maxRows = 28;
+  const maxRows = 23;
   const displayedItems = checklistItems.slice(0, maxRows);
 
   const itemRows = displayedItems
@@ -44,6 +46,27 @@ const getChecklistHTML = ({
   // Get equipment used serial number and calibration date from the first checklist item
   const equipmentUsedSerial = checklistItems[0]?.equipmentUsedSerial || "";
   const calibrationDueDate = checklistItems[0]?.calibrationDueDate || "";
+
+  // Determine what to show in service engineer section based on usertype (same as certificate)
+  let serviceEngineerSection = "";
+  if (userInfo?.usertype === "skanray") {
+    // For Skanray users, show state names instead of dealer code
+    const stateNamesText = userInfo.stateNames ? userInfo.stateNames.join(", ") : "";
+    serviceEngineerSection = `
+      <span class="install-label">Installed by:</span> <span class="install-data">${userInfo.employeeid || ""}</span><br />
+      <span class="install-label">Engineer:</span> <span class="install-data">${serviceEngineer || ""}</span><br />
+      <span class="install-label"></span> <span class="install-data">Skanray Technologies Limited</span><br />
+      <span class="install-label">States:</span> <span class="install-data">${stateNamesText}</span>
+    `;
+  } else {
+    // For dealer users, show dealer code
+    serviceEngineerSection = `
+      <span class="install-label">Installed by:</span> <span class="install-data">${userInfo?.employeeid || ""}</span><br />
+      <span class="install-label">Engineer:</span> <span class="install-data">${serviceEngineer || ""}</span><br />
+      <span class="install-label"></span> <span class="install-data">${userInfo?.dealerName || ""}</span><br />
+      <span class="install-label">Dealer:</span> <span class="install-data">${userInfo?.dealerCode || ""}</span>
+    `;
+  }
 
   return `
   <!DOCTYPE html>
@@ -110,18 +133,6 @@ const getChecklistHTML = ({
         .logo {
           max-width: 60px;
           padding: 5px;
-        }
-
-        .signature-box {
-          border: 1.5px solid #000;
-          padding-left: 8px;
-          font-size: 13px;
-        }
-
-        .signature-box img {
-          width: 50px;
-          margin-top: -60px;
-          margin-left: 70px;
         }
 
         .section-title {
@@ -202,6 +213,18 @@ const getChecklistHTML = ({
         }
 
         .remarks-data {
+          font-family: Calibri, sans-serif;
+          font-size: 11px;
+        }
+
+        /* Installation by section styling - same as certificate */
+        .install-label {
+          font-family: Arial, sans-serif;
+          font-size: 9.5px;
+          font-weight: bold;
+        }
+
+        .install-data {
           font-family: Calibri, sans-serif;
           font-size: 11px;
         }
@@ -292,11 +315,9 @@ const getChecklistHTML = ({
             </div>
              
             <div class="equipment-used-cell cal-due-label">
-              Cal Due Date:
+              Cal Due Date: ${calibrationDueDate || ""}
             </div>
-            <div class="equipment-used-cell equipment-used-data">
-              ${calibrationDueDate || ""}
-            </div>
+             
           </div>
         </div>
 
@@ -315,19 +336,56 @@ const getChecklistHTML = ({
         <table>
           <tr style="height: 60px;">
             <td class="cell center remarks-label" style="width: 20%;"><strong>Remarks:</strong></td>
-            <td colspan="2" class="cell center remarks-data">${remarkglobal}</td>
+            <td colspan="3" class="cell center remarks-data">${remarkglobal}</td>
           </tr>
+        </table>
+
+        <!-- Signature Section - Same design as certificate -->
+        <table style="font-size: 16px; margin-top: 20px;">
           <tr>
-            <td class="cell center remarks-label" style="width: 20%;"><strong>Service Engineer Name:</strong></td>
-            <td class="cell remarks-data" style="width: 40%;"><strong>${serviceEngineer || ""}</strong></td>
-            <td class="signature-box">
-              <p style="font-weight: bold; margin: 0">Signature valid</p>
-              <div>
+            <td
+              style="
+                border: 1.5px solid #000;
+                padding: 8px;
+                width: 25%;
+                vertical-align: top;
+                font-weight: bold;
+                font-size: 13px;
+              "
+            >
+              ${serviceEngineerSection}
+            </td>
+            <td
+              style="
+                border: 1.5px solid #000;
+                font-weight: bold;
+                padding: 8px;
+                width: 45%;
+                vertical-align: top;
+              "
+            >
+              <span class="install-label">Digitally Authorised by</span> <span class="install-data">${customer?.customername || ""} / ${customer?.hospitalname || ""}</span> <br />
+              <span class="install-label">by providing (OTP sent on</span> <span class="install-data">${date || ""}</span><span class="install-label">) to</span>
+              <strong class="install-data">${customer?.email || ""}</strong> <span class="install-label">and</span>
+              <strong class="install-data">${customer?.telephone || ""}</strong> <span class="install-label">by Skanray</span>
+            </td>
+            <td style="border: 1.5px solid #000; padding: 8px; width: 30%;">
+              <p style="font-weight: bold; margin: 0;">Signature valid</p>
+              <div style="font-size: 12px;">
                 Digitally signed by <br />
                 SKANRAY TECHNOLOGIES LIMITED <br />
                 P1 ${date || ""}
               </div>
-              <img src="https://www.iconpacks.net/icons/2/free-check-icon-3278-thumb.png" alt="Signature Check" />
+              <img
+                src="https://www.iconpacks.net/icons/2/free-check-icon-3278-thumb.png"
+                alt="Signature Check"
+                style="
+                  width: 60px;
+                  height: auto;
+                  margin-top: -70px;
+                  margin-left: 120px;
+                "
+              />
             </td>
           </tr>
         </table>

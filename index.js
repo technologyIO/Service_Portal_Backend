@@ -46,6 +46,7 @@ const AerbBulk = require('./BulkUpload/Master/AerbBulk');
 const ProductBulk = require('./BulkUpload/Master/ProductBulk');
 const ChecklistBulk = require('./BulkUpload/Master/CheckListBulk');
 const AmcContractBulk = require('./BulkUpload/Upload/AmcContractBulk');
+const notificationRoutes = require('./routes/Admin/NotificationSettings');
 const DealerStockBulk = require('./BulkUpload/Upload/DealerStockBulk');
 const pendingInstallationBulk = require('./BulkUpload/Upload/PendingInstallationBulk');
 const HubStockBulk = require('./BulkUpload/Upload/HubStockBulk');
@@ -233,6 +234,7 @@ app.use('/phone/cnote', CNoteRoutes);
 app.use('/phone/oncall-cnote', onCallCNoteRouts);
 app.use('/phone/oncall', OnCallRoutes);
 app.use('/master/pm-doc-master', pmDocMasterRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Bulk Upload 
 

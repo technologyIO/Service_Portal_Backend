@@ -853,7 +853,7 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      let baseFilter = {};
+      let baseFilter = { status: { $ne: "Inactive" } }; // ✅ Always exclude inactive
       let filterInfo = {};
 
       // 2. Check usertype and apply appropriate logic
@@ -869,6 +869,7 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
         const branchNames = user.branch || [];
 
         baseFilter = {
+          ...baseFilter,
           materialcode: { $in: partNumbers },
           salesoffice: { $in: branchNames }
         };
@@ -891,6 +892,7 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
         }
 
         baseFilter = {
+          ...baseFilter,
           dealercode: dealerCode
         };
 
@@ -933,10 +935,11 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
     }
 
     // Default: Return all complaints with pagination if no employeeid provided
-    const totalComplaints = await PendingComplaints.countDocuments({});
+    const baseFilter = { status: { $ne: "Inactive" } }; // ✅ Exclude inactive globally too
+    const totalComplaints = await PendingComplaints.countDocuments(baseFilter);
     const totalPages = Math.ceil(totalComplaints / limit);
 
-    const pendingComplaints = await PendingComplaints.find({})
+    const pendingComplaints = await PendingComplaints.find(baseFilter)
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
@@ -967,6 +970,7 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
 
 
 
+
 // GET /searchpendingcomplaints/:employeeid? - For search functionality
 router.get('/searchpendingcomplaints/:employeeid?', async (req, res) => {
   try {
@@ -987,7 +991,8 @@ router.get('/searchpendingcomplaints/:employeeid?', async (req, res) => {
       });
     }
 
-    let baseFilter = {};
+    // ✅ Always exclude Inactive complaints
+    let baseFilter = { status: { $ne: "Inactive" } };
     let filterInfo = {};
 
     if (employeeid) {
@@ -1010,6 +1015,7 @@ router.get('/searchpendingcomplaints/:employeeid?', async (req, res) => {
 
         // Base filter for skanray user
         baseFilter = {
+          ...baseFilter,
           materialcode: { $in: partNumbers },
           salesoffice: { $in: branchNames }
         };
@@ -1032,6 +1038,7 @@ router.get('/searchpendingcomplaints/:employeeid?', async (req, res) => {
 
         // Base filter for dealer user
         baseFilter = {
+          ...baseFilter,
           dealercode: dealerCode
         };
 
@@ -1043,7 +1050,7 @@ router.get('/searchpendingcomplaints/:employeeid?', async (req, res) => {
       }
     }
 
-    // Add search functionality on top of base filter
+    // Search conditions
     const searchConditions = [
       { materialcode: { $regex: searchQuery, $options: 'i' } },
       { dealercode: { $regex: searchQuery, $options: 'i' } },
@@ -1067,18 +1074,12 @@ router.get('/searchpendingcomplaints/:employeeid?', async (req, res) => {
     ];
 
     // Combine base filter with search conditions
-    if (Object.keys(baseFilter).length > 0) {
-      // If there's a base filter (user-specific), combine with AND condition
-      baseFilter = {
-        $and: [
-          baseFilter,
-          { $or: searchConditions }
-        ]
-      };
-    } else {
-      // If no base filter, use only search conditions
-      baseFilter = { $or: searchConditions };
-    }
+    baseFilter = {
+      $and: [
+        baseFilter, // ✅ ensures inactive excluded
+        { $or: searchConditions }
+      ]
+    };
 
     // Get total count for pagination
     const totalComplaints = await PendingComplaints.countDocuments(baseFilter);
@@ -1121,6 +1122,7 @@ router.get('/searchpendingcomplaints/:employeeid?', async (req, res) => {
     });
   }
 });
+
 
 
 

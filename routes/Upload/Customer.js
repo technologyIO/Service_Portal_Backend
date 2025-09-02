@@ -106,7 +106,8 @@ router.post('/customer/send-email', async (req, res) => {
         taxnumber2,
         email,
         status,
-        customertype
+        customertype,
+        serviceEngineer
     } = req.body;
 
     // Create a nicely formatted HTML email body
@@ -176,8 +177,48 @@ router.post('/customer/send-email', async (req, res) => {
           <td style="padding: 4px; vertical-align: top;"><strong>Status :</strong></td>
           <td style="padding: 4px; vertical-align: top;">${status || ''}</td>
         </tr>
-       
       </table>
+
+      ${serviceEngineer ? `
+      <br/>
+      <h3 style="font-size: 16px; margin-top: 20px; margin-bottom: 10px; color: #333;">Service Engineer Information:</h3>
+      <table style="border-collapse: collapse; width: 100%; font-size: 14px;">
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Engineer ID :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${serviceEngineer.employeeid || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Engineer Name :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${serviceEngineer.firstname || ''} ${serviceEngineer.lastname || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Engineer Email :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${serviceEngineer.email || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Engineer Mobile :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${serviceEngineer.mobilenumber || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Department :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${serviceEngineer.department || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>User Type :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${serviceEngineer.usertype || ''}</td>
+        </tr>
+        ${serviceEngineer.dealerName ? `
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Dealer Name :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${serviceEngineer.dealerName || ''}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px; vertical-align: top;"><strong>Dealer Code :</strong></td>
+          <td style="padding: 4px; vertical-align: top;">${serviceEngineer.dealerCode || ''}</td>
+        </tr>
+        ` : ''}
+      </table>
+      ` : ''}
   
       <br/>
       <p style="font-size: 14px; margin-bottom: 16px;">
@@ -191,10 +232,18 @@ router.post('/customer/send-email', async (req, res) => {
 
 
 
+    // Prepare email recipients
+    let recipients = ['ftshivamtiwari222@gmail.com', 'damodara.s@skanray.com'];
+    
+    // Add service engineer email if available
+    if (serviceEngineer && serviceEngineer.email) {
+        recipients.push(serviceEngineer.email);
+    }
+
     // Email options
     const mailOptions = {
         from: 'webadmin@skanray-access.com',
-        to: 'ftshivamtiwari222@gmail.com',
+        to: recipients.join(', '),
         subject: 'New Customer Creation',
         html: emailContent
     };
@@ -210,7 +259,6 @@ router.post('/customer/send-email', async (req, res) => {
         });
     }
 });
-
 
 router.get('/customer', async (req, res) => {
     try {
@@ -232,6 +280,33 @@ router.get('/customer', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+router.get('/customerphone', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+
+        const skip = (page - 1) * limit;
+
+        // ✅ exclude inactive customers
+        const query = { status: { $ne: "Inactive" } };
+
+        const customers = await Customer.find(query)
+            .skip(skip)
+            .limit(limit);
+
+        const totalCustomers = await Customer.countDocuments(query);
+        const totalPages = Math.ceil(totalCustomers / limit);
+
+        res.json({
+            customers,
+            totalPages,
+            totalCustomers
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 
 // router.get('/customer/by-code/:customercode', getCustomerByCode);
 router.get("/customer/by-code/:customercode", async (req, res) => {
@@ -383,6 +458,7 @@ router.get('/searchcustomer', async (req, res) => {
         const limitInt = Math.max(1, parseInt(limit, 10) || 10);
         const skip = (pageInt - 1) * limitInt;
 
+        // ✅ Base query (no inactive filter now)
         let query = {};
 
         // Build search query only if search term exists
@@ -390,26 +466,24 @@ router.get('/searchcustomer', async (req, res) => {
             // Escape regex meta-characters
             const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-            query = {
-                $or: [
-                    { customercodeid: { $regex: escaped, $options: 'i' } },
-                    { customername: { $regex: escaped, $options: 'i' } },
-                    { hospitalname: { $regex: escaped, $options: 'i' } },
-                    { street: { $regex: escaped, $options: 'i' } },
-                    { city: { $regex: escaped, $options: 'i' } },
-                    { postalcode: { $regex: escaped, $options: 'i' } },
-                    { district: { $regex: escaped, $options: 'i' } },
-                    { state: { $regex: escaped, $options: 'i' } },
-                    { region: { $regex: escaped, $options: 'i' } },
-                    { country: { $regex: escaped, $options: 'i' } },
-                    { telephone: { $regex: escaped, $options: 'i' } },
-                    { taxnumber1: { $regex: escaped, $options: 'i' } },
-                    { taxnumber2: { $regex: escaped, $options: 'i' } },
-                    { email: { $regex: escaped, $options: 'i' } },
-                    { status: { $regex: escaped, $options: 'i' } },
-                    { customertype: { $regex: escaped, $options: 'i' } },
-                ]
-            };
+            query.$or = [
+                { customercodeid: { $regex: escaped, $options: 'i' } },
+                { customername: { $regex: escaped, $options: 'i' } },
+                { hospitalname: { $regex: escaped, $options: 'i' } },
+                { street: { $regex: escaped, $options: 'i' } },
+                { city: { $regex: escaped, $options: 'i' } },
+                { postalcode: { $regex: escaped, $options: 'i' } },
+                { district: { $regex: escaped, $options: 'i' } },
+                { state: { $regex: escaped, $options: 'i' } },
+                { region: { $regex: escaped, $options: 'i' } },
+                { country: { $regex: escaped, $options: 'i' } },
+                { telephone: { $regex: escaped, $options: 'i' } },
+                { taxnumber1: { $regex: escaped, $options: 'i' } },
+                { taxnumber2: { $regex: escaped, $options: 'i' } },
+                { email: { $regex: escaped, $options: 'i' } },
+                { status: { $regex: escaped, $options: 'i' } }, // ✅ can now search by status too
+                { customertype: { $regex: escaped, $options: 'i' } },
+            ];
         }
 
         // Get total count and paginated results
@@ -443,6 +517,76 @@ router.get('/searchcustomer', async (req, res) => {
         });
     }
 });
+
+router.get('/searchcustomerphone', async (req, res) => {
+    try {
+        const { q = '', page = 1, limit = 10 } = req.query;
+        const searchTerm = q.trim();
+
+        // Pagination math
+        const pageInt = Math.max(1, parseInt(page, 10) || 1);
+        const limitInt = Math.max(1, parseInt(limit, 10) || 10);
+        const skip = (pageInt - 1) * limitInt;
+
+        // ✅ Base filter: exclude Inactive
+        let query = { status: { $ne: "Inactive" } };
+
+        // Build search query only if search term exists
+        if (searchTerm) {
+            // Escape regex meta-characters
+            const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+            query.$or = [
+                { customercodeid: { $regex: escaped, $options: 'i' } },
+                { customername: { $regex: escaped, $options: 'i' } },
+                { hospitalname: { $regex: escaped, $options: 'i' } },
+                { street: { $regex: escaped, $options: 'i' } },
+                { city: { $regex: escaped, $options: 'i' } },
+                { postalcode: { $regex: escaped, $options: 'i' } },
+                { district: { $regex: escaped, $options: 'i' } },
+                { state: { $regex: escaped, $options: 'i' } },
+                { region: { $regex: escaped, $options: 'i' } },
+                { country: { $regex: escaped, $options: 'i' } },
+                { telephone: { $regex: escaped, $options: 'i' } },
+                { taxnumber1: { $regex: escaped, $options: 'i' } },
+                { taxnumber2: { $regex: escaped, $options: 'i' } },
+                { email: { $regex: escaped, $options: 'i' } },
+                { customertype: { $regex: escaped, $options: 'i' } },
+            ];
+        }
+
+        // Get total count and paginated results
+        const totalCustomers = await Customer.countDocuments(query);
+        const customers = await Customer.find(query)
+            .skip(skip)
+            .limit(limitInt)
+            .sort({ _id: -1 });
+
+        const totalPages = Math.ceil(totalCustomers / limitInt);
+
+        res.json({
+            customers,
+            totalPages: totalPages || 1,
+            totalCustomers,
+            currentPage: pageInt,
+            hasNextPage: pageInt < totalPages,
+            hasPrevPage: pageInt > 1
+        });
+
+    } catch (err) {
+        console.error('Search customer error:', err);
+        res.status(500).json({
+            message: err.message || 'Internal server error',
+            customers: [],
+            totalPages: 1,
+            totalCustomers: 0,
+            currentPage: 1,
+            hasNextPage: false,
+            hasPrevPage: false
+        });
+    }
+});
+
 
 
 module.exports = router;

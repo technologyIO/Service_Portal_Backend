@@ -1032,8 +1032,6 @@ router.post("/reportAndUpdate", async (req, res) => {
     const htmlParams = {
       reportNo: existingPm.pmNumber || "N/A",
       date: existingPm.pmDoneDate || new Date().toLocaleDateString(),
-      pmType: existingPm.pmType || pmData.pmType || "N/A",
-      city: existingPm.city || pmData.city || "N/A",
       customer: customer,
       machine: {
         partNumber: existingPm.partNumber || pmData.partNumber || "N/A",
@@ -1049,6 +1047,7 @@ router.post("/reportAndUpdate", async (req, res) => {
       documentRevNo: pmData.documentRevNo || "N/A",
       formatChlNo: pmData.formatChlNo || "N/A",
       formatRevNo: pmData.formatRevNo || "N/A",
+      userInfo: userInfo, // Add userInfo parameter for service engineer details
     };
 
 

@@ -44,7 +44,6 @@ module.exports = function getCertificateHTML(data) {
         // Create equipment description with material code below
         const equipmentDescWithCode = `${eq.materialdescription || ""}`;
 
-
         // Create serial number with key in brackets and centered below
         const serialWithKeyBelow = `
   <div style="text-align: center;">
@@ -52,13 +51,6 @@ module.exports = function getCertificateHTML(data) {
     ${keyStr ? `<div style="font-size: 10px; color: #666;">(${keyStr})</div>` : ""}
   </div>
 `;
-
-
-        console.log('Equipment Key Debug:', {
-          originalKey: eq.key,
-          keyStr: keyStr,
-          serialWithKeyBelow: serialWithKeyBelow
-        });
 
         rowsHtml += `
         <tr>
@@ -89,8 +81,6 @@ module.exports = function getCertificateHTML(data) {
     }
     return rowsHtml;
   }
-
-
 
   const equipmentRows = generateEquipmentRows(equipmentList);
 
@@ -124,51 +114,64 @@ module.exports = function getCertificateHTML(data) {
     <style>
       @page {
         size: A4;
-        margin: 0;
+        margin: 5mm;
       }
       body {
         margin: 0;
-        padding: 5;
-        font-family: sans-serif;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        background: white;
       }
       .main-container {
         width: 100%;
-        border: 2px solid rgb(198, 3, 3);
+        height: calc(100vh - 30mm);
+        border: 1px solid rgb(198, 3, 3);
         box-sizing: border-box;
-        margin: 10px auto;
-        padding: 10px;
+        margin: 0 auto;
+        padding: 15px;
+        display: flex;
+        flex-direction: column;
+      }
+      .content-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
       }
       table {
         border-collapse: collapse;
         width: 100%;
-        font-size: 16px;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
+        margin-top:10px;
       }
       h1 {
-        font-size: 28px;
+        font-size: 22px;
         margin: 0;
         padding: 0;
         line-height: 1.2;
+        font-family: Arial, sans-serif;
       }
       .sub-title {
-        font-size: 20px;
+        font-size: 18px;
         line-height: 1.2;
+        font-family: Arial, sans-serif;
       }
       td {
-        border: 1.5px solid #000;
-        padding: 6px;
+        border: 1px solid #000;
+        padding: 4px 6px;
+        vertical-align: top;
       }
       h1, h2, h3, p {
         margin: 0;
         padding: 0;
       }
       .disclaimer-box {
-        border: 1.5px solid #000;
-        padding: 15px;
-        font-size: 19px;
-        line-height: 1.5;
+        border: 1px solid #000;
+        padding: 12px;
+        font-size: 12px;
+        line-height: 1.4;
         font-weight: bold;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
+        font-family: Arial, sans-serif;
       }
       .no-border td {
         border: none !important;
@@ -177,15 +180,17 @@ module.exports = function getCertificateHTML(data) {
         page-break-before: always;
       }
       .warranty-text {
-        font-size: 19px;
-        line-height: 1.5;
-        margin-bottom: 20px;
+        font-size: 14px;
+        line-height: 1.4;
+        margin-bottom: 15px;
+        font-family: Arial, sans-serif;
       }
       ol.warranty-list {
-        font-size: 19px;
-        line-height: 1.5;
-        margin-left: 40px;
-        margin-bottom: 20px;
+        font-size: 14px;
+        line-height: 1.4;
+        margin-left: 30px;
+        margin-bottom: 15px;
+        font-family: Arial, sans-serif;
       }
       
       /* Field Labels - Arial 9.5px */
@@ -206,6 +211,8 @@ module.exports = function getCertificateHTML(data) {
         font-family: Arial, sans-serif;
         font-size: 9.5px;
         font-weight: bold;
+        text-align: center;
+        background-color: #f8f8f8;
       }
 
       /* Installation by section styling */
@@ -219,138 +226,149 @@ module.exports = function getCertificateHTML(data) {
         font-family: Calibri, sans-serif;
         font-size: 11px;
       }
+
+      .header-table {
+        margin-bottom: 15px;
+      }
+
+      .signature-section {
+        margin-top: auto;
+        margin-bottom: 0;
+      }
     </style>
   </head>
   <body>
 
     <!-- PAGE 1 -->
     <div class="main-container">
-      <!-- Header -->
-      <table class="no-border" style="margin-bottom: 0;">
-        <tr>
-          <td style="width: 90px; vertical-align: middle; text-align: left; border: none;">
-            <img
-              src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRXw9vrbn9kBdgshQc4BipXz7u0XR6Zd4hwgg&s"
-              alt="Skanray Logo"
-              style="width: 80px; height: auto; display: block;"
-            />
-          </td>
-          <td style="vertical-align: middle; text-align: left; border: none;">
-             <h1 style="text-align: center; margin-bottom: 15px; font-size: 25px;">
-        Skanray Technologies Limited
-      </h1>
-      <h2 style="text-align: center; margin-bottom: 30px; font-size: 23px;">
-        Installation Report &amp; Warranty Certificate
-      </h2>
-          </td>
-        </tr>
-      </table>
+      <div class="content-area">
+        <!-- Header -->
+        <table class="no-border header-table">
+          <tr>
+            <td style="width: 80px; vertical-align: middle; text-align: left; border: none; padding-right: 15px;">
+              <img
+                src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRXw9vrbn9kBdgshQc4BipXz7u0XR6Zd4hwgg&s"
+                alt="Skanray Logo"
+                style="width: 70px; height: auto; display: block;"
+              />
+            </td>
+            <td style="vertical-align: middle; text-align: center; border: none;">
+              <h1 style="margin-bottom: 8px; font-size:20px;">
+                Skanray Technologies Limited
+              </h1>
+              <h2 class="sub-title font-size:18px;">
+                Installation Report &amp; Warranty Certificate
+              </h2>
+            </td>
+          </tr>
+        </table>
 
-      <!-- First table: Installation/Customer details -->
-      <table>
-        <tr>
-          <td>
-            <span class="field-label">Date of Installation:</span>
-            <span class="field-data">${dateOfInstallation}</span>
-          </td>
-          <td class="field-label">Installation Report #</td>
-          <td class="field-data">${installationreportno}</td>
-        </tr>
-        <tr>
-          <td colspan="3">
-            <span class="field-label">Customer Details:</span> 
-            <span class="field-data">${customerId}</span>
-          </td>
-        </tr>
-        <tr>
-          <td>
-            <span class="field-label">Name :</span>
-            <span class="field-data">${customerName || "NA"}</span>
-          </td>
-          <td class="field-label">Hospital Name:</td>
-          <td class="field-data">${hospitalName || "NA"}</td>
-        </tr>
+        <!-- First table: Installation/Customer details -->
+        <table class="margin-top:10px;">
+          <tr>
+            <td style="width: 40%;">
+              <span class="field-label">Date of Installation:</span>
+              <span class="field-data">${dateOfInstallation}</span>
+            </td>
+            <td class="field-label" style="width: 25%;">Installation Report #</td>
+            <td class="field-data" style="width: 35%;">${installationreportno}</td>
+          </tr>
+          <tr>
+            <td colspan="3">
+              <span class="field-label">Customer Details:</span> 
+              <span class="field-data">${customerId}</span>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <span class="field-label">Name 1:</span>
+              <span class="field-data">${customerName || "NA"}</span>
+            </td>
+            <td class="field-label">Name 2:</td>
+            <td class="field-data">${hospitalName || "NA"}</td>
+          </tr>
+          <tr>
+            <td>
+              <span class="field-label">Address 1:</span> 
+              <span class="field-data">${street}</span>
+            </td>
+            <td class="field-label">Telephone</td>
+            <td class="field-data">${phoneNumber}</td>
+          </tr>
+          <tr>
+            <td class="field-label">Address 2:</td>
+            <td class="field-label">Email:</td>
+            <td class="field-data">${email}</td>
+          </tr>
+          <tr>
+            <td>
+              <span class="field-label">City:</span> 
+              <span class="field-data">${city}</span>
+            </td>
+            <td>
+              <span class="field-label">Pin Code:</span> 
+              <span class="field-data">${postalCode}</span>
+            </td>
+            <td>
+              <span class="field-label">State:</span> 
+              <span class="field-data">${state}</span>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="3" class="field-label">AERB APP No. For X-Ray Equipments only: <span class="field-data">${palnumber}</span></td>
+          </tr>
+        </table>
 
-        <tr>
-          <td>
-            <span class="field-label">Address 1 :</span> 
-            <span class="field-data">${street}</span>
-          </td>
-          <td class="field-label">Telephone</td>
-          <td class="field-data">${phoneNumber}</td>
-        </tr>
-        <tr>
-          <td class="field-label">Address 2 :</td>
-          <td class="field-label">Email :</td>
-          <td class="field-data">${email}</td>
-        </tr>
-        <tr>
-          <td>
-            <span class="field-label">City :</span> 
-            <span class="field-data">${city}</span>
-          </td>
-          <td>
-            <span class="field-label">Pin Code :</span> 
-            <span class="field-data">${postalCode}</span>
-          </td>
-          <td>
-            <span class="field-label">State :</span> 
-            <span class="field-data">${state}</span>
-          </td>
-        </tr>
-         <td colspan="3" class="field-label">AERB APP No.For X-Ray Equipments only: </td>
-      </table>
+        <!-- Second table: Equipment & Warranty -->
+        <table class="margin-top:20px;">
+          <tr>
+            <td class="table-header" style="width: 8%;">S.No.</td>
+            <td colspan="2" class="table-header" style="width: 42%;">Equipment Description</td>
+            <td colspan="2" class="table-header" style="width: 25%;">Serial Number</td>
+            <td colspan="2" class="table-header" style="width: 25%;">Warranty End</td>
+          </tr>
 
-      <!-- Second table: Equipment & Warranty -->
-      <table>
-        <tr>
-          <td style="width: 8%" class="table-header">S.No.</td>
-          <td colspan="2" class="table-header">Equipment Description</td>
-          <td colspan="2" class="table-header">Serial Number</td>
-          <td colspan="2" class="table-header">Warranty End</td>
-        </tr>
+          ${equipmentRows}
 
-        ${equipmentRows}
+          <tr>
+            <td colspan="7" class="table-header" style="padding: 8px 0;">
+              Site Conditions
+            </td>
+          </tr>
+          <tr>
+            <td colspan="7" style="padding: 6px;">
+              <span class="field-label">Any abnormal site conditions:</span> 
+              <span class="field-data">${abnormalCondition}</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="field-label" style="text-align: center;">Supply<br>Voltage(V)</td>
+            <td class="field-label" style="text-align: center;">L-N/R-Y</td>
+            <td class="field-data" style="text-align: center;">${lnry}</td>
+            <td class="field-label" style="text-align: center;">L-G/Y-B</td>
+            <td class="field-data" style="text-align: center;">${lgyb}</td>
+            <td class="field-label" style="text-align: center;">N-G/B-R</td>
+            <td class="field-data" style="text-align: center;">${ngbr}</td>
+          </tr>
+        </table>
 
-        <tr>
-          <td colspan="7" style="text-align: center; font-weight: bold; padding: 10px 0;" class="field-label">
-            Site Conditions
-          </td>
-        </tr>
-        <tr>
-          <td colspan="7" style="padding: 10px 0;">
-            <span class="field-label">Any abnormal site conditions:</span> 
-            <span class="field-data">${abnormalCondition}</span>
-          </td>
-        </tr>
-        <tr>
-          <td class="field-label">Supply Voltage(V)</td>
-          <td class="field-label">L-N/R-Y</td>
-          <td class="field-data">${lnry}</td>
-          <td class="field-label">L-G/Y-B</td>
-          <td class="field-data">${lgyb}</td>
-          <td class="field-label">N-G/B-R</td>
-          <td class="field-data">${ngbr}</td>
-        </tr>
-      </table>
+        <!-- Disclaimer box -->
+        <div class="disclaimer-box  margin-top:20px;">
+          <p style="margin: 0 0 15px;">
+            The above equipment has been installed, trained for usage &amp;
+            maintenance, and handed over to the customer in good working
+            condition.
+          </p>
+          <p style="margin: 0;">
+            Customer shall operate any Radiology equipment(s) only after
+            completion of onsite QA test. Skanray is not liable for any
+            radiation-related hazard arising from operating the unit prior to
+            completion of QA test.
+          </p>
+        </div>
 
-      <!-- Disclaimer box -->
-      <div class="disclaimer-box">
-        <p style="margin: 0 0 15px;">
-          The above equipment has been installed, trained for usage &amp;
-          maintenance, and handed over to the customer in good working
-          condition.
-        </p>
-        <p style="margin: 0;">
-          Customer shall operate any Radiology equipment(s) only after
-          completion of onsite QA test. Skanray is not liable for any
-          radiation-related hazard arising from operating the unit prior to
-          completion of QA test.
-        </p>
-      </div>
-
-      <!-- Signature Section -->
-      <table style="font-size: 16px;">
+        <!-- Signature Section -->
+       <table style="font-size: 16px;margin-top:20px;">
         <tr>
           <td
             style="
@@ -380,7 +398,7 @@ module.exports = function getCertificateHTML(data) {
           </td>
           <td style="border: 1.5px solid #000; padding: 8px; width: 30%;">
             <p style="font-weight: bold; margin: 0;">Signature valid</p>
-            <div style="font-size: 16px;">
+            <div style="font-size: 12px;">
               Digitally signed by <br />
               SKANRAY TECHNOLOGIES LIMITED <br />
               P1 ${dateOfInstallation}
@@ -399,70 +417,73 @@ module.exports = function getCertificateHTML(data) {
         </tr>
       </table>
     </div>
+    </div>
 
     <!-- PAGE 2 -->
     <div class="page-break"></div>
     <div class="main-container">
-      <h1 style="text-align: center; margin-bottom: 15px; font-size: 25px;">
-        Skanray Technologies Limited
-      </h1>
-      <h2 style="text-align: center; margin-bottom: 30px; font-size: 23px;">
-        Installation Report &amp; Warranty Certificate
-      </h2>
+      <div class="content-area">
+        <h1 style="text-align: center; margin-bottom: 10px;">
+          Skanray Technologies Limited
+        </h1>
+        <h2 style="text-align: center; margin-bottom: 20px; font-size: 18px;">
+          Installation Report &amp; Warranty Certificate
+        </h2>
 
-      <p class="warranty-text">
-        Skanray warrants its medical equipment(s) against only manufacturing
-        defects for a period as indicated in this report no (${installationreportno || "N/A"
+        <p class="warranty-text">
+          Skanray warrants its medical equipment(s) against only manufacturing
+          defects for a period as indicated in this report no (${installationreportno || "N/A"
     }) Dated (${dateOfInstallation}).
-      </p>
-      <p class="warranty-text">
-        Warranty for all accessories 6 Months only unless specified otherwise by
-        a separate document from Skanray.
-      </p>
-      <p class="warranty-text">
-        During the warranty period, Skanray will, at its option, either repair
-        or replace the defective components / assemblies free of charge. The
-        defective part shall be promptly packed to Skanray's concerned
-        office/service center in properly sealed packing freight, insurance
-        and forwarding charges. Other claims, partially for compensation, are
-        excluded.
-      </p>
-      <p class="warranty-text">
-        Skanray's standard terms of sale and installation and repairs are
-        carried out by Skanray's Engineer or Authorised Service Franchisee.
-      </p>
-      <p class="warranty-text">
-        The warranty does not cover the following:
-      </p>
-      <ol class="warranty-list">
-        <li>Normal maintenance / misuse / mishandling of the equipment</li>
-        <li>Damage caused due to rough / improper usage of the product</li>
-        <li>Entry of insects, rodents, ants, cockroaches etc.</li>
-        <li>Improper site conditions and installation</li>
-        <li>
-          Damage to the equipment by external agencies (e.g. Accidents,
-          vibrations etc.)
-        </li>
-        <li>The power supply arrangement to the machine</li>
-      </ol>
-      <p class="warranty-text">
-        Battery or similar consumable items are not covered under warranty.
-        Spares are excluded from warranty if damaged due to the above reasons.
-      </p>
-      <p class="warranty-text">
-        Equipment shall not be used for any other purpose than its intended
-        design or nature. This warranty shall not apply to defects resulting
-        from any attempt by any person other than Skanray's personnel or
-        authorised agent to adjust, modify, or repair the product.
-      </p>
-      <p class="warranty-text" style="margin-bottom: 0;">
-        Skanray Technologies Limited<br />
-        # 15-17, Hebbal Industrial Area<br />
-        Mysore - 570 016 | Karnataka | INDIA<br />
-        Phone: +91 821 3988444 Fax: +91 821 2403344<br />
-        E-mail: ciz@skanray.com<br />
-        Toll Free No.: 1800-425-2007
-      </p>
+        </p>
+        <p class="warranty-text">
+          Warranty for all accessories 6 Months only unless specified otherwise by
+          a separate document from Skanray.
+        </p>
+        <p class="warranty-text">
+          During the warranty period, Skanray will, at its option, either repair
+          or replace the defective components / assemblies free of charge. The
+          defective part shall be promptly packed to Skanray's concerned
+          office/service center in properly sealed packing freight, insurance
+          and forwarding charges. Other claims, partially for compensation, are
+          excluded.
+        </p>
+        <p class="warranty-text">
+          Skanray's standard terms of sale and installation and repairs are
+          carried out by Skanray's Engineer or Authorised Service Franchisee.
+        </p>
+        <p class="warranty-text">
+          The warranty does not cover the following:
+        </p>
+        <ol class="warranty-list">
+          <li>Normal maintenance / misuse / mishandling of the equipment</li>
+          <li>Damage caused due to rough / improper usage of the product</li>
+          <li>Entry of insects, rodents, ants, cockroaches etc.</li>
+          <li>Improper site conditions and installation</li>
+          <li>
+            Damage to the equipment by external agencies (e.g. Accidents,
+            vibrations etc.)
+          </li>
+          <li>The power supply arrangement to the machine</li>
+        </ol>
+        <p class="warranty-text">
+          Battery or similar consumable items are not covered under warranty.
+          Spares are excluded from warranty if damaged due to the above reasons.
+        </p>
+        <p class="warranty-text">
+          Equipment shall not be used for any other purpose than its intended
+          design or nature. This warranty shall not apply to defects resulting
+          from any attempt by any person other than Skanray's personnel or
+          authorised agent to adjust, modify, or repair the product.
+        </p>
+        <p class="warranty-text" style="margin-bottom: 0; margin-top: auto;">
+          Skanray Technologies Limited<br />
+          # 15-17, Hebbal Industrial Area<br />
+          Mysore - 570 016 | Karnataka | INDIA<br />
+          Phone: +91 821 3988444 Fax: +91 821 2403344<br />
+          E-mail: ciz@skanray.com<br />
+          Toll Free No.: 1800-425-2007
+        </p>
+      </div>
     </div>
   </body>
 </html>

@@ -18,6 +18,7 @@ const Product = require('../../Model/MasterSchema/ProductSchema');
 const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
 const PM = require('../../Model/UploadSchema/PMSchema');
 const mongoose = require('mongoose');
+const NotificationSettings = require('../../Model/AdminSchema/NotificationSettingsSchema');
 
 
 
@@ -134,6 +135,9 @@ router.get('/allequipment/serialnumbers', async (req, res) => {
         // Exclude empty or null serialnumbers
         conditions.push({ serialnumber: { $ne: "" } });
 
+        // Exclude Inactive equipment
+        conditions.push({ status: { $ne: "Inactive" } });
+
         // Add search condition if provided
         if (search && search.trim()) {
             conditions.push({
@@ -163,6 +167,7 @@ router.get('/allequipment/serialnumbers', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 
 // BULK DELETE Equipment entries - PLACE THIS BEFORE THE /:id ROUTES
@@ -392,24 +397,40 @@ router.post('/abort-installation', async (req, res) => {
 
     const branchDealerDisplay = getBranchOrDealerDisplay();
 
-    // Prepare recipient emails list
-    const emailsToSend = [
-        'shivamt2023@gmail.com',
-        'Damodara.s@skanray.com'
-    ];
+    // Prepare recipient emails list from Notification Settings (Abort Installation Recipients)
+    let emailsToSend = [];
+    try {
+        const settings = await NotificationSettings.findOne();
+        if (settings && Array.isArray(settings.abortInstallationRecipients)) {
+            emailsToSend = settings.abortInstallationRecipients.slice();
+        }
+    } catch (err) {
+        console.error('Failed to fetch notification settings:', err);
+    }
 
     // Add user email if provided
-    if (userEmail && !emailsToSend.includes(userEmail)) {
+    if (userEmail) {
         emailsToSend.push(userEmail);
     }
 
     // Add manager emails from array
     if (Array.isArray(managerEmails) && managerEmails.length > 0) {
-        managerEmails.forEach(email => {
-            if (email && !emailsToSend.includes(email)) {
-                emailsToSend.push(email);
-            }
-        });
+        for (const email of managerEmails) {
+            if (email) emailsToSend.push(email);
+        }
+    }
+
+    // De-duplicate and lightly validate emails
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    emailsToSend = Array.from(new Set(
+        emailsToSend
+            .filter(Boolean)
+            .map((e) => String(e).trim())
+            .filter((e) => emailRegex.test(e))
+    ));
+
+    if (emailsToSend.length === 0) {
+        return res.status(400).send({ error: 'No abort installation recipients configured' });
     }
 
     const mailOptions = {
@@ -760,7 +781,7 @@ setInterval(() => {
     Object.keys(otpStore).forEach(email => {
         if (otpStore[email].expiresAt < now) {
             delete otpStore[email];
-            console.log(`🧹 Cleaned up expired OTP for ${email}`);
+            console.log(`Cleaned up expired OTP for ${email}`);
         }
     });
 }, 60 * 1000); // Run every minute
@@ -902,18 +923,23 @@ router.post("/equipment/bulk", async (req, res) => {
             materialdescription: equipment.materialdescription || "",
             serialnumber: equipment.serialnumber || "",
             custWarrantyenddate: equipment.custWarrantyenddate || "",
-            key: equipment.key || "", // 🔥 Add the key field here
+            key: equipment.key || "",
             materialcode: equipment.materialcode || ""
         }));
 
+        // 🔥 FIX: Extract palnumber from first equipment payload
+        const palnumber = equipmentPayloads[0]?.palnumber || "";
+
         console.log('Enhanced Equipment List with Keys:', enhancedEquipmentList);
+        console.log('Extracted palnumber:', palnumber);
 
         const installationHtml = getCertificateHTML({
             ...pdfData,
-            equipmentList: enhancedEquipmentList, // 🔥 Pass the enhanced list with keys
+            equipmentList: enhancedEquipmentList,
             installationreportno: reportNo,
             abnormalCondition: req.body.abnormalCondition || "",
             voltageData: req.body.voltageData || {},
+            palnumber: palnumber, // 🔥 FIX: Pass the palnumber here
             // Include equipment used and calibration date in the PDF
             equipmentUsedSerial: equipmentPayloads[0]?.equipmentUsedSerial || "",
             calibrationDueDate: equipmentPayloads[0]?.calibrationDueDate || ""
@@ -932,8 +958,13 @@ router.post("/equipment/bulk", async (req, res) => {
         response.currentPhase = 'equipment-processing';
         sendUpdate(response);
 
-        // Array to store all attachments for single email
-        const attachments = [{
+        // 🔥 FIX: Separate attachments for customer and internal emails
+        const customerAttachments = [{
+            filename: `InstallationReport_${reportNo}.pdf`,
+            content: installationBuffer
+        }];
+
+        const internalAttachments = [{
             filename: `InstallationReport_${reportNo}.pdf`,
             content: installationBuffer
         }];
@@ -964,13 +995,10 @@ router.post("/equipment/bulk", async (req, res) => {
                     // Create enhanced checklist data
                     const enhancedChecklist = checklist ? {
                         ...checklist,
-                        // Add equipment used and calibration date to the checklist
                         equipmentUsedSerial: equipment.equipmentUsedSerial || "",
                         calibrationDueDate: equipment.calibrationDueDate || "",
-                        // Ensure these fields are included in the first checklist item
                         checklistResults: checklist.checklistResults?.map((item, index) => ({
                             ...item,
-                            // Only include in first item to avoid duplication
                             ...(index === 0 ? {
                                 equipmentUsedSerial: equipment.equipmentUsedSerial || "",
                                 calibrationDueDate: equipment.calibrationDueDate || ""
@@ -984,30 +1012,24 @@ router.post("/equipment/bulk", async (req, res) => {
                             await FormatMaster.findOne({ productGroup: enhancedChecklist.prodGroup }) :
                             null;
 
-                        // Get document information from checklist payload
                         const documentInfo = enhancedChecklist.documentInfo;
 
-                        // Extract document and format details
                         let documentChlNo = "N/A";
                         let documentRevNo = "N/A";
                         let formatChlNo = "N/A";
                         let formatRevNo = "N/A";
 
-                        // Set format details from FormatMaster (existing logic)
                         if (formatDetails) {
                             formatChlNo = formatDetails.chlNo || "N/A";
                             formatRevNo = formatDetails.revNo || "N/A";
                         }
 
-                        // Override with document info if available
                         if (documentInfo) {
-                            // Use formats from document info if available
                             if (documentInfo.formats && documentInfo.formats.length > 0) {
                                 formatChlNo = documentInfo.formats[0].chlNo || formatChlNo;
                                 formatRevNo = documentInfo.formats[0].revNo || formatRevNo;
                             }
 
-                            // Use documents from document info if available
                             if (documentInfo.documents && documentInfo.documents.length > 0) {
                                 documentChlNo = documentInfo.documents[0].chlNo || "N/A";
                                 documentRevNo = documentInfo.documents[0].revNo || "N/A";
@@ -1031,25 +1053,23 @@ router.post("/equipment/bulk", async (req, res) => {
                                 modelDescription: equipment.materialdescription,
                                 serialNumber,
                                 machineId: "",
-                                // Include equipment used and calibration date in the checklist PDF
                                 equipmentUsed: equipment.equipmentUsedSerial || "",
                                 calibrationDueDate: equipment.calibrationDueDate || ""
                             },
                             remarkglobal: enhancedChecklist.globalRemark || "",
                             checklistItems: enhancedChecklist.checklistResults,
                             serviceEngineer: `${pdfData.userInfo?.firstName || ""} ${pdfData.userInfo?.lastName || ""}`,
-                            // Document information
                             documentChlNo,
                             documentRevNo,
-                            // Format information
                             formatChlNo,
                             formatRevNo,
+                            userInfo: pdfData.userInfo, // Add userInfo parameter for service engineer details
                         });
 
                         const checklistBuffer = await generateSimplePdf(checklistHtml);
                         if (checklistBuffer) {
-                            // Add checklist to attachments array
-                            attachments.push({
+                            // 🔥 FIX: Add checklist only to internal attachments, not customer
+                            internalAttachments.push({
                                 filename: `Checklist_${serialNumber}.pdf`,
                                 content: checklistBuffer
                             });
@@ -1063,7 +1083,7 @@ router.post("/equipment/bulk", async (req, res) => {
                             $set: {
                                 equipmentUsedSerial: equipment.equipmentUsedSerial || "",
                                 calibrationDueDate: equipment.calibrationDueDate || "",
-                                key: equipment.key || "" // Add the key field
+                                key: equipment.key || ""
                             }
                         },
                         { new: true }
@@ -1086,30 +1106,32 @@ router.post("/equipment/bulk", async (req, res) => {
             }
         }
 
-        // Phase 4: Send Single Email with All Attachments
+        // Phase 4: Send Emails with Different Attachments
         response.currentPhase = 'sending-email';
         sendUpdate(response);
 
-        // Create email subject with all serial numbers
         const serialNumbersText = serialNumbers.join(', ');
-        const emailSubject = `Installation Report ${reportNo} - Equipment: ${serialNumbersText}`;
-        const emailText = `Please find attached the installation report and checklists for the following equipment serial numbers: ${serialNumbersText}`;
+        const customerEmailSubject = `Installation Report ${reportNo} - Equipment: ${serialNumbersText}`;
+        const customerEmailText = `Please find attached the installation report for the following equipment serial numbers: ${serialNumbersText}`;
+
+        const internalEmailSubject = `Installation Report ${reportNo} with Checklists - Equipment: ${serialNumbersText}`;
+        const internalEmailText = `Please find attached the installation report and checklists for the following equipment serial numbers: ${serialNumbersText}`;
 
         try {
-            // 1. First send email to customer's email from pdfData
+            // 🔥 FIX: 1. Send ONLY Installation Report to customer's email
             if (pdfData.email) {
                 await transporter.sendMail({
                     from: 'webadmin@skanray-access.com',
                     to: pdfData.email,
-                    subject: emailSubject,
-                    text: emailText,
-                    attachments: attachments,
+                    subject: customerEmailSubject,
+                    text: customerEmailText,
+                    attachments: customerAttachments, // Only installation report
                     disableFileAccess: true,
                     disableUrlAccess: true
                 });
             }
 
-            // 2. Then send email to dealer's email and user's email from userInfo
+            // 🔥 FIX: 2. Send Installation Report + Checklists to internal emails
             if (pdfData.userInfo) {
                 const toEmails = [
                     pdfData.userInfo?.dealerEmail,
@@ -1127,9 +1149,9 @@ router.post("/equipment/bulk", async (req, res) => {
                     await transporter.sendMail({
                         from: 'webadmin@skanray-access.com',
                         to: toEmails,
-                        subject: emailSubject,
-                        text: emailText,
-                        attachments: attachments,
+                        subject: internalEmailSubject,
+                        text: internalEmailText,
+                        attachments: internalAttachments, // Installation report + checklists
                         disableFileAccess: true,
                         disableUrlAccess: true
                     });
@@ -1157,6 +1179,7 @@ router.post("/equipment/bulk", async (req, res) => {
         res.end();
     }
 });
+
 
 
 

@@ -17,16 +17,17 @@ const storage = multer.memoryStorage();
 const upload = multer({
     storage,
     fileFilter: (req, file, cb) => {
-        const ext = file.originalname.toLowerCase().slice(-4);
-        if (
-            file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // .xlsx
-            file.mimetype === 'application/vnd.ms-excel' || // .xls
-            file.mimetype === 'text/csv' || // .csv
-            file.mimetype === 'application/csv' ||
-            ext === '.csv' ||
-            ext === '.xlsx' ||
-            ext === '.xls'
-        ) {
+        const fileName = file.originalname.toLowerCase();
+        const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+        const isCSV = fileName.endsWith('.csv');
+        const validMimeTypes = [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+            'application/vnd.ms-excel', // .xls
+            'text/csv', // .csv
+            'application/csv'
+        ];
+        
+        if (isExcel || isCSV || validMimeTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
             cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
@@ -191,7 +192,7 @@ function parseCSVFile(buffer) {
         const stream = Readable.from(buffer.toString())
             .pipe(csv({
                 mapValues: ({ value }) => value.trim(),
-                strict: true,
+                strict: false,
                 skipLines: 0,
                 skipEmptyLines: true
             }))
@@ -201,6 +202,11 @@ function parseCSVFile(buffer) {
 
         stream.on('error', () => stream.destroy());
     });
+}
+
+// Helper function to get file extension
+function getFileExtension(filename) {
+    return filename.toLowerCase().split('.').pop();
 }
 
 // Optimized record validation with early exits - UPDATED with status handling
@@ -248,10 +254,10 @@ function validateRecord(record, headerMapping) {
     }
 
     // Length validation
-    if (cleanedRecord.invoiceno.length > 50) {
+    if (cleanedRecord.invoiceno && cleanedRecord.invoiceno.length > 50) {
         errors.push('Invoice No too long (max 50 characters)');
     }
-    if (cleanedRecord.serialnumber.length > 50) {
+    if (cleanedRecord.serialnumber && cleanedRecord.serialnumber.length > 50) {
         errors.push('Serial Number too long (max 50 characters)');
     }
 
@@ -338,18 +344,20 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
 
-        // Parse file with optimized method selection
+        // Parse file with optimized method selection - FIXED FILE EXTENSION LOGIC
         let jsonData;
         const fileName = req.file.originalname.toLowerCase();
-        const fileExt = fileName.slice(-4);
+        const fileExtension = getFileExtension(fileName);
+
+        console.log(`Processing file: ${fileName}, Extension: ${fileExtension}`);
 
         try {
-            if (fileExt === '.csv') {
+            if (fileExtension === 'csv') {
                 jsonData = await parseCSVFile(req.file.buffer);
-            } else if (fileExt === '.xlsx' || fileExt === '.xls') {
+            } else if (fileExtension === 'xlsx' || fileExtension === 'xls') {
                 jsonData = parseExcelFile(req.file.buffer);
             } else {
-                throw new Error('Unsupported file format');
+                throw new Error(`Unsupported file format: ${fileExtension}. Only CSV, XLS, and XLSX files are supported.`);
             }
         } catch (parseError) {
             response.status = 'failed';
@@ -371,19 +379,33 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         const headerMapping = mapHeaders(headers);
         response.headerMapping = headerMapping;
 
+        console.log('Available headers:', headers);
+        console.log('Mapped headers:', headerMapping);
+
         // Check for required fields with optimized lookup - status is NOT required
-        const hasRequiredFields = [
+        const requiredSchemaFields = [
             'invoiceno', 'distchnl', 'customerid', 'material',
             'description', 'serialnumber', 'salesdist', 'salesoff',
             'currentcustomerid', 'mtl_grp4'
-        ].every(field => Object.values(headerMapping).includes(field));
+        ];
 
-        if (!hasRequiredFields) {
+        const mappedSchemaFields = Object.values(headerMapping);
+        const missingFields = requiredSchemaFields.filter(field => !mappedSchemaFields.includes(field));
+
+        if (missingFields.length > 0) {
             response.status = 'failed';
             response.errors.push(
-                `Required headers not found. Available headers: ${headers.join(', ')}`
+                `Required fields not found: ${missingFields.join(', ')}. Available mapped fields: ${mappedSchemaFields.join(', ')}`
             );
             return res.status(400).json(response);
+        }
+
+        // Check if status field is available
+        const hasStatusField = mappedSchemaFields.includes('status');
+        if (hasStatusField) {
+            response.warnings.push('Status field detected in file and will be processed');
+        } else {
+            response.warnings.push('Status field not found in file. Default status "Pending" will be assigned to new records');
         }
 
         // Send initial response
@@ -496,8 +518,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                                 updateData[field] = cleanedRecord[field];
                             });
 
-                            // Update status if provided in file but not in providedFields check
-                            if (statusFromFile || cleanedRecord.status !== existingRecord.status) {
+                            // Update status if provided in file
+                            if (statusFromFile) {
                                 updateData.status = cleanedRecord.status;
                             }
 
@@ -555,23 +577,26 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 }
 
                 // Execute bulk operations in smaller chunks
-                const executeBulkWrite = async (operations) => {
+                const executeBulkWrite = async (operations, operationType) => {
                     for (let i = 0; i < operations.length; i += BULK_WRITE_BATCH_SIZE) {
                         const chunk = operations.slice(i, i + BULK_WRITE_BATCH_SIZE);
                         try {
                             await PendingInstallation.bulkWrite(chunk, { ordered: false });
                         } catch (bulkError) {
+                            console.error(`Bulk ${operationType} error:`, bulkError);
                             // Handle bulk errors by marking affected records as failed
                             if (bulkError.writeErrors) {
                                 bulkError.writeErrors.forEach(error => {
-                                    const failedRecord = batchResults.find(r => 
-                                        r.serialnumber === error.op?.serialnumber ||
-                                        r.serialnumber === error.op?.updateOne?.filter?.serialnumber
-                                    );
+                                    const failedRecord = batchResults.find(r => {
+                                        const serialFromOp = error.op?.serialnumber || 
+                                                            error.op?.insertOne?.document?.serialnumber ||
+                                                            error.op?.updateOne?.filter?.serialnumber;
+                                        return r.serialnumber === serialFromOp;
+                                    });
                                     if (failedRecord) {
                                         failedRecord.status = 'Failed';
-                                        failedRecord.action = 'Bulk operation failed';
-                                        failedRecord.error = error.errmsg;
+                                        failedRecord.action = `Bulk ${operationType} failed`;
+                                        failedRecord.error = error.errmsg || error.message;
                                         batchFailed++;
                                         if (failedRecord.status === 'Created') batchCreated--;
                                         if (failedRecord.status === 'Updated') batchUpdated--;
@@ -584,8 +609,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
                 // Execute create and update operations in parallel
                 await Promise.all([
-                    bulkCreateOps.length > 0 ? executeBulkWrite(bulkCreateOps) : Promise.resolve(),
-                    bulkUpdateOps.length > 0 ? executeBulkWrite(bulkUpdateOps) : Promise.resolve()
+                    bulkCreateOps.length > 0 ? executeBulkWrite(bulkCreateOps, 'create') : Promise.resolve(),
+                    bulkUpdateOps.length > 0 ? executeBulkWrite(bulkUpdateOps, 'update') : Promise.resolve()
                 ]);
             }
 
@@ -610,14 +635,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
             // Send progress update
             res.write(JSON.stringify({
-                ...response,
+                type: 'progress',
                 batchProgress: response.batchProgress
             }) + '\n');
 
             // Process batch with controlled parallelism
             if (batchPromises.length >= PARALLEL_BATCHES) {
                 const completedBatch = await Promise.race(batchPromises);
-                batchPromises.splice(batchPromises.indexOf(completedBatch), 1);
+                const completedIndex = batchPromises.indexOf(completedBatch);
+                batchPromises.splice(completedIndex, 1);
 
                 // Update response with completed batch results
                 response.processedRecords += completedBatch.batchResults.length;
@@ -648,7 +674,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 response.results.push(...completedBatch.batchResults);
 
                 res.write(JSON.stringify({
-                    ...response,
+                    type: 'batch_completed',
                     batchCompleted: true,
                     batchSummary: {
                         created: completedBatch.batchCreated,
@@ -657,6 +683,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         skipped: completedBatch.batchSkipped
                     },
                     batchProgress: response.batchProgress,
+                    summary: response.summary,
                     latestRecords: completedBatch.batchResults.slice(-3)
                 }) + '\n');
             }
@@ -665,9 +692,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         }
 
         // Process remaining batches
-        while (batchPromises.length > 0) {
-            const completedBatch = await batchPromises.shift();
-
+        const remainingBatches = await Promise.all(batchPromises);
+        for (const completedBatch of remainingBatches) {
             // Update response with completed batch results
             response.processedRecords += completedBatch.batchResults.length;
             response.successfulRecords += completedBatch.batchCreated + completedBatch.batchUpdated;
@@ -697,7 +723,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             response.results.push(...completedBatch.batchResults);
 
             res.write(JSON.stringify({
-                ...response,
+                type: 'batch_completed',
                 batchCompleted: true,
                 batchSummary: {
                     created: completedBatch.batchCreated,
@@ -705,7 +731,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     failed: completedBatch.batchFailed,
                     skipped: completedBatch.batchSkipped
                 },
-                batchProgress: response.batchProgress,
+                summary: response.summary,
                 latestRecords: completedBatch.batchResults.slice(-3)
             }) + '\n');
         }
