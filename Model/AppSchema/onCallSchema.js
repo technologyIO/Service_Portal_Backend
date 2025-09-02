@@ -31,7 +31,7 @@ const complaintSchema = new mongoose.Schema({
     dealercode: String,
     customercode: String,
     partnerresp: String,
-    breakdown: Boolean,
+    breakdown: String,
     requesteupdate: Boolean,
     rev: Number,
     remark: String,
@@ -106,7 +106,7 @@ const onCallSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
     status: { type: String, default: 'draft' },
-    onCallproposalstatus: { type: String,default: 'Open' },
+    onCallproposalstatus: { type: String, default: 'Open' },
     onCallNumber: { type: String, unique: true },
     proposalRemark: { type: String },
     // Only cnoteNumber field as you need

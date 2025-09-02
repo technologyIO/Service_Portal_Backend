@@ -13,6 +13,8 @@ const getChecklistHTMLPM = ({
   formatRevNo,
   // Add new parameters for service engineer details
   userInfo,
+  // Add new parameters for signature section
+  otp,
 }) => {
   const maxRows = 28;
   const displayedItems = checklistItems.slice(0, maxRows);
@@ -43,70 +45,33 @@ const getChecklistHTMLPM = ({
 
   const checklistRows = itemRows + blankRows;
 
-  // Determine what to show in service engineer section based on usertype
   let serviceEngineerSection = "";
+
   if (userInfo?.usertype === "skanray") {
-    // For Skanray users, show state names instead of dealer code
-    const stateNamesText = userInfo.stateNames ? userInfo.stateNames.join(", ") : "";
+    // ✅ Skanray users → Always show states (ignore branch)
+    const statesArray = Array.isArray(userInfo.state) ? userInfo.state : [];
+    const stateNamesText = statesArray.length > 0 ? statesArray.join(", ") : "N/A";
+
     serviceEngineerSection = `
-      <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
-        <strong>Service Engineer ID:</strong>
-      </td>
-      <td style="width: 40%; border: 1px solid black; padding: 5px; font-size:11px;">
-        <strong>${userInfo.employeeid || ""}</strong>
-      </td>
-      <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
-        <strong>Service Engineer Name:</strong>
-      </td>
-      <td style="width: 20%; border: 1px solid black; padding: 5px; font-size:11px;">
-        <strong>${serviceEngineer || ""}</strong>
-      </td>
-    </tr>
-    <tr>
-      <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
-        <strong>Company:</strong>
-      </td>
-      <td style="width: 40%; border: 1px solid black; padding: 5px; font-size:11px;">
-        <strong>Skanray Technologies Limited</strong>
-      </td>
-      <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
-        <strong>States:</strong>
-      </td>
-      <td style="width: 20%; border: 1px solid black; padding: 5px; font-size:11px;">
-        <strong>${stateNamesText}</strong>
-      </td>
-    `;
+    <div class="install-section">
+      <div><strong>Installed by:</strong> (${userInfo.employeeid || ""})</div>
+      <div>Engineer: ${userInfo.firstname || ""} ${userInfo.lastname || ""} </div>
+      <div>Skanray Technologies Limited</div>
+      <div>States: ${stateNamesText}</div>
+    </div>
+  `;
   } else {
-    // For dealer users, show dealer code
+    // ✅ Dealer users → show dealer info
     serviceEngineerSection = `
-      <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
-        <strong>Service Engineer ID:</strong>
-      </td>
-      <td style="width: 40%; border: 1px solid black; padding: 5px; font-size:11px;">
-        <strong>${userInfo?.employeeid || ""}</strong>
-      </td>
-      <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
-        <strong>Service Engineer Name:</strong>
-      </td>
-      <td style="width: 20%; border: 1px solid black; padding: 5px; font-size:11px;">
-        <strong>${serviceEngineer || ""}</strong>
-      </td>
-    </tr>
-    <tr>
-      <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
-        <strong>Company:</strong>
-      </td>
-      <td style="width: 40%; border: 1px solid black; padding: 5px; font-size:11px;">
-        <strong>${userInfo?.dealerName || ""}</strong>
-      </td>
-      <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; font-size:11px;">
-        <strong>Dealer Code:</strong>
-      </td>
-      <td style="width: 20%; border: 1px solid black; padding: 5px; font-size:11px;">
-        <strong>${userInfo?.dealerCode || ""}</strong>
-      </td>
-    `;
+    <div class="install-section">
+      <div><strong>Installed by:</strong></div>
+      <div>Engineer: ${userInfo.firstname || ""} ${userInfo.lastname || ""} (${userInfo.employeeid || ""})</div>
+      <div>Dealer: ${userInfo.dealerName || "N/A"} (${userInfo.dealerCode || "N/A"})</div>
+    </div>
+  `;
   }
+
+
 
   return `
     <!DOCTYPE html>
@@ -156,6 +121,16 @@ const getChecklistHTMLPM = ({
             font-weight: bold;
           }
           .field-data {
+            font-family: Calibri, sans-serif;
+            font-size: 11px;
+          }
+          /* Installation by section styling */
+          .install-label {
+            font-family: Arial, sans-serif;
+            font-size: 9.5px;
+            font-weight: bold;
+          }
+          .install-data {
             font-family: Calibri, sans-serif;
             font-size: 11px;
           }
@@ -251,26 +226,50 @@ const getChecklistHTMLPM = ({
             ${checklistRows}
           </table>
 
-          <!-- Bottom Remarks & Signature -->
-          <table style="width: 100%; border-collapse: collapse; border: 1px solid black;">
-            <tr style="height: 100px;">
-              <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center;">
+          <!-- Bottom Remarks Section (moved up) -->
+          <table style="width: 100%; border-collapse: collapse; border: 1px solid black; margin-top: 10px;">
+            <tr style="height: 80px;">
+              <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center; vertical-align: top;">
                 <strong>Remarks:</strong>
               </td>
-              <td colspan="3" style="border: 1px solid black; text-align: center;">
-                ${remarkglobal}
+              <td colspan="3" style="border: 1px solid black; padding: 5px; vertical-align: top;">
+                ${remarkglobal || ""}
               </td>
             </tr>
+          </table>
+
+          <!-- New Signature Section -->
+          <table style="font-size: 16px; margin-top: 15px; width: 100%; border-collapse: collapse;">
             <tr>
-              ${serviceEngineerSection}
-            </tr>
-            <tr>
-              <td style="width: 20%; border: 1px solid black; padding: 5px; text-align: center;">
-                <strong>Signature:</strong>
+              <td
+                style="
+                  border: 1.5px solid #000;
+                  padding: 8px;
+                  width: 25%;
+                  vertical-align: top;
+                  font-weight: bold;
+                  font-size: 13px;
+                "
+              >
+                ${serviceEngineerSection}
               </td>
-              <td colspan="3" style="border: 1.5px solid #000; padding: 0px 0px 0px 8px; width: 30%">
-                <p style="font-weight: bold; margin: 0">Signature valid</p>
-                <div style="font-size: 9px">
+              <td
+                style="
+                  border: 1.5px solid #000;
+                  font-weight: bold;
+                  padding: 8px;
+                  width: 45%;
+                  vertical-align: top;
+                "
+              >
+                <span class="install-label">Digitally Authorised by</span> <span class="install-data">${customer?.customername || "NA"} / ${customer?.hospitalname || "NA"}</span> <br />
+                <span class="install-label">by providing (OTP</span> <span class="install-data">${otp || ""}</span> <span class="install-label">sent on</span> <span class="install-data">${date || ""}</span><span class="install-label">) to</span>
+                <strong class="install-data">${customer?.email || ""}</strong> <span class="install-label">and</span>
+                <strong class="install-data">${customer?.telephone || ""}</strong> <span class="install-label">by Skanray</span>
+              </td>
+              <td style="border: 1.5px solid #000; padding: 8px; width: 30%;">
+                <p style="font-weight: bold; margin: 0;">Signature valid</p>
+                <div style="font-size: 12px;">
                   Digitally signed by <br />
                   SKANRAY TECHNOLOGIES LIMITED <br />
                   P1 ${date || ""}
@@ -279,9 +278,10 @@ const getChecklistHTMLPM = ({
                   src="https://www.iconpacks.net/icons/2/free-check-icon-3278-thumb.png"
                   alt="Signature Check"
                   style="
-                    width: 50px;
-                    margin-top: -80px;
-                    margin-left: 100px;
+                    width: 60px;
+                    height: auto;
+                    margin-top: -70px;
+                    margin-left: 120px;
                   "
                 />
               </td>

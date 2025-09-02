@@ -1603,6 +1603,65 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       return `${day}-${month}-${year}`;
     }
 
+    // Build "Installed by" section like certificate template for Service Engineer email
+    let installedBySection = "";
+    const stateNamesText = Array.isArray(userInfo?.stateNames)
+      ? userInfo.stateNames.join(", ")
+      : Array.isArray(userInfo?.branch)
+        ? userInfo.branch.join(", ")
+        : "";
+
+    if (userInfo?.usertype === "skanray") {
+      installedBySection = `
+        <div style="font-size: 14px; line-height: 1.6;">
+          <span class="install-label">Installed by:</span> <span class="install-data">${userInfo?.employeeid || "N/A"}</span><br />
+          <span class="install-label">Engineer:</span> <span class="install-data">${userInfo?.firstName || ""} ${userInfo?.lastName || ""}</span><br />
+          <span class="install-label"></span> <span class="install-data">Skanray Technologies Limited</span><br />
+          <span class="install-label">States:</span> <span class="install-data">${stateNamesText}</span>
+        </div>
+      `;
+    } else {
+      installedBySection = `
+        <div style="font-size: 14px; line-height: 1.6;">
+          <span class="install-label">Installed by:</span> <span class="install-data">${userInfo?.employeeid || "N/A"}</span><br />
+          <span class="install-label">Engineer:</span> <span class="install-data">${userInfo?.firstName || ""} ${userInfo?.lastName || ""}</span><br />
+          <span class="install-label"></span> <span class="install-data">${userInfo?.dealerName || ""}</span><br />
+          <span class="install-label">Dealer:</span> <span class="install-data">${userInfo?.dealerCode || ""}</span>
+        </div>
+      `;
+    }
+    // Add this function after the installedBySection generation
+    function generateEngineerSectionForPDF(userInfo) {
+      const firstName = userInfo?.firstName || "";
+      const lastName = userInfo?.lastName || "";
+      const employeeId = userInfo?.employeeid || userInfo?.employeeId || "";
+      const dealerCode = userInfo?.dealerCode || "";
+      const dealerName = userInfo?.dealerName || "";
+
+      if (userInfo?.usertype === "skanray") {
+        // For Skanray users, show state names instead of dealer code
+        const stateNamesText = Array.isArray(userInfo?.stateNames)
+          ? userInfo.stateNames.join(", ")
+          : Array.isArray(userInfo?.branch)
+            ? userInfo.branch.join(", ")
+            : "";
+        return `
+      <span style="font-weight: bold; font-size: 8px;">Installed by:</span> <span style="font-size: 8px;">${employeeId}</span><br />
+      <span style="font-weight: bold; font-size: 8px;">Engineer:</span> <span style="font-size: 8px;">${firstName} ${lastName}</span><br />
+      <span style="font-size: 8px;">Skanray Technologies Limited</span><br />
+      <span style="font-weight: bold; font-size: 8px;">States:</span> <span style="font-size: 8px;">${stateNamesText}</span>
+    `;
+      } else {
+        // For dealer users, show dealer code (existing logic)
+        return `
+      <span style="font-weight: bold; font-size: 8px;">Installed by:</span> <span style="font-size: 8px;">${employeeId}</span><br />
+      <span style="font-weight: bold; font-size: 8px;">Engineer:</span> <span style="font-size: 8px;">${firstName} ${lastName}</span><br />
+      <span style="font-size: 8px;">${dealerName}</span><br />
+      <span style="font-weight: bold; font-size: 8px;">Dealer:</span> <span style="font-size: 8px;">${dealerCode}</span>
+    `;
+      }
+    }
+
     // 4) Build the Service Engineers Email Template (First Image Design)
     const serviceEngineersEmailHTML = `
       <html>
@@ -1712,17 +1771,9 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
             
             ${sparesDisplayHTML}
             
-            <div class="field">
-              ${engineerTitle} : <span style="background-color: #00ff00; padding: 0px 2px;">${userInfo?.firstName || ''} ${userInfo?.lastName || ''}</span>
-            </div>
-            
-            <div class="field">
-              ${engineerTitle} Mobile : ${userInfo?.mobilenumber || 'N/A'}
-            </div>
-            
-            <div class="field">
-              ${engineerTitle} Email : ${userInfo?.email || 'N/A'}
-            </div>
+            <div class="field" style="margin-top: 10px;">${installedBySection}</div>
+            <div class="field">${engineerTitle} Mobile : ${userInfo?.mobilenumber || 'N/A'}</div>
+            <div class="field">${engineerTitle} Email : ${userInfo?.email || 'N/A'}</div>
           </div>
           
           <div class="vendor-section">
@@ -2034,11 +2085,8 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       <table>
         <tr class="compact-row">
           <td style="width: 50%;">
-            <strong>${engineerTitle} Name:</strong><br/>
-            ${userInfo?.firstName || "N/A"} ${userInfo?.lastName || ""}
-            <br/>
-            ${userInfo?.location || ""}
-          </td>
+      ${generateEngineerSectionForPDF(userInfo)}
+    </td>
           <td style="width: 50%;">
             <strong>Specific actions required from customer:</strong><br/>
             ${instructionToCustomer || "N/A"}

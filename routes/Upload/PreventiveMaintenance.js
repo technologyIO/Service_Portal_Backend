@@ -830,68 +830,139 @@ router.post("/otp/send", async (req, res) => {
     if (!customerCode) {
       return res.status(400).json({ message: "Customer code is required" });
     }
+
     const customer = await Customer.findOne({ customercodeid: customerCode });
     if (!customer) {
       return res.status(404).json({
         message: "Customer not found for the given customer code"
       });
     }
+
     const email = customer.email;
     if (!email) {
       return res
         .status(404)
         .json({ message: "No email found for this customer" });
     }
+
     // 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    // Store in memory or DB
+
+    // Store in memory with expiration (5 minutes = 300000 milliseconds)
     global.otpStore = global.otpStore || {};
-    global.otpStore[customerCode] = { otp, timestamp: Date.now() };
+    global.otpStore[customerCode] = {
+      otp,
+      timestamp: Date.now(),
+      expiresAt: Date.now() + (5 * 60 * 1000) // 5 minutes from now
+    };
+
     // Send via nodemailer
     await transporter.sendMail({
       from: "webadmin@skanray-access.com",
       to: email,
-      subject: "Your OTP Code",
-      text: `Your OTP code is ${otp}`
+      subject: "Your OTP Code - Valid for 5 Minutes",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">OTP Verification</h2>
+          <p>Your OTP code is:</p>
+          <div style="background-color: #f0f0f0; padding: 20px; text-align: center; margin: 20px 0;">
+            <span style="font-size: 32px; font-weight: bold; color: #007bff; letter-spacing: 8px;">${otp}</span>
+          </div>
+          <p style="color: #dc3545; font-weight: bold;">⚠️ This OTP will expire in 5 minutes.</p>
+          <p style="color: #666; font-size: 14px;">If you didn't request this OTP, please ignore this email.</p>
+        </div>
+      `
     });
-    res.json({ message: "OTP sent successfully to " + email });
+
+    res.json({
+      message: "OTP sent successfully to " + email,
+      expiresIn: "5 minutes"
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
+
 router.post("/otp/verify", async (req, res) => {
   try {
     const { customerCode, otp } = req.body;
+
     if (!customerCode || !otp) {
-      return res
-        .status(400)
-        .json({ message: "Customer code and OTP are required" });
+      return res.status(400).json({
+        message: "Customer code and OTP are required"
+      });
     }
+
+    // Initialize OTP store if it doesn't exist
     global.otpStore = global.otpStore || {};
     const record = global.otpStore[customerCode];
+
+    // Check if OTP record exists
     if (!record) {
-      return res
-        .status(400)
-        .json({ message: "OTP not requested for this customer" });
+      return res.status(400).json({
+        message: "No OTP found for this customer. Please request a new OTP."
+      });
     }
+
+    // Check if OTP has expired (5 minutes = 300000 milliseconds)
+    const currentTime = Date.now();
+    const otpAge = currentTime - record.timestamp;
+    const EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+    if (otpAge > EXPIRY_TIME) {
+      // Remove expired OTP from store
+      delete global.otpStore[customerCode];
+
+      // Calculate how long ago it expired
+      const expiredMinutes = Math.floor((otpAge - EXPIRY_TIME) / (60 * 1000));
+      const expiredSeconds = Math.floor(((otpAge - EXPIRY_TIME) % (60 * 1000)) / 1000);
+
+      return res.status(400).json({
+        message: `OTP has expired ${expiredMinutes > 0 ? expiredMinutes + ' minutes and ' : ''}${expiredSeconds} seconds ago. Please request a new OTP.`
+      });
+    }
+
+    // Check if OTP matches
     if (record.otp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
+      return res.status(400).json({
+        message: "Invalid OTP. Please check and try again."
+      });
     }
-    // Remove from store
+
+    // Remove from store after successful verification (one-time use)
     delete global.otpStore[customerCode];
-    // Double-check the customer
+
+    // Double-check the customer exists
     const customer = await Customer.findOne({ customercodeid: customerCode });
     if (!customer || !customer.email) {
-      return res
-        .status(404)
-        .json({ message: "Customer or customer email not found" });
+      return res.status(404).json({
+        message: "Customer or customer email not found"
+      });
     }
-    res.json({ message: "OTP verified successfully" });
+
+    // Calculate remaining time for logging purposes
+    const remainingTime = EXPIRY_TIME - otpAge;
+    const remainingMinutes = Math.floor(remainingTime / (60 * 1000));
+    const remainingSeconds = Math.floor((remainingTime % (60 * 1000)) / 1000);
+
+    console.log(`OTP verified for customer ${customerCode} with ${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')} remaining`);
+
+    res.json({
+      message: "OTP verified successfully",
+      customerCode: customerCode,
+      verifiedAt: new Date().toISOString(),
+      customerEmail: customer.email
+    });
+
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("OTP verification error:", err);
+    res.status(500).json({
+      message: "Internal server error during OTP verification"
+    });
   }
 });
+
 
 // ==========================
 // (B) ONE-BY-ONE PM Processing Route

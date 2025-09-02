@@ -76,7 +76,7 @@ const OnCallCNoteSchema = new mongoose.Schema({
         dealercode: String,
         customercode: String,
         partnerresp: String,
-        breakdown: Boolean,
+        breakdown: String,
         requesteupdate: Boolean,
         rev: Number,
         remark: String,
