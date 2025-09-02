@@ -132,6 +132,10 @@ router.get('/pms/filter', async (req, res) => {
       limit = 10,
       dateFrom,
       dateTo,
+      dueFrom,
+      dueTo,
+      doneFrom,
+      doneTo,
       pmStatus,
       region
     } = req.query;
@@ -158,6 +162,19 @@ router.get('/pms/filter', async (req, res) => {
             },
             else: null
           }
+        },
+        pmDueDateConverted: {
+          $cond: {
+            if: { $and: [{ $ne: ["$pmDueMonth", null] }, { $ne: ["$pmDueMonth", ""] }] },
+            then: {
+              $dateFromString: {
+                dateString: { $concat: ["01/", "$pmDueMonth"] }, // Convert MM/YYYY to DD/MM/YYYY
+                format: "%d/%m/%Y",
+                onError: null
+              }
+            },
+            else: null
+          }
         }
       }
     });
@@ -165,8 +182,39 @@ router.get('/pms/filter', async (req, res) => {
     // Stage 2: Build match conditions
     const matchConditions = {};
 
-    // Date range filter
+    // Creation Date range filter
     if (dateFrom || dateTo) {
+      matchConditions.createdAt = {};
+      if (dateFrom) {
+        const startDate = new Date(dateFrom);
+        startDate.setHours(0, 0, 0, 0);
+        matchConditions.createdAt.$gte = startDate;
+      }
+      if (dateTo) {
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        matchConditions.createdAt.$lte = endDate;
+      }
+    }
+
+    // PM Due Date range filter
+    if (dueFrom || dueTo) {
+      matchConditions.pmDueDateConverted = {};
+      if (dueFrom) {
+        const startDate = new Date(dueFrom);
+        startDate.setHours(0, 0, 0, 0);
+        matchConditions.pmDueDateConverted.$gte = startDate;
+      }
+      if (dueTo) {
+        const endDate = new Date(dueTo);
+        endDate.setHours(23, 59, 59, 999);
+        matchConditions.pmDueDateConverted.$lte = endDate;
+      }
+    }
+
+
+    // PM Done Date range filter
+    if (doneFrom || doneTo) {
       matchConditions.pmDoneDateConverted = {};
       if (dateFrom) {
         const startDate = new Date(dateFrom);
