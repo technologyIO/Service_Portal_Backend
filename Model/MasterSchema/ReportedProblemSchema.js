@@ -31,7 +31,10 @@ const ReportedProblemSchema = new mongoose.Schema({
     },
     status: {
         type: String,
+        default: 'Active'
     }
 });
+
+ 
 
 module.exports = mongoose.model('ReportedProblem', ReportedProblemSchema);

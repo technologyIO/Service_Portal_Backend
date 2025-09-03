@@ -10,6 +10,15 @@ const BranchSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    district: {
+        type: String
+    },
+    region: {
+        type: String
+    },
+    country: {
+        type: String
+    },
     status: {
         type: String,
         default: "Active"
