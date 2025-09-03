@@ -1,40 +1,39 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const PM = require('../../Model/UploadSchema/PMSchema'); // Adjust path based on your folder structure
-const Product = require('../../Model/MasterSchema/ProductSchema');
-const User = require('../../Model/MasterSchema/UserSchema');
-const CheckList = require('../../Model/CollectionSchema/ChecklistSchema');
-const Branch = require('../../Model/CollectionSchema/BranchSchema');
-const State = require('../../Model/CollectionSchema/StateSchema');
-const nodemailer = require('nodemailer');
-const Customer = require('../../Model/UploadSchema/CustomerSchema');
-const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
-const pdf = require('html-pdf');
+const PM = require("../../Model/UploadSchema/PMSchema"); // Adjust path based on your folder structure
+const Product = require("../../Model/MasterSchema/ProductSchema");
+const User = require("../../Model/MasterSchema/UserSchema");
+const CheckList = require("../../Model/CollectionSchema/ChecklistSchema");
+const Branch = require("../../Model/CollectionSchema/BranchSchema");
+const State = require("../../Model/CollectionSchema/StateSchema");
+const nodemailer = require("nodemailer");
+const Customer = require("../../Model/UploadSchema/CustomerSchema");
+const PMDocMaster = require("../../Model/MasterSchema/pmDocMasterSchema");
+const pdf = require("html-pdf");
 const { getChecklistHTMLPM } = require("./checklistTemplatepm"); // DO NOT change its design
 const FormatMaster = require("../../Model/MasterSchema/FormatMasterSchema");
 
-const mongoose = require('mongoose');
-
+const mongoose = require("mongoose");
 
 const pdfStore = {};
 const otpStore = {};
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  service: "gmail",
   auth: {
-    user: 'webadmin@skanray-access.com',
-    pass: 'rdzegwmzirvbjcpm'
-  }
+    user: "webadmin@skanray-access.com",
+    pass: "rdzegwmzirvbjcpm",
+  },
 });
-router.get('/pms/search', async (req, res) => {
+router.get("/pms/search", async (req, res) => {
   try {
     const {
-      q = '',
+      q = "",
       page = 1,
       limit = 10,
       pmType,
       region,
       city,
-      pmStatus
+      pmStatus,
     } = req.query;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -43,18 +42,18 @@ router.get('/pms/search', async (req, res) => {
     // General search in multiple fields
     if (q && q.trim()) {
       searchQuery.$or = [
-        { pmNumber: new RegExp(q, 'i') },
-        { serialNumber: new RegExp(q, 'i') },
-        { materialDescription: new RegExp(q, 'i') },
-        { customerCode: new RegExp(q, 'i') },
-        { pmVendorCode: new RegExp(q, 'i') },
-        { pmEngineerCode: new RegExp(q, 'i') },
-        { partNumber: new RegExp(q, 'i') },
-        { documentnumber: new RegExp(q, 'i') },
-        { region: new RegExp(q, 'i') },      // Add region to search
-        { city: new RegExp(q, 'i') },        // Add city to search
-        { pmType: new RegExp(q, 'i') },      // Add pmType to search
-        { pmStatus: new RegExp(q, 'i') }     // Add pmStatus to search
+        { pmNumber: new RegExp(q, "i") },
+        { serialNumber: new RegExp(q, "i") },
+        { materialDescription: new RegExp(q, "i") },
+        { customerCode: new RegExp(q, "i") },
+        { pmVendorCode: new RegExp(q, "i") },
+        { pmEngineerCode: new RegExp(q, "i") },
+        { partNumber: new RegExp(q, "i") },
+        { documentnumber: new RegExp(q, "i") },
+        { region: new RegExp(q, "i") }, // Add region to search
+        { city: new RegExp(q, "i") }, // Add city to search
+        { pmType: new RegExp(q, "i") }, // Add pmType to search
+        { pmStatus: new RegExp(q, "i") }, // Add pmStatus to search
       ];
     }
 
@@ -71,7 +70,7 @@ router.get('/pms/search', async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit)),
-      PM.countDocuments(searchQuery)
+      PM.countDocuments(searchQuery),
     ]);
 
     const totalPages = Math.ceil(totalCount / limit);
@@ -83,15 +82,14 @@ router.get('/pms/search', async (req, res) => {
       totalPms: totalCount,
       currentPage: parseInt(page),
       hasNext: parseInt(page) < totalPages,
-      hasPrev: parseInt(page) > 1
+      hasPrev: parseInt(page) > 1,
     });
-
   } catch (error) {
-    console.error('Search error:', error);
+    console.error("Search error:", error);
     res.status(500).json({
       success: false,
-      message: 'Search failed',
-      error: error.message
+      message: "Search failed",
+      error: error.message,
     });
   }
 });
@@ -102,7 +100,7 @@ async function getPMById(req, res, next) {
   try {
     pm = await PM.findById(req.params.id);
     if (!pm) {
-      return res.status(404).json({ message: 'PM record not found' });
+      return res.status(404).json({ message: "PM record not found" });
     }
   } catch (err) {
     return res.status(500).json({ message: err.message });
@@ -117,7 +115,7 @@ async function checkDuplicatePMNumber(req, res, next) {
   try {
     pm = await PM.findOne({ pmNumber: req.body.pmNumber });
     if (pm && pm._id.toString() !== req.params.id) {
-      return res.status(400).json({ message: 'Duplicate PM number found' });
+      return res.status(400).json({ message: "Duplicate PM number found" });
     }
   } catch (err) {
     return res.status(500).json({ message: err.message });
@@ -125,7 +123,7 @@ async function checkDuplicatePMNumber(req, res, next) {
   next();
 }
 
-router.get('/pms/filter', async (req, res) => {
+router.get("/pms/filter", async (req, res) => {
   try {
     const {
       page = 1,
@@ -137,7 +135,8 @@ router.get('/pms/filter', async (req, res) => {
       doneFrom,
       doneTo,
       pmStatus,
-      region
+      region,
+      searchQuery,
     } = req.query;
 
     const pageNumber = parseInt(page);
@@ -152,31 +151,41 @@ router.get('/pms/filter', async (req, res) => {
       $addFields: {
         pmDoneDateConverted: {
           $cond: {
-            if: { $and: [{ $ne: ["$pmDoneDate", null] }, { $ne: ["$pmDoneDate", ""] }] },
+            if: {
+              $and: [
+                { $ne: ["$pmDoneDate", null] },
+                { $ne: ["$pmDoneDate", ""] },
+              ],
+            },
             then: {
               $dateFromString: {
                 dateString: "$pmDoneDate",
                 format: "%d/%m/%Y",
-                onError: null
-              }
+                onError: null,
+              },
             },
-            else: null
-          }
+            else: null,
+          },
         },
         pmDueDateConverted: {
           $cond: {
-            if: { $and: [{ $ne: ["$pmDueMonth", null] }, { $ne: ["$pmDueMonth", ""] }] },
+            if: {
+              $and: [
+                { $ne: ["$pmDueMonth", null] },
+                { $ne: ["$pmDueMonth", ""] },
+              ],
+            },
             then: {
               $dateFromString: {
                 dateString: { $concat: ["01/", "$pmDueMonth"] }, // Convert MM/YYYY to DD/MM/YYYY
                 format: "%d/%m/%Y",
-                onError: null
-              }
+                onError: null,
+              },
             },
-            else: null
-          }
-        }
-      }
+            else: null,
+          },
+        },
+      },
     });
 
     // Stage 2: Build match conditions
@@ -212,7 +221,6 @@ router.get('/pms/filter', async (req, res) => {
       }
     }
 
-
     // PM Done Date range filter
     if (doneFrom || doneTo) {
       matchConditions.pmDoneDateConverted = {};
@@ -229,13 +237,30 @@ router.get('/pms/filter', async (req, res) => {
     }
 
     // Status filter
-    if (pmStatus && pmStatus !== 'all') {
-      matchConditions.pmStatus = { $regex: pmStatus, $options: 'i' };
+    if (pmStatus && pmStatus !== "all") {
+      matchConditions.pmStatus = { $regex: pmStatus, $options: "i" };
     }
 
     // Region filter
-    if (region && region !== 'all') {
-      matchConditions.region = { $regex: region, $options: 'i' };
+    if (region && region !== "all") {
+      matchConditions.region = { $regex: region, $options: "i" };
+    }
+
+    if (searchQuery && searchQuery.trim()) {
+      matchConditions.$or = [
+        { pmNumber: new RegExp(searchQuery, "i") },
+        { serialNumber: new RegExp(searchQuery, "i") },
+        { materialDescription: new RegExp(searchQuery, "i") },
+        { customerCode: new RegExp(searchQuery, "i") },
+        { pmVendorCode: new RegExp(searchQuery, "i") },
+        { pmEngineerCode: new RegExp(searchQuery, "i") },
+        { partNumber: new RegExp(searchQuery, "i") },
+        { documentnumber: new RegExp(searchQuery, "i") },
+        { region: new RegExp(searchQuery, "i") },
+        { city: new RegExp(searchQuery, "i") },
+        { pmType: new RegExp(searchQuery, "i") },
+        { pmStatus: new RegExp(searchQuery, "i") },
+      ];
     }
 
     // Add match stage if there are conditions
@@ -249,7 +274,8 @@ router.get('/pms/filter', async (req, res) => {
     // Execute aggregation for total count
     const totalCountPipeline = [...pipeline, { $count: "total" }];
     const totalCountResult = await PM.aggregate(totalCountPipeline);
-    const totalCount = totalCountResult.length > 0 ? totalCountResult[0].total : 0;
+    const totalCount =
+      totalCountResult.length > 0 ? totalCountResult[0].total : 0;
 
     // Execute aggregation for paginated data
     pipeline.push({ $skip: skip });
@@ -258,15 +284,21 @@ router.get('/pms/filter', async (req, res) => {
     const pms = await PM.aggregate(pipeline);
 
     // Remove the converted field from results
-    const cleanedPMs = pms.map(pm => {
+    const cleanedPMs = pms.map((pm) => {
       const { pmDoneDateConverted, ...rest } = pm;
       return rest;
     });
 
     // Enrich with customer data (existing code)
-    const customerCodes = [...new Set(cleanedPMs.map(pm => pm.customerCode).filter(Boolean))];
-    const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
-      .select('customercodeid customername hospitalname street city region email')
+    const customerCodes = [
+      ...new Set(cleanedPMs.map((pm) => pm.customerCode).filter(Boolean)),
+    ];
+    const customers = await Customer.find({
+      customercodeid: { $in: customerCodes },
+    })
+      .select(
+        "customercodeid customername hospitalname street city region email"
+      )
       .lean();
 
     const customerMap = customers.reduce((map, customer) => {
@@ -274,7 +306,7 @@ router.get('/pms/filter', async (req, res) => {
       return map;
     }, {});
 
-    const enrichedPMs = cleanedPMs.map(pm => {
+    const enrichedPMs = cleanedPMs.map((pm) => {
       const customer = customerMap[pm.customerCode];
       if (customer) {
         return {
@@ -285,7 +317,7 @@ router.get('/pms/filter', async (req, res) => {
           hospitalname: customer.hospitalname,
           street: customer.street,
           city: customer.city,
-          customerRegion: customer.region
+          customerRegion: customer.region,
         };
       }
       return pm;
@@ -303,89 +335,90 @@ router.get('/pms/filter', async (req, res) => {
         recordsPerPage: limitNumber,
         hasNextPage: pageNumber < totalPages,
         hasPrevPage: pageNumber > 1,
-        recordsOnCurrentPage: enrichedPMs.length
+        recordsOnCurrentPage: enrichedPMs.length,
       },
       filters: {
         applied: Object.keys(matchConditions).length > 0,
         dateFrom: dateFrom || null,
         dateTo: dateTo || null,
         pmStatus: pmStatus || null,
-        region: region || null
-      }
+        region: region || null,
+      },
     });
-
   } catch (err) {
-    console.error('Filter API error:', err);
+    console.error("Filter API error:", err);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch filtered PM records',
-      error: err.message
+      message: "Failed to fetch filtered PM records",
+      error: err.message,
     });
   }
 });
 
-
 // GET available regions for autocomplete
-router.get('/pms/regions', async (req, res) => {
+router.get("/pms/regions", async (req, res) => {
   try {
-    const regions = await PM.distinct('region');
-    const validRegions = regions.filter(region => region && region.trim() !== '');
+    const regions = await PM.distinct("region");
+    const validRegions = regions.filter(
+      (region) => region && region.trim() !== ""
+    );
 
     res.json({
       success: true,
-      regions: validRegions.sort()
+      regions: validRegions.sort(),
     });
   } catch (err) {
-    console.error('Regions API error:', err);
+    console.error("Regions API error:", err);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch regions',
-      error: err.message
+      message: "Failed to fetch regions",
+      error: err.message,
     });
   }
 });
 
 // BULK DELETE PM entries - PLACE THIS BEFORE THE /:id ROUTES
-router.delete('/pms/bulk', async (req, res) => {
+router.delete("/pms/bulk", async (req, res) => {
   try {
     const { ids } = req.body;
 
     // Validate input
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ message: 'Please provide valid IDs array' });
+      return res
+        .status(400)
+        .json({ message: "Please provide valid IDs array" });
     }
 
     // Validate ObjectIds
-    const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+    const validIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
     if (validIds.length === 0) {
-      return res.status(400).json({ message: 'No valid IDs provided' });
+      return res.status(400).json({ message: "No valid IDs provided" });
     }
 
     // Delete multiple PM records
     const deleteResult = await PM.deleteMany({
-      _id: { $in: validIds }
+      _id: { $in: validIds },
     });
 
     if (deleteResult.deletedCount === 0) {
       return res.status(404).json({
-        message: 'No PM records found to delete',
-        deletedCount: 0
+        message: "No PM records found to delete",
+        deletedCount: 0,
       });
     }
 
     res.json({
       message: `Successfully deleted ${deleteResult.deletedCount} PM records`,
       deletedCount: deleteResult.deletedCount,
-      requestedCount: validIds.length
+      requestedCount: validIds.length,
     });
-
   } catch (err) {
-    console.error('Bulk delete error:', err);
+    console.error("Bulk delete error:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
-router.get('/allpms/:employeeid?', async (req, res) => {
+router.get("/allpms/:employeeid?", async (req, res) => {
   try {
     const { employeeid } = req.params;
     const currentDate = new Date();
@@ -393,39 +426,50 @@ router.get('/allpms/:employeeid?', async (req, res) => {
     const currentYear = currentDate.getFullYear();
 
     // Precompute allowed months
-    const thisMonth = `${(currentMonth + 1).toString().padStart(2, '0')}/${currentYear}`;
-    const nextMonth = `${(currentMonth + 2).toString().padStart(2, '0')}/${currentYear}`;
+    const thisMonth = `${(currentMonth + 1)
+      .toString()
+      .padStart(2, "0")}/${currentYear}`;
+    const nextMonth = `${(currentMonth + 2)
+      .toString()
+      .padStart(2, "0")}/${currentYear}`;
     const allowedDueMonths = [thisMonth, nextMonth];
 
     if (employeeid) {
       // Optimized user data retrieval
       const user = await User.findOne({ employeeid })
-        .select('demographics skills')
+        .select("demographics skills")
         .lean();
 
-      if (!user) return res.status(404).json({ message: 'User not found' });
+      if (!user) return res.status(404).json({ message: "User not found" });
 
       // Extract branch codes efficiently
-      const branchDemographic = user.demographics.find(d => d.type === 'branch');
+      const branchDemographic = user.demographics.find(
+        (d) => d.type === "branch"
+      );
       let userBranchShortCodes = [];
 
       if (branchDemographic) {
         const values = branchDemographic.values;
-        if (values.some(v => v.branchShortCode)) {
-          userBranchShortCodes = values.map(v => v.branchShortCode).filter(Boolean);
+        if (values.some((v) => v.branchShortCode)) {
+          userBranchShortCodes = values
+            .map((v) => v.branchShortCode)
+            .filter(Boolean);
         } else {
-          const branchIds = values.filter(v => v.id).map(v => v.id);
-          const branchNames = values.filter(v => v.name && !v.id).map(v => v.name);
+          const branchIds = values.filter((v) => v.id).map((v) => v.id);
+          const branchNames = values
+            .filter((v) => v.name && !v.id)
+            .map((v) => v.name);
 
           const branchQueries = [];
           if (branchIds.length) branchQueries.push({ _id: { $in: branchIds } });
-          if (branchNames.length) branchQueries.push({ name: { $in: branchNames } });
+          if (branchNames.length)
+            branchQueries.push({ name: { $in: branchNames } });
 
           if (branchQueries.length) {
             const branches = await Branch.find({ $or: branchQueries })
-              .select('branchShortCode')
+              .select("branchShortCode")
               .lean();
-            userBranchShortCodes = branches.map(b => b.branchShortCode);
+            userBranchShortCodes = branches.map((b) => b.branchShortCode);
           }
         }
       }
@@ -435,7 +479,7 @@ router.get('/allpms/:employeeid?', async (req, res) => {
       }
 
       // Get part numbers
-      const partNumbers = user.skills.flatMap(skill =>
+      const partNumbers = user.skills.flatMap((skill) =>
         (skill.partNumbers || []).filter(Boolean)
       );
 
@@ -450,9 +494,9 @@ router.get('/allpms/:employeeid?', async (req, res) => {
           { pmStatus: "Overdue" },
           {
             pmStatus: "Due",
-            pmDueMonth: { $in: allowedDueMonths } // Now includes current + next month
-          }
-        ]
+            pmDueMonth: { $in: allowedDueMonths }, // Now includes current + next month
+          },
+        ],
       }).lean();
 
       if (!pms.length) {
@@ -460,9 +504,15 @@ router.get('/allpms/:employeeid?', async (req, res) => {
       }
 
       // Batch process customer data
-      const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
-      const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
-        .select('customercodeid customername hospitalname street city region email')
+      const customerCodes = [
+        ...new Set(pms.map((pm) => pm.customerCode).filter(Boolean)),
+      ];
+      const customers = await Customer.find({
+        customercodeid: { $in: customerCodes },
+      })
+        .select(
+          "customercodeid customername hospitalname street city region email"
+        )
         .lean();
 
       const customerMap = customers.reduce((map, customer) => {
@@ -471,8 +521,12 @@ router.get('/allpms/:employeeid?', async (req, res) => {
       }, {});
 
       // Batch process region data
-      const customerRegions = [...new Set(customers.map(c => c.region).filter(Boolean))];
-      const states = await State.find({ stateId: { $in: customerRegions } }).lean();
+      const customerRegions = [
+        ...new Set(customers.map((c) => c.region).filter(Boolean)),
+      ];
+      const states = await State.find({
+        stateId: { $in: customerRegions },
+      }).lean();
       const stateMap = states.reduce((map, state) => {
         map[state.stateId] = state.name;
         return map;
@@ -481,13 +535,13 @@ router.get('/allpms/:employeeid?', async (req, res) => {
       // Batch process branch data
       const stateNames = [...new Set(Object.values(stateMap).filter(Boolean))];
       const branches = await Branch.find({ state: { $in: stateNames } })
-        .select('branchShortCode state')
+        .select("branchShortCode state")
         .lean();
 
-      const allowedBranches = branches.filter(b =>
+      const allowedBranches = branches.filter((b) =>
         userBranchShortCodes.includes(b.branchShortCode)
       );
-      const allowedStates = [...new Set(allowedBranches.map(b => b.state))];
+      const allowedStates = [...new Set(allowedBranches.map((b) => b.state))];
 
       // Final filtering and mapping
       const finalPMs = pms.reduce((result, pm) => {
@@ -504,7 +558,7 @@ router.get('/allpms/:employeeid?', async (req, res) => {
           hospitalname: customer.hospitalname,
           street: customer.street,
           city: customer.city,
-          region: customer.region
+          region: customer.region,
         };
 
         result.push(pmObj);
@@ -514,7 +568,7 @@ router.get('/allpms/:employeeid?', async (req, res) => {
       return res.json({
         pms: finalPMs,
         count: finalPMs.length,
-        filteredByEmployee: true
+        filteredByEmployee: true,
       });
     }
 
@@ -522,13 +576,19 @@ router.get('/allpms/:employeeid?', async (req, res) => {
     const pms = await PM.find({
       $or: [
         { pmStatus: "Overdue" },
-        { pmStatus: "Due", pmDueMonth: { $in: allowedDueMonths } }
-      ]
+        { pmStatus: "Due", pmDueMonth: { $in: allowedDueMonths } },
+      ],
     }).lean();
 
-    const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
-    const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
-      .select('customercodeid customername hospitalname street city region email')
+    const customerCodes = [
+      ...new Set(pms.map((pm) => pm.customerCode).filter(Boolean)),
+    ];
+    const customers = await Customer.find({
+      customercodeid: { $in: customerCodes },
+    })
+      .select(
+        "customercodeid customername hospitalname street city region email"
+      )
       .lean();
 
     const customerMap = customers.reduce((map, customer) => {
@@ -536,50 +596,46 @@ router.get('/allpms/:employeeid?', async (req, res) => {
       return map;
     }, {});
 
-    const enrichedAll = pms.map(pm => {
+    const enrichedAll = pms.map((pm) => {
       const customer = customerMap[pm.customerCode];
-      return customer ? {
-        ...pm,
-        email: customer.email?.trim() || null,
-        customercodeid: customer.customercodeid,
-        customername: customer.customername,
-        hospitalname: customer.hospitalname,
-        street: customer.street,
-        city: customer.city,
-        region: customer.region
-      } : pm;
+      return customer
+        ? {
+            ...pm,
+            email: customer.email?.trim() || null,
+            customercodeid: customer.customercodeid,
+            customername: customer.customername,
+            hospitalname: customer.hospitalname,
+            street: customer.street,
+            city: customer.city,
+            region: customer.region,
+          }
+        : pm;
     });
 
     return res.json({
       pms: enrichedAll,
       count: enrichedAll.length,
-      filteredByEmployee: false
+      filteredByEmployee: false,
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });
   }
 });
 
-
 // GET all PM records with pagination
-router.get('/allpms', async (req, res) => {
+router.get("/allpms", async (req, res) => {
   try {
-
-
     const pms = await PM.find();
-
 
     res.json({
       pms,
-
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
-router.get('/pms', async (req, res) => {
+router.get("/pms", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
@@ -592,7 +648,7 @@ router.get('/pms', async (req, res) => {
     res.json({
       pms,
       totalPages,
-      totalPms
+      totalPms,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -600,12 +656,12 @@ router.get('/pms', async (req, res) => {
 });
 
 // GET PM record by ID
-router.get('/pms/:id', getPMById, (req, res) => {
+router.get("/pms/:id", getPMById, (req, res) => {
   res.json(res.pm);
 });
 
 // CREATE a new PM record
-router.post('/pms', checkDuplicatePMNumber, async (req, res) => {
+router.post("/pms", checkDuplicatePMNumber, async (req, res) => {
   const pm = new PM({
     pmType: req.body.pmType,
     pmNumber: req.body.pmNumber,
@@ -619,7 +675,7 @@ router.post('/pms', checkDuplicatePMNumber, async (req, res) => {
     pmDoneDate: req.body.pmDoneDate,
     pmVendorCode: req.body.pmVendorCode,
     pmEngineerCode: req.body.pmEngineerCode,
-    pmStatus: req.body.pmStatus
+    pmStatus: req.body.pmStatus,
   });
   try {
     const newPM = await pm.save();
@@ -630,26 +686,26 @@ router.post('/pms', checkDuplicatePMNumber, async (req, res) => {
 });
 
 // UPDATE a PM record
-router.put('/pms/:id', getPMById, async (req, res) => {
+router.put("/pms/:id", getPMById, async (req, res) => {
   const updates = [
-    'pmType',
-    'pmNumber',
-    'materialDescription',
-    'serialNumber',
-    'customerCode',
-    'region',
-    'branch',
-    'city',
-    'pmDueMonth',
-    'pmDoneDate',
-    'pmVendorCode',
-    'pmEngineerCode',
-    'pmStatus',
-    'partNumber',
-    'status' // Added status to the update list
+    "pmType",
+    "pmNumber",
+    "materialDescription",
+    "serialNumber",
+    "customerCode",
+    "region",
+    "branch",
+    "city",
+    "pmDueMonth",
+    "pmDoneDate",
+    "pmVendorCode",
+    "pmEngineerCode",
+    "pmStatus",
+    "partNumber",
+    "status", // Added status to the update list
   ];
 
-  updates.forEach(field => {
+  updates.forEach((field) => {
     if (req.body[field] != null) {
       res.pm[field] = req.body[field];
     }
@@ -663,28 +719,25 @@ router.put('/pms/:id', getPMById, async (req, res) => {
   }
 });
 
-
-
 // DELETE a PM record
-router.delete('/pms/:id', getPMById, async (req, res) => {
+router.delete("/pms/:id", getPMById, async (req, res) => {
   try {
     const deletedPM = await PM.deleteOne({ _id: req.params.id });
     if (deletedPM.deletedCount === 0) {
-      return res.status(404).json({ message: 'PM record not found' });
+      return res.status(404).json({ message: "PM record not found" });
     }
-    res.json({ message: 'Deleted PM record' });
+    res.json({ message: "Deleted PM record" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-
-router.get('/pmsearch', async (req, res) => {
+router.get("/pmsearch", async (req, res) => {
   try {
     const { q, page = 1, limit = 10 } = req.query;
 
     if (!q) {
-      return res.status(400).json({ message: 'Query parameter is required' });
+      return res.status(400).json({ message: "Query parameter is required" });
     }
 
     const pageNumber = parseInt(page);
@@ -693,42 +746,49 @@ router.get('/pmsearch', async (req, res) => {
 
     // Current and next month values
     const now = new Date();
-    const thisMonth = `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+    const thisMonth = `${(now.getMonth() + 1)
+      .toString()
+      .padStart(2, "0")}/${now.getFullYear()}`;
     const next = new Date(now);
     next.setMonth(now.getMonth() + 1);
-    const nextMonth = `${(next.getMonth() + 1).toString().padStart(2, '0')}/${next.getFullYear()}`;
+    const nextMonth = `${(next.getMonth() + 1)
+      .toString()
+      .padStart(2, "0")}/${next.getFullYear()}`;
     const allowedDueMonths = new Set([thisMonth, nextMonth]);
 
-    const isAllowedPM = pm =>
-      (pm.pmStatus === "Overdue") ||
-      (pm.pmStatus === "Due" && allowedDueMonths.has((pm.pmDueMonth || "").trim()));
+    const isAllowedPM = (pm) =>
+      pm.pmStatus === "Overdue" ||
+      (pm.pmStatus === "Due" &&
+        allowedDueMonths.has((pm.pmDueMonth || "").trim()));
 
     // First get customer matches
     const matchingCustomers = await Customer.find({
       $or: [
-        { customername: { $regex: q, $options: 'i' } },
-        { hospitalname: { $regex: q, $options: 'i' } },
-        { customercodeid: { $regex: q, $options: 'i' } }
-      ]
-    }).select('customercodeid');
+        { customername: { $regex: q, $options: "i" } },
+        { hospitalname: { $regex: q, $options: "i" } },
+        { customercodeid: { $regex: q, $options: "i" } },
+      ],
+    }).select("customercodeid");
 
-    const matchingCustomerCodes = matchingCustomers.map(c => c.customercodeid);
+    const matchingCustomerCodes = matchingCustomers.map(
+      (c) => c.customercodeid
+    );
 
     // Build OR query
     const query = {
       $or: [
-        { pmType: { $regex: q, $options: 'i' } },
-        { pmNumber: { $regex: q, $options: 'i' } },
-        { materialDescription: { $regex: q, $options: 'i' } },
-        { serialNumber: { $regex: q, $options: 'i' } },
-        { customerCode: { $regex: q, $options: 'i' } },
-        { region: { $regex: q, $options: 'i' } },
-        { branch: { $regex: q, $options: 'i' } },
-        { city: { $regex: q, $options: 'i' } },
-        { pmVendorCode: { $regex: q, $options: 'i' } },
-        { pmEngineerCode: { $regex: q, $options: 'i' } },
-        { pmStatus: { $regex: q, $options: 'i' } }
-      ]
+        { pmType: { $regex: q, $options: "i" } },
+        { pmNumber: { $regex: q, $options: "i" } },
+        { materialDescription: { $regex: q, $options: "i" } },
+        { serialNumber: { $regex: q, $options: "i" } },
+        { customerCode: { $regex: q, $options: "i" } },
+        { region: { $regex: q, $options: "i" } },
+        { branch: { $regex: q, $options: "i" } },
+        { city: { $regex: q, $options: "i" } },
+        { pmVendorCode: { $regex: q, $options: "i" } },
+        { pmEngineerCode: { $regex: q, $options: "i" } },
+        { pmStatus: { $regex: q, $options: "i" } },
+      ],
     };
 
     if (matchingCustomerCodes.length > 0) {
@@ -745,14 +805,19 @@ router.get('/pmsearch', async (req, res) => {
     const totalPages = Math.ceil(totalRecords / limitNumber);
     const paginatedPMs = filteredPMs.slice(skip, skip + limitNumber);
 
-    const customerCodes = [...new Set(paginatedPMs.map(pm => pm.customerCode).filter(Boolean))];
-    const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
-      .select('customercodeid customername hospitalname street city region email');
+    const customerCodes = [
+      ...new Set(paginatedPMs.map((pm) => pm.customerCode).filter(Boolean)),
+    ];
+    const customers = await Customer.find({
+      customercodeid: { $in: customerCodes },
+    }).select(
+      "customercodeid customername hospitalname street city region email"
+    );
 
     const customerMap = {};
-    customers.forEach(c => customerMap[c.customercodeid] = c);
+    customers.forEach((c) => (customerMap[c.customercodeid] = c));
 
-    const enrichedPMs = paginatedPMs.map(pm => {
+    const enrichedPMs = paginatedPMs.map((pm) => {
       const customer = customerMap[pm.customerCode];
       const pmObj = pm.toObject();
 
@@ -775,48 +840,44 @@ router.get('/pmsearch', async (req, res) => {
       currentPage: pageNumber,
       totalRecords,
       hasNextPage: pageNumber < totalPages,
-      hasPrevPage: pageNumber > 1
+      hasPrevPage: pageNumber > 1,
     });
-
   } catch (err) {
-    console.error('Search error:', err);
+    console.error("Search error:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
-
-
-
-
-
-
-router.get('/checklist/by-part/:partnoid', async (req, res) => {
+router.get("/checklist/by-part/:partnoid", async (req, res) => {
   try {
     const partnoid = req.params.partnoid;
 
     // Find the product using the provided partnoid
     const product = await Product.findOne({ partnoid });
     if (!product) {
-      return res.status(404).json({ message: 'Product not found for the provided part number' });
+      return res
+        .status(404)
+        .json({ message: "Product not found for the provided part number" });
     }
 
     // Get the product group from the found product
     const productGroup = product.productgroup;
 
     // Find checklists where prodGroup matches the product group
-    const checklists = await CheckList.find({ prodGroup: productGroup })
-      .select('checklisttype checkpointtype checkpoint prodGroup result status createdAt modifiedAt resulttype endVoltage startVoltage');
+    const checklists = await CheckList.find({ prodGroup: productGroup }).select(
+      "checklisttype checkpointtype checkpoint prodGroup result status createdAt modifiedAt resulttype endVoltage startVoltage"
+    );
 
     res.json({
       productGroup,
-      checklists
+      checklists,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-router.get('/docs/by-part/:partnoid', async (req, res) => {
+router.get("/docs/by-part/:partnoid", async (req, res) => {
   try {
     const partnoid = req.params.partnoid;
 
@@ -825,7 +886,7 @@ router.get('/docs/by-part/:partnoid', async (req, res) => {
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found for the provided part number'
+        message: "Product not found for the provided part number",
       });
     }
 
@@ -837,40 +898,37 @@ router.get('/docs/by-part/:partnoid', async (req, res) => {
       // PM Documents from PMDocMaster
       PMDocMaster.find({
         productGroup: productGroup,
-        type: 'PM'
-      }).select('chlNo revNo type status createdAt modifiedAt'),
+        type: "PM",
+      }).select("chlNo revNo type status createdAt modifiedAt"),
 
       // Format Documents from FormatMaster
       FormatMaster.find({
         productGroup: productGroup,
-        type: 'PM'
-      }).select('chlNo revNo type status createdAt updatedAt')
+        type: "PM",
+      }).select("chlNo revNo type status createdAt updatedAt"),
     ]);
 
     res.json({
       success: true,
       productGroup,
       // PM Documents from PMDocMaster in 'documents' array
-      documents: pmDocs.map(doc => ({
+      documents: pmDocs.map((doc) => ({
         chlNo: doc.chlNo,
         revNo: doc.revNo,
       })),
       // Format Documents from FormatMaster in 'formats' array
-      formats: formatDocs.map(doc => ({
+      formats: formatDocs.map((doc) => ({
         chlNo: doc.chlNo,
         revNo: doc.revNo,
-
-      }))
+      })),
     });
   } catch (err) {
     res.status(500).json({
       success: false,
-      message: err.message
+      message: err.message,
     });
   }
 });
-
-
 
 router.post("/otp/send", async (req, res) => {
   try {
@@ -881,7 +939,7 @@ router.post("/otp/send", async (req, res) => {
     const customer = await Customer.findOne({ customercodeid: customerCode });
     if (!customer) {
       return res.status(404).json({
-        message: "Customer not found for the given customer code"
+        message: "Customer not found for the given customer code",
       });
     }
     const email = customer.email;
@@ -900,7 +958,7 @@ router.post("/otp/send", async (req, res) => {
       from: "webadmin@skanray-access.com",
       to: email,
       subject: "Your OTP Code",
-      text: `Your OTP code is ${otp}`
+      text: `Your OTP code is ${otp}`,
     });
     res.json({ message: "OTP sent successfully to " + email });
   } catch (err) {
@@ -955,11 +1013,10 @@ router.post("/otp/verify", async (req, res) => {
 // GET filtered PM records with advanced filtering and pagination
 // GET filtered PM records - Simple 3 filters only
 
-
-
 router.post("/reportAndUpdate", async (req, res) => {
   try {
-    const { pmData, checklistData, customerCode, globalRemark, userInfo } = req.body;
+    const { pmData, checklistData, customerCode, globalRemark, userInfo } =
+      req.body;
 
     // ✅ Add debugging logs
     console.log("=== REPORT AND UPDATE API CALLED ===");
@@ -970,7 +1027,9 @@ router.post("/reportAndUpdate", async (req, res) => {
     console.log("userInfo:", JSON.stringify(userInfo, null, 2));
 
     if (!pmData || !customerCode) {
-      return res.status(400).json({ message: "PM data and customer code are required" });
+      return res
+        .status(400)
+        .json({ message: "PM data and customer code are required" });
     }
 
     const existingPm = await PM.findById(pmData._id);
@@ -984,17 +1043,20 @@ router.post("/reportAndUpdate", async (req, res) => {
     if (!existingPm.pmNumber) {
       try {
         // Find all existing PM numbers sorted numerically
-        const allPMs = await PM.find({ pmNumber: { $regex: /^PM\d+$/ } })
-          .sort({ pmNumber: 1 });
+        const allPMs = await PM.find({ pmNumber: { $regex: /^PM\d+$/ } }).sort({
+          pmNumber: 1,
+        });
 
         let nextNumber = 1; // Default starting number
 
         if (allPMs.length > 0) {
           // Extract all existing numbers
-          const existingNumbers = allPMs.map(pm => {
-            const numStr = pm.pmNumber.replace('PM', '');
-            return parseInt(numStr, 10);
-          }).filter(num => !isNaN(num));
+          const existingNumbers = allPMs
+            .map((pm) => {
+              const numStr = pm.pmNumber.replace("PM", "");
+              return parseInt(numStr, 10);
+            })
+            .filter((num) => !isNaN(num));
 
           // Find the first gap in numbering or the next number
           for (let i = 0; i < existingNumbers.length; i++) {
@@ -1042,7 +1104,8 @@ router.post("/reportAndUpdate", async (req, res) => {
 
     // Update necessary fields
     existingPm.pmDoneDate = pmData.pmDoneDate || existingPm.pmDoneDate;
-    existingPm.pmEngineerCode = userInfo.employeeId || existingPm.pmEngineerCode;
+    existingPm.pmEngineerCode =
+      userInfo.employeeId || existingPm.pmEngineerCode;
     existingPm.pmStatus = pmData.pmStatus || existingPm.pmStatus;
 
     await existingPm.save();
@@ -1065,9 +1128,10 @@ router.post("/reportAndUpdate", async (req, res) => {
       checklistData.forEach((item, index) => {
         console.log(`Checklist item ${index}:`, JSON.stringify(item, null, 2));
         processedChecklistItems.push({
-          checkpoint: item.checkpoint || item.description || `Checkpoint ${index + 1}`,
+          checkpoint:
+            item.checkpoint || item.description || `Checkpoint ${index + 1}`,
           result: item.result || item.status || "N/A",
-          remark: item.remark || item.remarks || item.comment || ""
+          remark: item.remark || item.remarks || item.comment || "",
         });
       });
     } else {
@@ -1083,7 +1147,8 @@ router.post("/reportAndUpdate", async (req, res) => {
       customer: customer,
       machine: {
         partNumber: existingPm.partNumber || pmData.partNumber || "N/A",
-        modelDescription: existingPm.materialDescription || pmData.materialDescription || "N/A",
+        modelDescription:
+          existingPm.materialDescription || pmData.materialDescription || "N/A",
         serialNumber: existingPm.serialNumber || pmData.serialNumber || "N/A",
         machineId: existingPm._id,
       },
@@ -1098,9 +1163,17 @@ router.post("/reportAndUpdate", async (req, res) => {
       userInfo: userInfo, // Add userInfo parameter for service engineer details
     };
 
-
-    console.log("HTML generation parameters:", JSON.stringify(htmlParams, null, 2));
-    console.log("REVCHAL", pmData.formatChlNo, pmData.documentChlNo, pmData.documentRevNo, pmData.formatRevNo)
+    console.log(
+      "HTML generation parameters:",
+      JSON.stringify(htmlParams, null, 2)
+    );
+    console.log(
+      "REVCHAL",
+      pmData.formatChlNo,
+      pmData.documentChlNo,
+      pmData.documentRevNo,
+      pmData.formatRevNo
+    );
     // Prepare checklist HTML with updated parameters
     const checklistHtml = getChecklistHTMLPM(htmlParams);
 
@@ -1115,7 +1188,9 @@ router.post("/reportAndUpdate", async (req, res) => {
     pdf.create(checklistHtml, pdfOptions).toBuffer((err, pdfBuffer) => {
       if (err) {
         console.error("Error generating Checklist PDF:", err);
-        return res.status(500).json({ message: "Failed to create Checklist PDF" });
+        return res
+          .status(500)
+          .json({ message: "Failed to create Checklist PDF" });
       }
 
       console.log("PDF generated successfully, size:", pdfBuffer.length);
@@ -1134,7 +1209,7 @@ router.post("/reportAndUpdate", async (req, res) => {
 
       res.json({
         message: "PM updated & PDF generated successfully",
-        pmNumber: existingPm.pmNumber
+        pmNumber: existingPm.pmNumber,
       });
     });
   } catch (err) {
@@ -1142,8 +1217,6 @@ router.post("/reportAndUpdate", async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
-
-
 
 // ==========================
 // (C) Final Email Route
@@ -1156,9 +1229,9 @@ router.post("/sendAllPdfs", async (req, res) => {
   try {
     const {
       customerCode,
-      email,            // Service engineer email
-      manageremail,     // Array of manager emails
-      dealerEmail       // Optional dealer email
+      email, // Service engineer email
+      manageremail, // Array of manager emails
+      dealerEmail, // Optional dealer email
     } = req.body;
 
     if (!customerCode) {
@@ -1183,7 +1256,7 @@ router.post("/sendAllPdfs", async (req, res) => {
     const attachments = pdfStore[customerCode].map((f) => ({
       filename: f.filename,
       content: f.buffer,
-      contentType: "application/pdf"
+      contentType: "application/pdf",
     }));
 
     // Build recipient list:
@@ -1197,24 +1270,20 @@ router.post("/sendAllPdfs", async (req, res) => {
       to: recipients, // will include all valid emails
       subject: "Skanray - Your Checklist PDFs",
       text: "Please find attached the completed checklist PDFs for your PMs.",
-      attachments
+      attachments,
     };
 
     transporter.sendMail(mailOptions, (error, info) => {
       if (error) {
         console.error("Error sending final email:", error);
-        return res
-          .status(500)
-          .json({ message: "Failed to send final email" });
+        return res.status(500).json({ message: "Failed to send final email" });
       }
       delete pdfStore[customerCode]; // Clear the stored PDFs
       return res.json({ message: "All PDF attachments sent successfully" });
     });
-
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
-
 
 module.exports = router;
