@@ -108,6 +108,7 @@ const cmcNcmcTdsExcelRoutes = require('./routes/Admin/ExcelDownload/CmcNcmcTdsEx
 const gstExcelRoutes = require('./routes/Admin/ExcelDownload/GstExcelExport');
 const discountExcelRoutes = require('./routes/Admin/ExcelDownload/DiscountExcel');
 const serviceChargeExcelRoutes = require('./routes/Admin/ExcelDownload/ServiceChargeExcel');
+const CmcNcmcPriceBulk = require('././BulkUpload/Admin/CmcNcmcPriceBulk');
 
 const path = require('path');
 const fs = require('fs');
@@ -252,6 +253,7 @@ app.use('/bulk/customer', CustomerBulk);
 app.use('/bulk/replaced-part-codes', replacedPartCodeUpload);
 app.use('/bulk/reported-problem', ReportedProblemBulk);
 app.use('/bulk/warranty-code', WarrantyCodeBulk);
+app.use('/bulk/cmc-ncmcprice', CmcNcmcPriceBulk);
 
 
 

@@ -450,7 +450,7 @@ router.get('/allpms/:employeeid?', async (req, res) => {
           { pmStatus: "Overdue" },
           {
             pmStatus: "Due",
-            pmDueMonth: { $in: allowedDueMonths } // Now includes current + next month
+            pmDueMonth: { $in: allowedDueMonths }
           }
         ]
       }).lean();
@@ -459,10 +459,10 @@ router.get('/allpms/:employeeid?', async (req, res) => {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
-      // Batch process customer data
+      // Batch process customer data - FIXED: Added telephone here
       const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
       const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
-        .select('customercodeid customername hospitalname street city region email')
+        .select('customercodeid customername hospitalname street city region email telephone')
         .lean();
 
       const customerMap = customers.reduce((map, customer) => {
@@ -504,7 +504,8 @@ router.get('/allpms/:employeeid?', async (req, res) => {
           hospitalname: customer.hospitalname,
           street: customer.street,
           city: customer.city,
-          region: customer.region
+          region: customer.region,
+          telephone: customer.telephone
         };
 
         result.push(pmObj);
@@ -528,7 +529,7 @@ router.get('/allpms/:employeeid?', async (req, res) => {
 
     const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
     const customers = await Customer.find({ customercodeid: { $in: customerCodes } })
-      .select('customercodeid customername hospitalname street city region email')
+      .select('customercodeid customername hospitalname street city region email telephone')
       .lean();
 
     const customerMap = customers.reduce((map, customer) => {
@@ -546,7 +547,8 @@ router.get('/allpms/:employeeid?', async (req, res) => {
         hospitalname: customer.hospitalname,
         street: customer.street,
         city: customer.city,
-        region: customer.region
+        region: customer.region,
+        telephone: customer.telephone
       } : pm;
     });
 

@@ -967,6 +967,172 @@ router.get('/allpendingcomplaints/:employeeid?', async (req, res) => {
     });
   }
 });
+// GET /api/complaint-types - Get all unique complaint types (notification types)
+router.get('/complaint-types', async (req, res) => {
+  try {
+    // Get all unique notification types from pending complaints
+    const complaintTypes = await PendingComplaints.distinct('notificationtype', {
+      status: { $ne: "Inactive" },
+      notificationtype: { $exists: true, $ne: null, $ne: "" }
+    });
+
+    // Filter out empty or null values and sort alphabetically
+    const validComplaintTypes = complaintTypes
+      .filter(type => type && type.trim() !== '')
+      .sort();
+
+    res.json({
+      success: true,
+      complaintTypes: validComplaintTypes,
+      totalTypes: validComplaintTypes.length
+    });
+
+  } catch (err) {
+    console.error('Error in complaint-types API:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: err.message
+    });
+  }
+});
+// GET /api/complaints/type/:complaintType - Get complaints filtered by complaint type with pagination
+router.get('/complaints/type/:complaintType', async (req, res) => {
+  try {
+    const { complaintType } = req.params;
+
+    // Pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Optional: Add employeeid filtering if provided as query parameter
+    const { employeeid } = req.query;
+
+    // Validate complaint type
+    if (!complaintType || complaintType.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Complaint type is required'
+      });
+    }
+
+    // Build base filter
+    let baseFilter = {
+      status: { $ne: "Inactive" },
+      notificationtype: complaintType
+    };
+
+    let filterInfo = {
+      complaintType,
+      employeeFiltered: false
+    };
+
+    // Apply employee-specific filters if employeeid provided
+    if (employeeid) {
+      const user = await User.findOne({ employeeid });
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      // Apply user-specific filters based on usertype
+      if (user.usertype === 'skanray') {
+        const partNumbers = [];
+        user.skills.forEach(skill => {
+          if (skill.partNumbers && skill.partNumbers.length > 0) {
+            partNumbers.push(...skill.partNumbers);
+          }
+        });
+
+        const branchNames = user.branch || [];
+
+        if (partNumbers.length > 0) {
+          baseFilter.materialcode = { $in: partNumbers };
+        }
+        
+        if (branchNames.length > 0) {
+          baseFilter.salesoffice = { $in: branchNames };
+        }
+
+        filterInfo = {
+          ...filterInfo,
+          employeeFiltered: true,
+          usertype: 'skanray',
+          partNumbers,
+          branches: branchNames
+        };
+
+      } else if (user.usertype === 'dealer') {
+        const dealerCode = user.dealerInfo?.dealerCode;
+        if (!dealerCode) {
+          return res.status(400).json({
+            success: false,
+            message: 'Dealer code not found for this dealer user'
+          });
+        }
+
+        baseFilter.dealercode = dealerCode;
+        filterInfo = {
+          ...filterInfo,
+          employeeFiltered: true,
+          usertype: 'dealer',
+          dealerCode
+        };
+      }
+    }
+
+    // Get total count for pagination
+    const totalComplaints = await PendingComplaints.countDocuments(baseFilter);
+    const totalPages = Math.ceil(totalComplaints / limit);
+
+    // Check if complaint type exists in database
+    if (totalComplaints === 0) {
+      // Check if complaint type exists at all (even in inactive complaints)
+      const typeExists = await PendingComplaints.findOne({
+        notificationtype: complaintType
+      });
+
+      if (!typeExists) {
+        return res.status(404).json({
+          success: false,
+          message: 'Complaint type not found'
+        });
+      }
+    }
+
+    // Get complaints with pagination
+    const pendingComplaints = await PendingComplaints.find(baseFilter)
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      pendingComplaints,
+      filterInfo,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalComplaints,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    });
+
+  } catch (err) {
+    console.error('Error in complaint type filter API:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: err.message
+    });
+  }
+});
+
 
 
 

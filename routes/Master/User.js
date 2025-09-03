@@ -5,6 +5,7 @@ const User = require('../../Model/MasterSchema/UserSchema');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Role = require('../../Model/Role/RoleSchema'); // Make sure you import the Role model
+const authenticateToken = require('./auth'); // Make sure you import the Role model
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
@@ -893,22 +894,47 @@ router.post('/login', getUserForLogin, async (req, res) => {
             });
         }
 
-        // 4️⃣ Update device info
+        // 4️⃣ Calculate token expiry at 4 PM
+        const calculateExpiryAt4PM = () => {
+            const now = new Date();
+            const today4PM = new Date(now);
+            today4PM.setHours(22, 0, 0, 0); // Set to 4:50 PM
+
+            // If current time is after 4 PM today, set expiry to 4 PM tomorrow
+            if (now > today4PM) {
+                const tomorrow4PM = new Date(today4PM);
+                tomorrow4PM.setDate(tomorrow4PM.getDate() + 1);
+                return tomorrow4PM;
+            }
+
+            // Otherwise, set expiry to 4 PM today
+            return today4PM;
+        };
+
+        const expiryTime = calculateExpiryAt4PM();
+        const expiryInSeconds = Math.floor((expiryTime - new Date()) / 1000);
+
+        // 5️⃣ Update device info
         user.deviceid = currentDeviceId;
         user.deviceregistereddate = new Date();
+        user.sessionExpiry = expiryTime; // Store session expiry in user document
         await user.save();
 
-        // 5️⃣ Generate token
+        // 6️⃣ Generate token with dynamic expiry
         const token = jwt.sign(
-            { id: user._id, email: user.email },
-            "myservice-secret",
-            { expiresIn: '8h' }
+            {
+                id: user._id,
+                email: user.email,
+                exp: Math.floor(expiryTime.getTime() / 1000) // JWT exp in seconds since epoch
+            },
+            "myservice-secret"
         );
 
-        // 6️⃣ Return user data
+        // 7️⃣ Return user data with expiry info
         res.json({
             success: true,
             token,
+            expiryTime: expiryTime.toISOString(),
             user: {
                 id: user._id,
                 firstname: user.firstname,
@@ -942,6 +968,28 @@ router.post('/login', getUserForLogin, async (req, res) => {
         });
     }
 });
+router.post('/logout', authenticateToken, async (req, res) => {
+    try {
+        const user = req.user;
+
+        // Clear device info and session expiry
+        user.deviceid = null;
+        user.sessionExpiry = null;
+        user.deviceregistereddate = null;
+        await user.save();
+
+        res.json({
+            success: true,
+            message: 'Logged out successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: 'Logout failed',
+            errorCode: 'LOGOUT_ERROR'
+        });
+    }
+});
+
 
 router.post('/remove-device', async (req, res) => {
     try {
