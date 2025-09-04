@@ -4,6 +4,7 @@ const Customer = require('../../Model/UploadSchema/CustomerSchema'); // Adjust t
 const nodemailer = require('nodemailer');
 const User = require('../../Model/MasterSchema/UserSchema');
 const mongoose = require('mongoose');
+const NotificationSettings = require('../../Model/AdminSchema/NotificationSettingsSchema');
 
 const transporter = nodemailer.createTransport({
     service: 'Gmail',
@@ -13,7 +14,22 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-
+async function getCicRecipients() {
+    try {
+        const settings = await NotificationSettings.findOne();
+        if (settings && Array.isArray(settings.cicRecipients)) {
+            // Filter out duplicates and validate email format
+            const uniqueValidEmails = [...new Set(settings.cicRecipients)].filter(email =>
+                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+            );
+            return uniqueValidEmails;
+        }
+        return [];
+    } catch (error) {
+        console.error('Error fetching cicRecipients:', error);
+        return [];
+    }
+}
 // Middleware to get a customer by ID
 async function getCustomerById(req, res, next) {
     let customer;
@@ -233,17 +249,22 @@ router.post('/customer/send-email', async (req, res) => {
 
 
     // Prepare email recipients
-    let recipients = ['ftshivamtiwari222@gmail.com', 'damodara.s@skanray.com'];
-    
+    // let recipients = ['ftshivamtiwari222@gmail.com', 'damodara.s@skanray.com'];
+    const cicRecipients = await getCicRecipients();
+
+    // Only use CIC recipients from database, no fallback
+    const recipients = [...cicRecipients];
+
     // Add service engineer email if available
     if (serviceEngineer && serviceEngineer.email) {
         recipients.push(serviceEngineer.email);
     }
+    const finalRecipients = [...new Set(recipients)];
 
     // Email options
     const mailOptions = {
-        from: 'webadmin@skanray-access.com',
-        to: recipients.join(', '),
+        from: 'webladmin@skanray-access.com',
+        to: finalRecipients.join(', '),
         subject: 'New Customer Creation',
         html: emailContent
     };
@@ -251,11 +272,24 @@ router.post('/customer/send-email', async (req, res) => {
     try {
         // Send the email
         await transporter.sendMail(mailOptions);
-        res.status(200).json({ message: 'Email sent successfully' });
+        res.status(200).json({
+            message: 'Email sent successfully',
+            recipients: finalRecipients,
+            recipientCount: finalRecipients.length,
+            cicRecipientsFromDB: cicRecipients.length,
+            serviceEngineerEmail: serviceEngineer?.email || 'N/A',
+            emailDetails: {
+                subject: 'New Customer Creation',
+                from: 'webadmin@skanray-access.com',
+                sentAt: new Date().toISOString()
+            }
+        });
     } catch (error) {
         res.status(500).json({
             message: 'Failed to send email',
-            error: error.toString()
+            error: error.toString(),
+            intendedRecipients: finalRecipients,
+            recipientCount: finalRecipients.length
         });
     }
 });

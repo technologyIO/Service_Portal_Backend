@@ -5,7 +5,6 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
 const ReportedProblem = require('../../Model/MasterSchema/ReportedProblemSchema');
-const path = require('path');
 
 // Optimized: Pre-compiled regex patterns
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
@@ -16,8 +15,8 @@ const storage = multer.memoryStorage();
 const upload = multer({
     storage,
     fileFilter: (req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase();
-        const allowedExts = ['.csv', '.xlsx', '.xls'];
+        const fileName = file.originalname.toLowerCase();
+        const allowedExtensions = ['.csv', '.xlsx', '.xls'];
         const allowedMimeTypes = [
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'application/vnd.ms-excel',
@@ -25,10 +24,19 @@ const upload = multer({
             'application/csv'
         ];
 
-        if (allowedExts.includes(ext) || allowedMimeTypes.includes(file.mimetype)) {
+        // Check file extension
+        const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+        
+        // Check MIME type
+        const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
+
+        if (hasValidExtension || hasValidMimeType) {
             cb(null, true);
         } else {
-            cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
+            cb(new Error(
+                `Invalid file type. Only ${allowedExtensions.join(', ')} formats are allowed. ` +
+                `Received: ${file.mimetype} (${fileName})`
+            ), false);
         }
     },
     limits: {
@@ -36,14 +44,34 @@ const upload = multer({
     }
 });
 
-// Optimized: Predefined field mappings for ReportedProblem schema
+// Optimized: Predefined field mappings for faster access
 const FIELD_MAPPINGS = {
-    'catalog': new Set(['catalog', 'catalogue', 'catalog_name', 'catalogname']),
-    'codegroup': new Set(['codegroup', 'code_group', 'group', 'groupcode', 'group_code', 'partgroup', 'part_group']),
-    'prodgroup': new Set(['prodgroup', 'prod_group', 'productgroup', 'product_group', 'productiongroup', 'production_group']),
-    'name': new Set(['name', 'problemname', 'problem_name', 'componentname', 'component_name', 'itemname', 'item_name', 'reportname', 'report_name']),
-    'shorttextforcode': new Set(['shorttextforcode', 'short_text_for_code', 'shorttext', 'short_text', 'description', 'desc', 'shortdescription', 'short_description', 'problem_description', 'problemdescription']),
-    'status': new Set(['status', 'record_status', 'problem_status', 'current_status', 'active_status', 'report_status'])
+    'catalog': new Set([
+        'catalog', 'catalogue', 'cat', 'catalog_name',
+        'category', 'catalogtype', 'catalog_type'
+    ]),
+    'codegroup': new Set([
+        'codegroup', 'code_group', 'group_code', 'groupcode',
+        'code_grp', 'grp_code', 'problem_group', 'problemgroup'
+    ]),
+    'prodgroup': new Set([
+        'prodgroup', 'prod_group', 'product_group', 'productgroup',
+        'prod_grp', 'grp_prod', 'production_group', 'productiongroup'
+    ]),
+    'name': new Set([
+        'name', 'problem_name', 'problemname', 'title',
+        'description', 'problem_title', 'problemtitle'
+    ]),
+    'shorttextforcode': new Set([
+        'shorttextforcode', 'short_text_for_code', 'shorttext',
+        'short_text', 'code_text', 'codetext', 'abbreviation',
+        'short_desc', 'shortdesc', 'brief_text', 'brieftext'
+    ]),
+    'status': new Set([
+        'status', 'record_status', 'recordstatus', 'state',
+        'condition', 'active_status', 'activestatus', 'enabled',
+        'is_active', 'isactive', 'current_status', 'currentstatus'
+    ])
 };
 
 // Optimized normalizeFieldName with memoization
@@ -77,7 +105,7 @@ function mapHeaders(headers) {
         for (const [schemaField, variations] of Object.entries(FIELD_MAPPINGS)) {
             if (variations.has(normalizedHeader)) {
                 mappedHeaders[header] = schemaField;
-                break; // Move to next header once we find a match
+                break;
             }
         }
     }
@@ -85,34 +113,19 @@ function mapHeaders(headers) {
     return mappedHeaders;
 }
 
-// Optimized: Inline simple functions
-function checkForChanges(existingRecord, newRecord, providedFields) {
-    let hasAnyChange = false;
-    const changeDetails = [];
-
-    for (const field of providedFields) {
-        const existingValue = existingRecord[field] ? String(existingRecord[field]).trim() : '';
-        const newValue = newRecord[field] ? String(newRecord[field]).trim() : '';
-
-        if (existingValue !== newValue) {
-            hasAnyChange = true;
-            changeDetails.push({
-                field,
-                oldValue: existingValue,
-                newValue
-            });
-        }
-    }
-
-    return { hasChanges: hasAnyChange, changeDetails };
-}
-
 // Optimized Excel parsing with buffer reuse
 function parseExcelFile(buffer) {
     try {
-        const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+        const workbook = XLSX.read(buffer, {
+            type: 'buffer',
+            cellDates: true,
+            codepage: 65001 // UTF-8
+        });
         const sheetName = workbook.SheetNames[0];
-        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: false });
+        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+            defval: '',
+            raw: false
+        });
     } catch (error) {
         throw new Error(`Excel parsing error: ${error.message}`);
     }
@@ -125,7 +138,7 @@ function parseCSVFile(buffer) {
         const stream = Readable.from(buffer.toString())
             .pipe(csv({
                 mapValues: ({ value }) => value.trim(),
-                strict: false,
+                strict: true,
                 skipLines: 0,
                 skipEmptyLines: true
             }))
@@ -133,12 +146,76 @@ function parseCSVFile(buffer) {
             .on('end', () => resolve(results))
             .on('error', reject);
 
-        // Ensure stream is properly destroyed on errors
         stream.on('error', () => stream.destroy());
     });
 }
 
-// Validation function for ReportedProblem schema
+// Helper function to determine file type
+function getFileType(fileName, mimeType) {
+    const lowerFileName = fileName.toLowerCase();
+    
+    // Check by extension first
+    if (lowerFileName.endsWith('.csv')) {
+        return 'csv';
+    } else if (lowerFileName.endsWith('.xlsx')) {
+        return 'xlsx';
+    } else if (lowerFileName.endsWith('.xls')) {
+        return 'xls';
+    }
+    
+    // Fallback to MIME type
+    switch (mimeType) {
+        case 'text/csv':
+        case 'application/csv':
+            return 'csv';
+        case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+            return 'xlsx';
+        case 'application/vnd.ms-excel':
+            return 'xls';
+        default:
+            return 'unknown';
+    }
+}
+
+// Function to check for changes between existing and new records
+function checkForChanges(existingRecord, newRecord, providedFields) {
+    const changes = [];
+    let hasChanges = false;
+
+    for (const field of providedFields) {
+        const oldValue = existingRecord[field] || '';
+        const newValue = newRecord[field] || '';
+        
+        if (oldValue !== newValue) {
+            hasChanges = true;
+            changes.push({
+                field,
+                oldValue,
+                newValue
+            });
+        }
+    }
+
+    return {
+        hasChanges,
+        changeDetails: changes
+    };
+}
+
+// **UPDATED**: Generate unique identifier for ReportedProblem records using ALL fields
+function generateUniqueKey(record) {
+    // Include ALL fields for complete uniqueness check
+    const catalog = record.catalog || '';
+    const codegroup = record.codegroup || '';
+    const prodgroup = record.prodgroup || '';
+    const name = record.name || '';
+    const shorttextforcode = record.shorttextforcode || '';
+    const status = record.status || '';
+    
+    return `${catalog}_${codegroup}_${prodgroup}_${name}_${shorttextforcode}_${status}`.toLowerCase();
+}
+
+// Optimized record validation with early exits
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
     const providedFields = [];
@@ -155,21 +232,12 @@ function validateRecord(record, headerMapping) {
         providedFields.push(schemaField);
     }
 
-    // Required field validation for ReportedProblem schema
-    if (!cleanedRecord.catalog) {
-        errors.push('Catalog is required');
-    }
-    if (!cleanedRecord.codegroup) {
-        errors.push('Code Group is required');
-    }
-    if (!cleanedRecord.prodgroup) {
-        errors.push('Product Group is required');
-    }
-    if (!cleanedRecord.name) {
-        errors.push('Name is required');
-    }
-    if (!cleanedRecord.shorttextforcode) {
-        errors.push('Short Text For Code is required');
+    // Required field validation (status is optional)
+    const requiredFields = ['catalog', 'codegroup', 'prodgroup', 'name', 'shorttextforcode'];
+    for (const field of requiredFields) {
+        if (!cleanedRecord[field]) {
+            errors.push(`${field.charAt(0).toUpperCase() + field.slice(1)} is required`);
+        }
     }
 
     // Early exit if required fields are missing
@@ -177,52 +245,30 @@ function validateRecord(record, headerMapping) {
         return { cleanedRecord, errors, providedFields };
     }
 
-    // Length validation (reasonable limits for ReportedProblem)
-    if (cleanedRecord.catalog.length > 100) {
-        errors.push('Catalog too long (max 100 characters)');
-    }
-    if (cleanedRecord.codegroup.length > 100) {
-        errors.push('Code Group too long (max 100 characters)');
-    }
-    if (cleanedRecord.prodgroup.length > 100) {
-        errors.push('Product Group too long (max 100 characters)');
-    }
-    if (cleanedRecord.name.length > 200) {
-        errors.push('Name too long (max 200 characters)');
-    }
-    if (cleanedRecord.shorttextforcode.length > 500) {
-        errors.push('Short Text For Code too long (max 500 characters)');
-    }
+    // Length validation
+    const fieldLimits = {
+        catalog: 100,
+        codegroup: 100,
+        prodgroup: 100,
+        name: 200,
+        shorttextforcode: 150,
+        status: 50 // Adding status field limit
+    };
 
-    // Set default status only if not provided
-    if (!cleanedRecord.status || cleanedRecord.status.trim() === '') {
-        cleanedRecord.status = 'Active';
+    for (const [field, maxLength] of Object.entries(fieldLimits)) {
+        if (cleanedRecord[field] && cleanedRecord[field].length > maxLength) {
+            errors.push(`${field.charAt(0).toUpperCase() + field.slice(1)} too long (max ${maxLength} characters)`);
+        }
     }
 
     return { cleanedRecord, errors, providedFields };
 }
 
-// Helper function to detect file type
-function getFileType(fileName, mimeType) {
-    const ext = path.extname(fileName).toLowerCase();
-
-    // First check by extension
-    if (ext === '.csv') return 'csv';
-    if (ext === '.xlsx') return 'xlsx';
-    if (ext === '.xls') return 'xls';
-
-    // Then check by mime type
-    if (mimeType === 'text/csv' || mimeType === 'application/csv') return 'csv';
-    if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return 'xlsx';
-    if (mimeType === 'application/vnd.ms-excel') return 'xls';
-
-    return null;
-}
-
-// MAIN ROUTE - ReportedProblem Bulk Upload
+// MAIN ROUTE - Optimized with parallel processing and bulk operations
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
-    const BATCH_SIZE = 2000; // Increased batch size for better performance
-    const PARALLEL_BATCHES = 3; // Process multiple batches in parallel
+    const BATCH_SIZE = 2000;
+    const PARALLEL_BATCHES = 3;
+    const BULK_WRITE_BATCH_SIZE = 500;
 
     // Initialize response object with optimized structure
     const response = {
@@ -240,11 +286,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             duplicatesInFile: 0,
             existingRecords: 0,
             skippedTotal: 0,
-            noChangesSkipped: 0,
-            statusUpdates: {
-                total: 0,
-                byStatus: {}
-            }
+            noChangesSkipped: 0
         },
         headerMapping: {},
         errors: [],
@@ -271,24 +313,17 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
 
-        // Detect file type properly
+        // Determine file type and parse accordingly
         const fileType = getFileType(req.file.originalname, req.file.mimetype);
-
-        if (!fileType) {
-            response.status = 'failed';
-            response.errors.push(`Unsupported file format. File: ${req.file.originalname}, MIME: ${req.file.mimetype}`);
-            return res.status(400).json(response);
-        }
-
-        // Parse file with optimized method selection
         let jsonData;
+
         try {
             if (fileType === 'csv') {
                 jsonData = await parseCSVFile(req.file.buffer);
             } else if (fileType === 'xlsx' || fileType === 'xls') {
                 jsonData = parseExcelFile(req.file.buffer);
             } else {
-                throw new Error(`Unsupported file type: ${fileType}`);
+                throw new Error(`Unsupported file format. File: ${req.file.originalname}, MIME: ${req.file.mimetype}`);
             }
         } catch (parseError) {
             response.status = 'failed';
@@ -310,16 +345,19 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         const headerMapping = mapHeaders(headers);
         response.headerMapping = headerMapping;
 
-        // Check for required fields for ReportedProblem schema
+        // Check for required fields with optimized lookup
         const requiredFields = ['catalog', 'codegroup', 'prodgroup', 'name', 'shorttextforcode'];
-        const missingRequiredFields = requiredFields.filter(field =>
-            !Object.values(headerMapping).includes(field)
+        const hasRequiredFields = requiredFields.every(field =>
+            Object.values(headerMapping).includes(field)
         );
-
-        if (missingRequiredFields.length > 0) {
+        
+        if (!hasRequiredFields) {
+            const missingFields = requiredFields.filter(field => 
+                !Object.values(headerMapping).includes(field)
+            );
             response.status = 'failed';
             response.errors.push(
-                `Required headers not found: ${missingRequiredFields.join(', ')}. Available headers: ${headers.join(', ')}`
+                `Required headers not found: ${missingFields.join(', ')}. Available headers: ${headers.join(', ')}`
             );
             return res.status(400).json(response);
         }
@@ -327,8 +365,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Send initial response
         res.write(JSON.stringify(response) + '\n');
 
-        // Create unique identifier for checking duplicates (combination of catalog + codegroup + prodgroup + name)
-        const processedIdentifiers = new Set();
+        const processedUniqueKeys = new Set();
         let currentRow = 0;
 
         // Process data in parallel batches
@@ -339,8 +376,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             let batchUpdated = 0;
             let batchFailed = 0;
             let batchSkipped = 0;
-            let batchStatusUpdates = 0;
-            let currentRow = 0;
+
             // Process each record in the batch
             for (const record of batch) {
                 currentRow++;
@@ -350,21 +386,22 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     codegroup: '',
                     prodgroup: '',
                     name: '',
+                    shorttextforcode: '',
                     status: 'Processing',
                     action: '',
                     error: null,
-                    warnings: [],
-                    assignedStatus: null, // Track assigned status
-                    statusChanged: false // Track if status was changed
+                    warnings: []
                 };
 
                 try {
                     const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
+                    
+                    // Update record result with cleaned data
                     recordResult.catalog = cleanedRecord.catalog || 'Unknown';
                     recordResult.codegroup = cleanedRecord.codegroup || 'Unknown';
                     recordResult.prodgroup = cleanedRecord.prodgroup || 'Unknown';
-                    recordResult.name = cleanedRecord.name || 'N/A';
-                    recordResult.assignedStatus = cleanedRecord.status;
+                    recordResult.name = cleanedRecord.name || 'Unknown';
+                    recordResult.shorttextforcode = cleanedRecord.shorttextforcode || 'Unknown';
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -375,22 +412,22 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         continue;
                     }
 
-                    // Create unique identifier for duplicate checking (catalog + codegroup + prodgroup + name)
-                    const uniqueIdentifier = `${cleanedRecord.catalog}|${cleanedRecord.codegroup}|${cleanedRecord.prodgroup}|${cleanedRecord.name}`;
+                    // Generate unique key for duplicate checking (now includes ALL fields)
+                    const uniqueKey = generateUniqueKey(cleanedRecord);
 
                     // Check for duplicates within the file
-                    if (processedIdentifiers.has(uniqueIdentifier)) {
+                    if (processedUniqueKeys.has(uniqueKey)) {
                         recordResult.status = 'Skipped';
-                        recordResult.error = 'Duplicate record in file (same Catalog + Code Group + Product Group + Name)';
+                        recordResult.error = 'Duplicate record in file (all fields match)';
                         recordResult.action = 'Skipped due to file duplicate';
-                        recordResult.warnings.push('Record with same Catalog, Code Group, Product Group, and Name already processed in this file');
+                        recordResult.warnings.push('Exact duplicate record already processed in this file');
                         batchResults.push(recordResult);
                         batchSkipped++;
                         continue;
                     }
 
-                    processedIdentifiers.add(uniqueIdentifier);
-                    validRecords.push({ cleanedRecord, recordResult, providedFields });
+                    processedUniqueKeys.add(uniqueKey);
+                    validRecords.push({ cleanedRecord, recordResult, providedFields, uniqueKey });
 
                 } catch (err) {
                     recordResult.status = 'Failed';
@@ -403,110 +440,60 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
             // Process valid records in bulk
             if (validRecords.length > 0) {
-                // Find existing records in bulk using compound index
-                const searchCriteria = validRecords.map(r => ({
-                    catalog: r.cleanedRecord.catalog,
-                    codegroup: r.cleanedRecord.codegroup,
-                    prodgroup: r.cleanedRecord.prodgroup,
-                    name: r.cleanedRecord.name
-                }));
-
+                // **UPDATED**: Find existing records using ALL fields for exact match
                 const existingRecords = await ReportedProblem.find({
-                    $or: searchCriteria
+                    $or: validRecords.map(r => ({
+                        catalog: r.cleanedRecord.catalog,
+                        codegroup: r.cleanedRecord.codegroup,
+                        prodgroup: r.cleanedRecord.prodgroup,
+                        name: r.cleanedRecord.name,
+                        shorttextforcode: r.cleanedRecord.shorttextforcode,
+                        status: r.cleanedRecord.status || null // Handle optional status field
+                    }))
                 }).lean();
 
                 const existingRecordsMap = new Map();
                 existingRecords.forEach(rec => {
-                    const key = `${rec.catalog}|${rec.codegroup}|${rec.prodgroup}|${rec.name}`;
+                    const key = generateUniqueKey(rec);
                     existingRecordsMap.set(key, rec);
                 });
 
                 // Prepare bulk operations
-                const bulkOps = [];
+                const bulkCreateOps = [];
+                const bulkUpdateOps = [];
                 const now = new Date();
 
-                for (const { cleanedRecord, recordResult, providedFields } of validRecords) {
-                    const uniqueKey = `${cleanedRecord.catalog}|${cleanedRecord.codegroup}|${cleanedRecord.prodgroup}|${cleanedRecord.name}`;
+                for (const { cleanedRecord, recordResult, providedFields, uniqueKey } of validRecords) {
                     const existingRecord = existingRecordsMap.get(uniqueKey);
 
                     if (existingRecord) {
                         response.summary.existingRecords++;
 
-                        // Handle status for existing records
-                        const statusFromFile = providedFields.includes('status');
-                        if (!statusFromFile) {
-                            // Keep existing status if not provided in file
-                            cleanedRecord.status = existingRecord.status;
-                            recordResult.assignedStatus = existingRecord.status;
-                        } else if (cleanedRecord.status !== existingRecord.status) {
-                            recordResult.statusChanged = true;
-                            batchStatusUpdates++;
-                        }
+                        // Since all fields match exactly, no changes are possible
+                        recordResult.status = 'Skipped';
+                        recordResult.action = 'Exact duplicate found in database';
+                        recordResult.changeDetails = [];
+                        recordResult.changesText = 'All fields match existing record';
+                        recordResult.warnings.push('Exact duplicate record already exists in database');
 
-                        const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields);
-
-                        if (comparisonResult.hasChanges) {
-                            const updateData = { modifiedAt: now };
-                            providedFields.forEach(field => {
-                                updateData[field] = cleanedRecord[field];
-                            });
-
-                            // Update status if provided in file but not in providedFields check
-                            if (statusFromFile || cleanedRecord.status !== existingRecord.status) {
-                                updateData.status = cleanedRecord.status;
-                            }
-
-                            bulkOps.push({
-                                updateOne: {
-                                    filter: {
-                                        catalog: cleanedRecord.catalog,
-                                        codegroup: cleanedRecord.codegroup,
-                                        prodgroup: cleanedRecord.prodgroup,
-                                        name: cleanedRecord.name
-                                    },
-                                    update: { $set: updateData }
-                                }
-                            });
-
-                            const changesList = comparisonResult.changeDetails.map(change =>
-                                `${change.field}: "${change.oldValue}" → "${change.newValue}"`
-                            ).join(', ');
-
-                            recordResult.status = 'Updated';
-                            recordResult.action = 'Updated existing record';
-                            recordResult.changeDetails = comparisonResult.changeDetails;
-                            recordResult.changesText = changesList;
-                            recordResult.warnings.push(`Changes detected: ${changesList}`);
-
-                            if (recordResult.statusChanged) {
-                                recordResult.warnings.push(`Status changed: ${existingRecord.status} → ${cleanedRecord.status}`);
-                            }
-
-                            batchUpdated++;
-                        } else {
-                            recordResult.status = 'Skipped';
-                            recordResult.action = 'No changes detected';
-                            recordResult.changeDetails = [];
-                            recordResult.changesText = 'No changes detected';
-                            recordResult.warnings.push('Record already exists with identical data');
-
-                            batchSkipped++;
-                        }
+                        batchSkipped++;
                     } else {
-                        bulkOps.push({
+                        // Create new record since it's unique
+                        bulkCreateOps.push({
                             insertOne: {
                                 document: {
                                     ...cleanedRecord,
                                     createdAt: now,
-                                    modifiedAt: now
+                                    modifiedAt: now,
+                                    status: cleanedRecord.status || 'Active'
                                 }
                             }
                         });
 
                         recordResult.status = 'Created';
-                        recordResult.action = 'Created new record';
+                        recordResult.action = 'Created new unique record';
                         recordResult.changeDetails = [];
-                        recordResult.changesText = 'New record created';
+                        recordResult.changesText = 'New unique record created';
 
                         batchCreated++;
                     }
@@ -514,71 +501,44 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     batchResults.push(recordResult);
                 }
 
-                // Execute bulk operations if any
-                // Execute bulk operations if any
-                if (bulkOps.length > 0) {
-                    try {
-                        console.log('📝 Executing bulkWrite with operations:', bulkOps.length);
-                        console.log('🔍 Sample operations:', JSON.stringify(bulkOps.slice(0, 2), null, 2));
-
-                        const bulkResult = await ReportedProblem.bulkWrite(bulkOps, {
-                            ordered: false,
-                            upsert: false
-                        });
-
-                        console.log('✅ Bulk write result:', {
-                            insertedCount: bulkResult.insertedCount,
-                            matchedCount: bulkResult.matchedCount,
-                            modifiedCount: bulkResult.modifiedCount,
-                            deletedCount: bulkResult.deletedCount,
-                            upsertedCount: bulkResult.upsertedCount,
-                            insertedIds: bulkResult.insertedIds,
-                            upsertedIds: bulkResult.upsertedIds
-                        });
-
-                    } catch (bulkError) {
-                        console.error('❌ BulkWrite Error:', bulkError);
-                        console.error('Error details:', {
-                            message: bulkError.message,
-                            code: bulkError.code,
-                            writeErrors: bulkError.writeErrors,
-                            writeConcernErrors: bulkError.writeConcernErrors
-                        });
-
-                        // Handle bulk errors by marking affected records as failed
-                        if (bulkError.writeErrors && bulkError.writeErrors.length > 0) {
-                            bulkError.writeErrors.forEach((error, index) => {
-                                console.error(`Write Error ${index}:`, error);
-
-                                const failedRecord = batchResults.find(r => {
-                                    const errorDoc = error.op?.insertOne?.document || error.op?.updateOne?.filter;
-                                    if (!errorDoc) return false;
-
-                                    return (
-                                        r.catalog === errorDoc.catalog &&
-                                        r.codegroup === errorDoc.codegroup &&
-                                        r.prodgroup === errorDoc.prodgroup &&
-                                        r.name === errorDoc.name
-                                    );
+                // Execute bulk operations in smaller chunks
+                const executeBulkWrite = async (operations) => {
+                    for (let i = 0; i < operations.length; i += BULK_WRITE_BATCH_SIZE) {
+                        const chunk = operations.slice(i, i + BULK_WRITE_BATCH_SIZE);
+                        try {
+                            await ReportedProblem.bulkWrite(chunk, { ordered: false });
+                        } catch (bulkError) {
+                            // Handle bulk errors by marking affected records as failed
+                            if (bulkError.writeErrors) {
+                                bulkError.writeErrors.forEach(error => {
+                                    const failedRecord = batchResults.find(r => {
+                                        const errorDoc = error.op?.insertOne?.document;
+                                        return errorDoc && (
+                                            r.catalog === errorDoc.catalog &&
+                                            r.codegroup === errorDoc.codegroup &&
+                                            r.prodgroup === errorDoc.prodgroup &&
+                                            r.name === errorDoc.name &&
+                                            r.shorttextforcode === errorDoc.shorttextforcode
+                                        );
+                                    });
+                                    if (failedRecord) {
+                                        const previousStatus = failedRecord.status;
+                                        failedRecord.status = 'Failed';
+                                        failedRecord.action = 'Bulk operation failed';
+                                        failedRecord.error = error.errmsg;
+                                        batchFailed++;
+                                        if (previousStatus === 'Created') batchCreated--;
+                                    }
                                 });
-
-                                if (failedRecord) {
-                                    failedRecord.status = 'Failed';
-                                    failedRecord.action = 'Bulk operation failed';
-                                    failedRecord.error = error.errmsg || error.message;
-                                    batchFailed++;
-
-                                    // Adjust counters
-                                    if (failedRecord.action === 'Created new record') batchCreated--;
-                                    if (failedRecord.action === 'Updated existing record') batchUpdated--;
-                                }
-                            });
+                            }
                         }
                     }
-                } else {
-                    console.log('⚠️ No bulk operations to execute');
-                }
+                };
 
+                // Execute create operations (no update operations needed since exact duplicates are skipped)
+                if (bulkCreateOps.length > 0) {
+                    await executeBulkWrite(bulkCreateOps);
+                }
             }
 
             return {
@@ -586,8 +546,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 batchCreated,
                 batchUpdated,
                 batchFailed,
-                batchSkipped,
-                batchStatusUpdates
+                batchSkipped
             };
         };
 
@@ -624,7 +583,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     r => r.status === 'Skipped' && r.error && r.error.includes('Duplicate record in file')
                 ).length;
                 response.summary.noChangesSkipped += completedBatch.batchResults.filter(
-                    r => r.status === 'Skipped' && r.action === 'No changes detected'
+                    r => r.status === 'Skipped' && r.action && r.action.includes('Exact duplicate found')
                 ).length;
                 response.results.push(...completedBatch.batchResults);
 
@@ -661,7 +620,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 r => r.status === 'Skipped' && r.error && r.error.includes('Duplicate record in file')
             ).length;
             response.summary.noChangesSkipped += completedBatch.batchResults.filter(
-                r => r.status === 'Skipped' && r.action === 'No changes detected'
+                r => r.status === 'Skipped' && r.action && r.action.includes('Exact duplicate found')
             ).length;
             response.results.push(...completedBatch.batchResults);
 

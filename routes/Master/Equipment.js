@@ -20,7 +20,22 @@ const PM = require('../../Model/UploadSchema/PMSchema');
 const mongoose = require('mongoose');
 const NotificationSettings = require('../../Model/AdminSchema/NotificationSettingsSchema');
 
-
+async function getCicRecipients() {
+    try {
+        const settings = await NotificationSettings.findOne();
+        if (settings && Array.isArray(settings.cicRecipients)) {
+            // Filter out duplicates and validate email format
+            const uniqueValidEmails = [...new Set(settings.cicRecipients)].filter(email =>
+                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+            );
+            return uniqueValidEmails;
+        }
+        return [];
+    } catch (error) {
+        console.error('Error fetching cicRecipients:', error);
+        return [];
+    }
+}
 
 // In-memory OTP store (for demonstration; consider a persistent store in production)
 const otpStore = {};
@@ -1130,6 +1145,7 @@ router.post("/equipment/bulk", async (req, res) => {
                     disableUrlAccess: true
                 });
             }
+            const cicRecipients = await getCicRecipients();
 
             // 🔥 FIX: 2. Send Installation Report + Checklists to internal emails
             if (pdfData.userInfo) {
@@ -1141,8 +1157,7 @@ router.post("/equipment/bulk", async (req, res) => {
                         : pdfData.userInfo.manageremail
                             ? [pdfData.userInfo.manageremail]
                             : []),
-                    'ftshivamtiwari222@gmail.com',
-                    // 'Damodara.s@skanray.com'
+                    ...cicRecipients  // CIC recipients from database
                 ].filter(Boolean);
 
                 if (toEmails.length > 0) {

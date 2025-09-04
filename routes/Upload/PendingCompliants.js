@@ -8,6 +8,7 @@ const pdf = require("html-pdf");
 const User = require('../../Model/MasterSchema/UserSchema');
 const cors = require('cors');
 let otpStore = {};
+const NotificationSettings = require('../../Model/AdminSchema/NotificationSettingsSchema');
 
 const mongoose = require('mongoose');
 
@@ -27,7 +28,22 @@ async function getPendingComplaintById(req, res, next) {
   res.pendingComplaint = pendingComplaint;
   next();
 }
-
+async function getCicRecipients() {
+  try {
+    const settings = await NotificationSettings.findOne();
+    if (settings && Array.isArray(settings.cicRecipients)) {
+      // Filter out duplicates and validate email format
+      const uniqueValidEmails = [...new Set(settings.cicRecipients)].filter(email =>
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      );
+      return uniqueValidEmails;
+    }
+    return [];
+  } catch (error) {
+    console.error('Error fetching cicRecipients:', error);
+    return [];
+  }
+}
 // Middleware to check for duplicate notification_complaintid
 async function checkDuplicateComplaintId(req, res, next) {
   let pendingComplaint;
@@ -346,11 +362,11 @@ router.post('/sendComplaintEmail', async (req, res) => {
       },
     });
 
-    // 7. Prepare recipient emails
-    const recipientEmails = [
-      'ftshivamtiwari222@gmail.com',
-      'Damodara.s@skanray.com'
-    ];
+
+    const cicRecipients = await getCicRecipients();
+    // Only use CIC recipients from database, no fallback
+    const recipientEmails = [...cicRecipients];
+
 
     // Add service engineer email
     if (combinedData.userInfo.email && combinedData.userInfo.email !== 'N/A') {
@@ -599,15 +615,11 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
         pass: 'rdzegwmzirvbjcpm'
       },
     });
-
+    const cicRecipients = await getCicRecipients();
     // 6. Prepare recipient emails
-    const recipientEmails = [
-      'ftshivamtiwari222@gmail.com',
-      'Damodara.s@skanray.com',
-      // 'tomson.m+customer@skanray.com'
-    ];
+    const recipientEmails = [...cicRecipients];
 
-    // Add service engineer email
+
     if (user?.email && user.email !== 'N/A') {
       recipientEmails.push(user.email);
     }
@@ -625,14 +637,14 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
         }
       });
     }
-
+    const finalRecipients = [...new Set(recipientEmails)];
     // 7. Set up mail options
     const mailOptions = {
       from: 'webadmin@skanray-access.com',
-      to: recipientEmails.join(','),
+      to: finalRecipients.join(','),
       subject: 'Update Notification - ' + notification_no,
       html: emailHTML
-    };
+    }
 
     // 8. Send the email
     await transporter.sendMail(mailOptions);
@@ -1052,7 +1064,7 @@ router.get('/complaints/type/:complaintType', async (req, res) => {
         if (partNumbers.length > 0) {
           baseFilter.materialcode = { $in: partNumbers };
         }
-        
+
         if (branchNames.length > 0) {
           baseFilter.salesoffice = { $in: branchNames };
         }
@@ -2356,10 +2368,14 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
         });
 
         // 10) Prepare recipient emails for SERVICE ENGINEERS
-        const serviceEngineerEmails = [
-          'ftshivamtiwari222@gmail.com',
-          'Damodara.s@skanray.com'
-        ];
+        // const serviceEngineerEmails = [
+        //   'ftshivamtiwari222@gmail.com',
+        //   'Damodara.s@skanray.com'
+        // ];
+        const cicRecipients = await getCicRecipients();
+        // 6. Prepare recipient emails
+        // Only use CIC recipients from database, no fallback
+        const serviceEngineerEmails = [...cicRecipients];
 
         // Add service engineer email
         if (userInfo?.email && userInfo.email !== 'N/A') {
