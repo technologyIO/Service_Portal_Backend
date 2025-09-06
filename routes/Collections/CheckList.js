@@ -47,8 +47,11 @@ router.get('/checklistbymaterial/:materialCode', async (req, res) => {
         // Extract the product group from the found product
         const productGroup = product.productgroup;
 
-        // Find all checklists where prodGroup matches the product group
-        const checklists = await CheckList.find({ prodGroup: productGroup });
+        // Find all checklists where prodGroup matches the product group and status is not Inactive
+        const checklists = await CheckList.find({
+            prodGroup: productGroup,
+            status: { $ne: "Inactive" }
+        });
 
         // Return the product group and the matching checklists
         res.status(200).json({ productGroup, checklists });
@@ -56,6 +59,7 @@ router.get('/checklistbymaterial/:materialCode', async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
+
 
 
 // GET all checklists
@@ -99,7 +103,7 @@ router.get('/checklist', async (req, res) => {
 router.delete('/checklist/bulk', async (req, res) => {
     try {
         const { ids } = req.body;
-        
+
         // Validate input
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ message: 'Please provide valid IDs array' });
@@ -112,18 +116,18 @@ router.delete('/checklist/bulk', async (req, res) => {
         }
 
         // Delete multiple checklists
-        const deleteResult = await CheckList.deleteMany({ 
-            _id: { $in: validIds } 
+        const deleteResult = await CheckList.deleteMany({
+            _id: { $in: validIds }
         });
 
         if (deleteResult.deletedCount === 0) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 message: 'No checklists found to delete',
-                deletedCount: 0 
+                deletedCount: 0
             });
         }
 
-        res.json({ 
+        res.json({
             message: `Successfully deleted ${deleteResult.deletedCount} checklists`,
             deletedCount: deleteResult.deletedCount,
             requestedCount: validIds.length

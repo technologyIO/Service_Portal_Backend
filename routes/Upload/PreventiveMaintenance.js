@@ -425,7 +425,7 @@ router.get("/allpms/:employeeid?", async (req, res) => {
     const currentMonth = currentDate.getMonth();
     const currentYear = currentDate.getFullYear();
 
-    // Precompute allowed months
+    // Precompute allowed months (ORIGINAL LOGIC)
     const thisMonth = `${(currentMonth + 1)
       .toString()
       .padStart(2, "0")}/${currentYear}`;
@@ -434,15 +434,32 @@ router.get("/allpms/:employeeid?", async (req, res) => {
       .padStart(2, "0")}/${currentYear}`;
     const allowedDueMonths = [thisMonth, nextMonth];
 
+    // Check if pagination/search is requested
+    const isPaginationRequested = req.query.limit || req.query.page || req.query.nextCursor || req.query.pageMode;
+    const isSearchRequested = req.query.search && req.query.search.trim();
+
+    // Pagination params
+    const pageMode = (req.query.pageMode || 'cursor').toLowerCase();
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const nextCursor = req.query.nextCursor || null;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = (req.query.sortOrder || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+
+    // Search params
+    const search = (req.query.search || '').trim();
+    const searchFields = req.query.searchFields
+      ? String(req.query.searchFields).split(',').map(s => s.trim()).filter(Boolean)
+      : ['pmType', 'materialDescription', 'serialNumber', 'customerCode', 'region', 'city', 'pmDueMonth', 'pmStatus', 'partNumber', 'email', 'customername', 'hospitalname', 'street'];
+
     if (employeeid) {
-      // Optimized user data retrieval
+      // ORIGINAL LOGIC - UNCHANGED
       const user = await User.findOne({ employeeid })
         .select("demographics skills")
         .lean();
 
       if (!user) return res.status(404).json({ message: "User not found" });
 
-      // Extract branch codes efficiently
       const branchDemographic = user.demographics.find(
         (d) => d.type === "branch"
       );
@@ -478,7 +495,6 @@ router.get("/allpms/:employeeid?", async (req, res) => {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
-      // Get part numbers
       const partNumbers = user.skills.flatMap((skill) =>
         (skill.partNumbers || []).filter(Boolean)
       );
@@ -487,14 +503,15 @@ router.get("/allpms/:employeeid?", async (req, res) => {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
-      // Single optimized query for PM data
+      // Get ALL PMs first (ORIGINAL LOGIC)
       const pms = await PM.find({
         partNumber: { $in: partNumbers },
+        status: { $ne: "Inactive" },
         $or: [
           { pmStatus: "Overdue" },
           {
             pmStatus: "Due",
-            pmDueMonth: { $in: allowedDueMonths }, // Now includes current + next month
+            pmDueMonth: { $in: allowedDueMonths },
           },
         ],
       }).lean();
@@ -503,15 +520,16 @@ router.get("/allpms/:employeeid?", async (req, res) => {
         return res.json({ pms: [], count: 0, filteredByEmployee: true });
       }
 
-      // Batch process customer data
+      // Customer enrichment (ORIGINAL LOGIC)
       const customerCodes = [
         ...new Set(pms.map((pm) => pm.customerCode).filter(Boolean)),
       ];
       const customers = await Customer.find({
         customercodeid: { $in: customerCodes },
+        status: { $ne: "Inactive" },
       })
         .select(
-          "customercodeid customername hospitalname street city region email"
+          "customercodeid customername hospitalname street city region email telephone"
         )
         .lean();
 
@@ -520,7 +538,6 @@ router.get("/allpms/:employeeid?", async (req, res) => {
         return map;
       }, {});
 
-      // Batch process region data
       const customerRegions = [
         ...new Set(customers.map((c) => c.region).filter(Boolean)),
       ];
@@ -532,7 +549,6 @@ router.get("/allpms/:employeeid?", async (req, res) => {
         return map;
       }, {});
 
-      // Batch process branch data
       const stateNames = [...new Set(Object.values(stateMap).filter(Boolean))];
       const branches = await Branch.find({ state: { $in: stateNames } })
         .select("branchShortCode state")
@@ -543,7 +559,7 @@ router.get("/allpms/:employeeid?", async (req, res) => {
       );
       const allowedStates = [...new Set(allowedBranches.map((b) => b.state))];
 
-      // Final filtering and mapping
+      // Final filtering (ORIGINAL LOGIC)
       const finalPMs = pms.reduce((result, pm) => {
         const customer = customerMap[pm.customerCode];
         if (!customer) return result;
@@ -566,15 +582,96 @@ router.get("/allpms/:employeeid?", async (req, res) => {
         return result;
       }, []);
 
-      return res.json({
-        pms: finalPMs,
-        count: finalPMs.length,
+      // Apply search filtering (if requested)
+      let filteredPMs = finalPMs;
+      if (isSearchRequested) {
+        const regex = new RegExp(escapeRegex(search), 'i');
+        filteredPMs = finalPMs.filter(pm =>
+          searchFields.some(field => {
+            const value = pm[field];
+            return value && typeof value === 'string' && regex.test(value);
+          })
+        );
+      }
+
+      // Apply pagination (if requested)
+      let resultPMs = filteredPMs;
+      let hasNextPage = false;
+      let nextCursorOut = null;
+      let totalPages = null;
+
+      if (isPaginationRequested || isSearchRequested) {
+        if (sortBy && (sortBy !== 'createdAt' || sortOrder !== -1)) {
+          resultPMs.sort((a, b) => {
+            let aVal = a[sortBy];
+            let bVal = b[sortBy];
+
+            if (sortBy === 'createdAt' || sortBy === 'updatedAt') {
+              aVal = new Date(aVal);
+              bVal = new Date(bVal);
+            }
+
+            if (aVal < bVal) return sortOrder === 1 ? -1 : 1;
+            if (aVal > bVal) return sortOrder === 1 ? 1 : -1;
+            return 0;
+          });
+        }
+
+        const totalCount = resultPMs.length;
+
+        if (pageMode === 'offset') {
+          const startIndex = (page - 1) * limit;
+          const endIndex = startIndex + limit;
+          resultPMs = resultPMs.slice(startIndex, endIndex);
+          totalPages = Math.ceil(totalCount / limit);
+          hasNextPage = endIndex < totalCount;
+        } else {
+          let startIndex = 0;
+          if (nextCursor) {
+            const decoded = safeDecodeCursor(nextCursor);
+            if (decoded && decoded.index !== undefined) {
+              startIndex = decoded.index;
+            }
+          }
+
+          const endIndex = startIndex + limit;
+          hasNextPage = endIndex < totalCount;
+
+          if (hasNextPage) {
+            nextCursorOut = Buffer.from(JSON.stringify({ index: endIndex })).toString('base64');
+          }
+
+          resultPMs = resultPMs.slice(startIndex, endIndex);
+        }
+      }
+
+      const response = {
+        pms: resultPMs,
+        count: resultPMs.length,
         filteredByEmployee: true,
-      });
+      };
+
+      if (isPaginationRequested || isSearchRequested) {
+        response.hasNextPage = hasNextPage;
+        response.nextCursor = nextCursorOut;
+        response.limit = limit;
+        response.sortBy = sortBy;
+        response.sortOrder = sortOrder === 1 ? 'asc' : 'desc';
+
+        if (pageMode === 'offset') {
+          response.page = page;
+          response.totalPages = totalPages;
+          response.currentPage = page;
+          response.total = (isSearchRequested ? filteredPMs : finalPMs).length;
+        }
+      }
+
+      return res.json(response);
     }
 
-    // Non-employee path optimization
+    // Non-employee path (similar logic)
     const pms = await PM.find({
+      status: { $ne: "Inactive" },
       $or: [
         { pmStatus: "Overdue" },
         { pmStatus: "Due", pmDueMonth: { $in: allowedDueMonths } },
@@ -586,9 +683,10 @@ router.get("/allpms/:employeeid?", async (req, res) => {
     ];
     const customers = await Customer.find({
       customercodeid: { $in: customerCodes },
+      status: { $ne: "Inactive" },
     })
       .select(
-        "customercodeid customername hospitalname street city region email"
+        "customercodeid customername hospitalname street city region email telephone"
       )
       .lean();
 
@@ -612,16 +710,495 @@ router.get("/allpms/:employeeid?", async (req, res) => {
       } : pm;
     });
 
-    return res.json({
-      pms: enrichedAll,
-      count: enrichedAll.length,
+    let resultPMs = enrichedAll;
+    if (isSearchRequested) {
+      const regex = new RegExp(escapeRegex(search), 'i');
+      resultPMs = enrichedAll.filter(pm =>
+        searchFields.some(field => {
+          const value = pm[field];
+          return value && typeof value === 'string' && regex.test(value);
+        })
+      );
+    }
+
+    let hasNextPage = false;
+    let nextCursorOut = null;
+    let totalPages = null;
+
+    if (isPaginationRequested || isSearchRequested) {
+      if (sortBy && (sortBy !== 'createdAt' || sortOrder !== -1)) {
+        resultPMs.sort((a, b) => {
+          let aVal = a[sortBy];
+          let bVal = b[sortBy];
+
+          if (sortBy === 'createdAt' || sortBy === 'updatedAt') {
+            aVal = new Date(aVal);
+            bVal = new Date(bVal);
+          }
+
+          if (aVal < bVal) return sortOrder === 1 ? -1 : 1;
+          if (aVal > bVal) return sortOrder === 1 ? 1 : -1;
+          return 0;
+        });
+      }
+
+      const totalCount = resultPMs.length;
+
+      if (pageMode === 'offset') {
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + limit;
+        resultPMs = resultPMs.slice(startIndex, endIndex);
+        totalPages = Math.ceil(totalCount / limit);
+        hasNextPage = endIndex < totalCount;
+      } else {
+        let startIndex = 0;
+        if (nextCursor) {
+          const decoded = safeDecodeCursor(nextCursor);
+          if (decoded && decoded.index !== undefined) {
+            startIndex = decoded.index;
+          }
+        }
+
+        const endIndex = startIndex + limit;
+        hasNextPage = endIndex < totalCount;
+
+        if (hasNextPage) {
+          nextCursorOut = Buffer.from(JSON.stringify({ index: endIndex })).toString('base64');
+        }
+
+        resultPMs = resultPMs.slice(startIndex, endIndex);
+      }
+    }
+
+    const response = {
+      pms: resultPMs,
+      count: resultPMs.length,
       filteredByEmployee: false,
-    });
+    };
+
+    if (isPaginationRequested || isSearchRequested) {
+      response.hasNextPage = hasNextPage;
+      response.nextCursor = nextCursorOut;
+      response.limit = limit;
+      response.sortBy = sortBy;
+      response.sortOrder = sortOrder === 1 ? 'asc' : 'desc';
+
+      if (pageMode === 'offset') {
+        response.page = page;
+        response.totalPages = totalPages;
+        response.currentPage = page;
+        response.total = (isSearchRequested ? resultPMs : enrichedAll).length;
+      }
+    }
+
+    return res.json(response);
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });
   }
 });
+
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function safeDecodeCursor(token) {
+  try {
+    return JSON.parse(Buffer.from(String(token), 'base64').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+
+router.get("/search/pms/:employeeid?", async (req, res) => {
+  try {
+    const { employeeid } = req.params;
+
+    // Validate search query is provided
+    const search = (req.query.search || '').trim();
+    if (!search) {
+      return res.status(400).json({
+        message: "Search query is required",
+        pms: [],
+        count: 0,
+        totalPages: 0,
+        currentPage: 1
+      });
+    }
+
+    // Pagination params (always paginated for search)
+    const pageMode = (req.query.pageMode || 'offset').toLowerCase();
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = (req.query.sortOrder || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+
+    // Search fields
+    const searchFields = req.query.searchFields
+      ? String(req.query.searchFields).split(',').map(s => s.trim()).filter(Boolean)
+      : [
+        'pmType', 'materialDescription', 'serialNumber', 'customerCode',
+        'region', 'city', 'pmDueMonth', 'pmStatus', 'partNumber',
+        'email', 'customername', 'hospitalname', 'street'
+      ];
+
+    // Due month window (same logic as main API)
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth();
+    const currentYear = currentDate.getFullYear();
+    const thisMonth = `${(currentMonth + 1).toString().padStart(2, "0")}/${currentYear}`;
+    const nextMonth = `${(currentMonth + 2).toString().padStart(2, "0")}/${currentYear}`;
+    const allowedDueMonths = [thisMonth, nextMonth];
+
+    // Advanced filters
+    const equalsFilters = {};
+    const containsFilters = [];
+    const prefixFilters = [];
+
+    for (const [key, value] of Object.entries(req.query)) {
+      if (key.startsWith('equals[') && key.endsWith(']')) {
+        const field = key.slice(7, -1);
+        if (value !== undefined && value !== '') equalsFilters[field] = value;
+      }
+      if (key.startsWith('contains[') && key.endsWith(']')) {
+        const field = key.slice(9, -1);
+        if (value !== undefined && value !== '') {
+          containsFilters.push({ [field]: { $regex: escapeRegex(value), $options: 'i' } });
+        }
+      }
+      if (key.startsWith('prefix[') && key.endsWith(']') && field) {
+        const field = key.slice(7, -1);
+        if (value !== undefined && value !== '') {
+          prefixFilters.push({ [field]: { $regex: '^' + escapeRegex(value), $options: 'i' } });
+        }
+      }
+    }
+
+    if (employeeid) {
+      // Employee-specific search
+      const user = await User.findOne({ employeeid }).select("demographics skills").lean();
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      // Get user's branch codes (same logic as main API)
+      let userBranchShortCodes = [];
+      const branchDemographic = user.demographics?.find(d => d.type === "branch");
+      if (branchDemographic) {
+        const values = branchDemographic.values || [];
+        if (values.some(v => v.branchShortCode)) {
+          userBranchShortCodes = values.map(v => v.branchShortCode).filter(Boolean);
+        } else {
+          const branchIds = values.filter(v => v.id).map(v => v.id);
+          const branchNames = values.filter(v => v.name && !v.id).map(v => v.name);
+          const branchQueries = [];
+          if (branchIds.length) branchQueries.push({ _id: { $in: branchIds } });
+          if (branchNames.length) branchQueries.push({ name: { $in: branchNames } });
+          if (branchQueries.length) {
+            const branches = await Branch.find({ $or: branchQueries }).select("branchShortCode").lean();
+            userBranchShortCodes = branches.map(b => b.branchShortCode);
+          }
+        }
+      }
+
+      if (!userBranchShortCodes.length) {
+        return res.json({
+          pms: [],
+          count: 0,
+          filteredByEmployee: true,
+          totalPages: 0,
+          currentPage: 1,
+          searchQuery: search
+        });
+      }
+
+      // Get part numbers
+      const partNumbers = (user.skills || []).flatMap(s => (s.partNumbers || []).filter(Boolean));
+      if (!partNumbers.length) {
+        return res.json({
+          pms: [],
+          count: 0,
+          filteredByEmployee: true,
+          totalPages: 0,
+          currentPage: 1,
+          searchQuery: search
+        });
+      }
+
+      // Get ALL PMs first (same as main API)
+      const pms = await PM.find({
+        partNumber: { $in: partNumbers },
+        status: { $ne: "Inactive" },
+        $or: [
+          { pmStatus: "Overdue" },
+          { pmStatus: "Due", pmDueMonth: { $in: allowedDueMonths } },
+        ],
+      }).lean();
+
+      if (!pms.length) {
+        return res.json({
+          pms: [],
+          count: 0,
+          filteredByEmployee: true,
+          totalPages: 0,
+          currentPage: 1,
+          searchQuery: search
+        });
+      }
+
+      // Customer enrichment (same as main API)
+      const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
+      const customers = await Customer.find({
+        customercodeid: { $in: customerCodes },
+        status: { $ne: "Inactive" },
+      }).select("customercodeid customername hospitalname street city region email telephone").lean();
+
+      const customerMap = customers.reduce((map, customer) => {
+        map[customer.customercodeid] = customer;
+        return map;
+      }, {});
+
+      // State/branch filtering (same as main API)
+      const customerRegions = [...new Set(customers.map(c => c.region).filter(Boolean))];
+      const states = await State.find({ stateId: { $in: customerRegions } }).lean();
+      const stateMap = states.reduce((map, state) => {
+        map[state.stateId] = state.name;
+        return map;
+      }, {});
+
+      const stateNames = [...new Set(Object.values(stateMap).filter(Boolean))];
+      const branches = await Branch.find({ state: { $in: stateNames } }).select("branchShortCode state").lean();
+      const allowedBranches = branches.filter(b => userBranchShortCodes.includes(b.branchShortCode));
+      const allowedStates = [...new Set(allowedBranches.map(b => b.state))];
+
+      // Final filtering and enrichment (same as main API)
+      const finalPMs = pms.reduce((result, pm) => {
+        const customer = customerMap[pm.customerCode];
+        if (!customer) return result;
+
+        const stateName = stateMap[customer.region];
+        if (!stateName || !allowedStates.includes(stateName)) return result;
+
+        const pmObj = {
+          ...pm,
+          email: customer.email?.trim() || null,
+          customername: customer.customername,
+          hospitalname: customer.hospitalname,
+          street: customer.street,
+          city: customer.city,
+          region: customer.region,
+          telephone: customer.telephone
+        };
+
+        result.push(pmObj);
+        return result;
+      }, []);
+
+      // Apply search filtering
+      const regex = new RegExp(escapeRegex(search), 'i');
+      let searchResults = finalPMs.filter(pm =>
+        searchFields.some(field => {
+          const value = pm[field];
+          return value && typeof value === 'string' && regex.test(value);
+        })
+      );
+
+      // Apply additional filters
+      if (Object.keys(equalsFilters).length) {
+        searchResults = searchResults.filter(pm => {
+          return Object.entries(equalsFilters).every(([field, value]) => pm[field] === value);
+        });
+      }
+
+      if (containsFilters.length) {
+        searchResults = searchResults.filter(pm => {
+          return containsFilters.every(filter => {
+            const [[field, condition]] = Object.entries(filter);
+            const value = pm[field];
+            return value && typeof value === 'string' && new RegExp(condition.$regex, condition.$options).test(value);
+          });
+        });
+      }
+
+      if (prefixFilters.length) {
+        searchResults = searchResults.filter(pm => {
+          return prefixFilters.every(filter => {
+            const [[field, condition]] = Object.entries(filter);
+            const value = pm[field];
+            return value && typeof value === 'string' && new RegExp(condition.$regex, condition.$options).test(value);
+          });
+        });
+      }
+
+      // Sort results
+      if (sortBy) {
+        searchResults.sort((a, b) => {
+          let aVal = a[sortBy];
+          let bVal = b[sortBy];
+
+          if (sortBy === 'createdAt' || sortBy === 'updatedAt') {
+            aVal = new Date(aVal);
+            bVal = new Date(bVal);
+          }
+
+          if (aVal < bVal) return sortOrder === 1 ? -1 : 1;
+          if (aVal > bVal) return sortOrder === 1 ? 1 : -1;
+          return 0;
+        });
+      }
+
+      // Pagination
+      const totalCount = searchResults.length;
+      const totalPages = Math.ceil(totalCount / limit);
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedResults = searchResults.slice(startIndex, endIndex);
+
+      return res.json({
+        pms: paginatedResults,
+        count: paginatedResults.length,
+        filteredByEmployee: true,
+        searchQuery: search,
+        page,
+        totalPages,
+        currentPage: page,
+        total: totalCount,
+        limit,
+        sortBy,
+        sortOrder: sortOrder === 1 ? 'asc' : 'desc',
+        hasNextPage: endIndex < totalCount,
+        hasPreviousPage: page > 1
+      });
+
+    } else {
+      // Non-employee search
+      const pms = await PM.find({
+        status: { $ne: "Inactive" },
+        $or: [
+          { pmStatus: "Overdue" },
+          { pmStatus: "Due", pmDueMonth: { $in: allowedDueMonths } },
+        ],
+      }).lean();
+
+      const customerCodes = [...new Set(pms.map(pm => pm.customerCode).filter(Boolean))];
+      const customers = await Customer.find({
+        customercodeid: { $in: customerCodes },
+        status: { $ne: "Inactive" },
+      }).select("customercodeid customername hospitalname street city region email telephone").lean();
+
+      const customerMap = customers.reduce((map, customer) => {
+        map[customer.customercodeid] = customer;
+        return map;
+      }, {});
+
+      const enrichedAll = pms.map(pm => {
+        const customer = customerMap[pm.customerCode];
+        return customer ? {
+          ...pm,
+          email: customer.email?.trim() || null,
+          customercodeid: customer.customercodeid,
+          customername: customer.customername,
+          hospitalname: customer.hospitalname,
+          street: customer.street,
+          city: customer.city,
+          region: customer.region,
+          telephone: customer.telephone
+        } : pm;
+      });
+
+      // Apply search filtering
+      const regex = new RegExp(escapeRegex(search), 'i');
+      let searchResults = enrichedAll.filter(pm =>
+        searchFields.some(field => {
+          const value = pm[field];
+          return value && typeof value === 'string' && regex.test(value);
+        })
+      );
+
+      // Apply additional filters (same logic as employee path)
+      if (Object.keys(equalsFilters).length) {
+        searchResults = searchResults.filter(pm => {
+          return Object.entries(equalsFilters).every(([field, value]) => pm[field] === value);
+        });
+      }
+
+      if (containsFilters.length) {
+        searchResults = searchResults.filter(pm => {
+          return containsFilters.every(filter => {
+            const [[field, condition]] = Object.entries(filter);
+            const value = pm[field];
+            return value && typeof value === 'string' && new RegExp(condition.$regex, condition.$options).test(value);
+          });
+        });
+      }
+
+      if (prefixFilters.length) {
+        searchResults = searchResults.filter(pm => {
+          return prefixFilters.every(filter => {
+            const [[field, condition]] = Object.entries(filter);
+            const value = pm[field];
+            return value && typeof value === 'string' && new RegExp(condition.$regex, condition.$options).test(value);
+          });
+        });
+      }
+
+      // Sort and paginate
+      if (sortBy) {
+        searchResults.sort((a, b) => {
+          let aVal = a[sortBy];
+          let bVal = b[sortBy];
+
+          if (sortBy === 'createdAt' || sortBy === 'updatedAt') {
+            aVal = new Date(aVal);
+            bVal = new Date(bVal);
+          }
+
+          if (aVal < bVal) return sortOrder === 1 ? -1 : 1;
+          if (aVal > bVal) return sortOrder === 1 ? 1 : -1;
+          return 0;
+        });
+      }
+
+      const totalCount = searchResults.length;
+      const totalPages = Math.ceil(totalCount / limit);
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedResults = searchResults.slice(startIndex, endIndex);
+
+      return res.json({
+        pms: paginatedResults,
+        count: paginatedResults.length,
+        filteredByEmployee: false,
+        searchQuery: search,
+        page,
+        totalPages,
+        currentPage: page,
+        total: totalCount,
+        limit,
+        sortBy,
+        sortOrder: sortOrder === 1 ? 'asc' : 'desc',
+        hasNextPage: endIndex < totalCount,
+        hasPreviousPage: page > 1
+      });
+    }
+
+  } catch (err) {
+    console.error('Search API Error:', err);
+    res.status(500).json({
+      message: err.message,
+      pms: [],
+      count: 0,
+      totalPages: 0,
+      currentPage: 1
+    });
+  }
+});
+
+// Helper function (add if not already present)
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 
 // GET all PM records with pagination
 router.get("/allpms", async (req, res) => {

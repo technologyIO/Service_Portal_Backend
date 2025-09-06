@@ -7,8 +7,8 @@ const problemtypeSchema = new mongoose.Schema({
         required: true // Add required validation if necessary
     },
     status: {
-        type: Boolean,
-        default: true // Default status can be true if required
+        type: String,
+        default: "Active" // Default status can be true if required
     },
     createdAt: {
         type: Date,

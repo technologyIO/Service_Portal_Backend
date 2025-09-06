@@ -62,26 +62,27 @@ router.get("/spare-by-partno/:partno", async (req, res) => {
 router.get("/search/:partno", async (req, res) => {
   try {
     const partNo = req.params.partno;
+
     // Find the product by its part number
-    const productData = await Product.findOne({ partnoid: partNo });
+    const productData = await Product.findOne({ partnoid: partNo, status: { $ne: "Inactive" } });
     if (!productData) {
-      return res.status(404).json({ message: "Product not found with given part number" });
+      return res.status(404).json({ message: "Product not found or inactive" });
     }
 
     // Extract the subgroup from the product
     const subgrp = productData.subgrp;
 
-    // Search SpareMaster records matching the subgroup
-    const spareMasters = await SpareMaster.find({ Sub_grp: subgrp });
+    // Search SpareMaster records matching the subgroup (exclude inactive)
+    const spareMasters = await SpareMaster.find({ Sub_grp: subgrp, status: { $ne: "Inactive" } });
     if (spareMasters.length === 0) {
-      return res.status(404).json({ message: `No SpareMaster records found for subgroup: ${subgrp}` });
+      return res.status(404).json({ message: `No active SpareMaster records found for subgroup: ${subgrp}` });
     }
 
-    // Map the result to return only PartNumber and Description
+    // Map the result to return only PartNumber, Description, and Image
     const result = spareMasters.map(record => ({
       PartNumber: record.PartNumber,
       Description: record.Description,
-      Image: record.spareiamegUrl
+      Image: record.spareImageUrl // corrected field name
     }));
 
     res.status(200).json(result);
@@ -89,6 +90,7 @@ router.get("/search/:partno", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 // Get paginated SpareMaster data
 router.get("/addsparemaster/paginated", async (req, res) => {
   try {

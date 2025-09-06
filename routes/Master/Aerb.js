@@ -108,7 +108,10 @@ router.get('/aerb/check/:materialcode', async (req, res) => {
             return res.status(400).json({ message: "Material code is required" });
         }
 
-        const aerb = await Aerb.findOne({ materialcode: materialcode.trim() });
+        const aerb = await Aerb.findOne({
+            materialcode: materialcode.trim(),
+            status: { $ne: "Inactive" } // Exclude inactive records
+        });
 
         if (aerb) {
             return res.json({ exists: true });
@@ -121,6 +124,7 @@ router.get('/aerb/check/:materialcode', async (req, res) => {
         res.status(500).json({ message: "Server error: " + err.message });
     }
 });
+
 
 // CREATE a new Aerb entry
 router.post('/aerb', checkDuplicateAerb, async (req, res) => {

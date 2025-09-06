@@ -72,6 +72,19 @@ router.get('/productgroup', async (req, res) => {
         res.status(500).json({ message: err.message }); // Handle error and return JSON response with status 500 (Internal Server Error)
     }
 });
+router.get('/productgroupall', async (req, res) => {
+    try {
+
+        const productGroups = await ProductGroup.find({ status: { $ne: "Inactive" } }); // Fetch Product Groups for the current page
+
+        res.status(200).json({
+            productGroups,
+
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message }); // Handle error and return JSON response with status 500 (Internal Server Error)
+    }
+});
 
 router.get('/productgroup/:id', getProductGroup, (req, res) => {
     res.json(res.productgroup);

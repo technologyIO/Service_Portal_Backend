@@ -146,10 +146,12 @@ router.get('/dealerstocks/materials/:dealercodeid', async (req, res) => {
     try {
         const { dealercodeid } = req.params;
 
-        // Query DealerStock where dealercodeid matches
-        // Only return materialcode, materialdescription, and unrestrictedquantity
+        // Query DealerStock where dealercodeid matches and status is not Inactive
         const results = await DealerStock.find(
-            { dealercodeid },
+            {
+                dealercodeid,
+                status: { $ne: "Inactive" }
+            },
             {
                 materialcode: 1,
                 materialdescription: 1,
@@ -163,6 +165,7 @@ router.get('/dealerstocks/materials/:dealercodeid', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 
 // GET DealerStock by ID

@@ -99,6 +99,9 @@ router.get('/hubstocks/material-list', async (req, res) => {
     try {
         const results = await HubStock.aggregate([
             {
+                $match: { status: { $ne: "Inactive" } } // Exclude inactive materials
+            },
+            {
                 $group: {
                     _id: {
                         materialcode: '$materialcode',
@@ -107,7 +110,6 @@ router.get('/hubstocks/material-list', async (req, res) => {
                 }
             },
             {
-                // Reshape the output to have the fields directly
                 $project: {
                     _id: 0,
                     materialcode: '$_id.materialcode',
@@ -122,20 +124,21 @@ router.get('/hubstocks/material-list', async (req, res) => {
     }
 });
 
+
 // Example route: /collections/hubstocks/check-material/:materialcode
 router.get('/hubstocks/check-material/:materialcode', async (req, res) => {
     try {
         const { materialcode } = req.params;
 
-        // 1) Fetch matching documents from HubStock
+        // 1) Fetch matching documents from HubStock (only active)
         const hubStockData = await HubStock.find(
-            { materialcode },
+            { materialcode, status: { $ne: "Inactive" } },
             { storagelocation: 1, quantity: 1, _id: 0 }
         );
 
-        // 2) Fetch matching documents from DealerStock
+        // 2) Fetch matching documents from DealerStock (only active)
         const dealerStockData = await DealerStock.find(
-            { materialcode },
+            { materialcode, status: { $ne: "Inactive" } },
             { dealercity: 1, unrestrictedquantity: 1, _id: 0 }
         );
 
@@ -145,6 +148,7 @@ router.get('/hubstocks/check-material/:materialcode', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 // GET HubStock by ID
 router.get('/hubstocks/:id', getHubStockById, (req, res) => {

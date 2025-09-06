@@ -46,7 +46,8 @@ router.get('/contract-proposals', async (req, res) => {
     // ─── EQUIPMENT QUERY CONDITIONS ──────────────────────────────────────────────
     const equipmentQuery = {
       custWarrantyenddate: { $lte: oneMonthLater },
-      ...searchCondition
+      status: { $ne: 'Inactive' },
+      ...searchCondition,
     };
 
     // ─── FETCH ALL MATCHING EQUIPMENT (without pagination first) ─────────────────
@@ -101,6 +102,7 @@ router.get('/contract-proposals', async (req, res) => {
     const allValidEquipments = [];
 
     for (const eq of allMatchingEquipments) {
+      if (eq.status === 'Inactive') continue;
       // 1. AMC validity check
       const latestAMC = amcMap.get(String(eq.serialnumber));
       if (latestAMC && new Date(latestAMC.enddate) > oneMonthLater) continue;
@@ -193,7 +195,9 @@ router.get('/contract-proposals/search', async (req, res) => {
 
     // ─── BUILD SEARCH CONDITIONS ────────────────────────────────────────────────
     const equipmentConditions = {
-      custWarrantyenddate: { $lte: oneMonthLater }
+      custWarrantyenddate: { $lte: oneMonthLater },
+
+      ...(status ? { status } : { status: { $ne: 'Inactive' } }),
     };
 
     if (status) equipmentConditions.status = status;
@@ -324,6 +328,7 @@ router.get('/contract-proposals/search', async (req, res) => {
     const allValidEquipments = [];
 
     for (const eq of allMatchingEquipments) {
+      if (eq.status === 'Inactive') continue;
       // Customer filter check
       const matchedCustomer = customerMap.get(String(eq.currentcustomer));
       if (!matchedCustomer && (customerSearch.trim() || city.trim() || region.trim())) {
@@ -399,7 +404,8 @@ router.get('/contract-proposals/filters/cities', async (req, res) => {
 
     // ─── EQUIPMENT QUERY CONDITIONS (same filters as main API) ───────────────
     const equipmentQuery = {
-      custWarrantyenddate: { $lte: oneMonthLater }
+      custWarrantyenddate: { $lte: oneMonthLater },
+      status: { $ne: 'Inactive' },
     };
 
     // ─── FETCH ALL MATCHING EQUIPMENT ───────────────────────────────────────
@@ -450,6 +456,7 @@ router.get('/contract-proposals/filters/cities', async (req, res) => {
 
     for (const eq of allMatchingEquipments) {
       // AMC validity check
+      if (eq.status === 'Inactive') continue;
       const latestAMC = amcMap.get(String(eq.serialnumber));
       if (latestAMC && new Date(latestAMC.enddate) > oneMonthLater) continue;
 
@@ -512,7 +519,8 @@ router.get('/contract-proposals/filters/regions', async (req, res) => {
 
     // ─── EQUIPMENT QUERY CONDITIONS (same filters as main API) ───────────────
     const equipmentQuery = {
-      custWarrantyenddate: { $lte: oneMonthLater }
+      custWarrantyenddate: { $lte: oneMonthLater },
+      status: { $ne: 'Inactive' },
     };
 
     // ─── FETCH ALL MATCHING EQUIPMENT ───────────────────────────────────────
@@ -562,6 +570,7 @@ router.get('/contract-proposals/filters/regions', async (req, res) => {
     const validCustomerIds = new Set();
 
     for (const eq of allMatchingEquipments) {
+      if (eq.status === 'Inactive') continue;
       // AMC validity check
       const latestAMC = amcMap.get(String(eq.serialnumber));
       if (latestAMC && new Date(latestAMC.enddate) > oneMonthLater) continue;

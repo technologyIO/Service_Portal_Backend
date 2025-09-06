@@ -119,8 +119,8 @@ router.delete('/complainttype/bulk', async (req, res) => {
 // READ ALL
 router.get('/complainttype', async (req, res) => {
     try {
-        const complaints = await ComplaintType.find();
-        const total = await ComplaintType.countDocuments();
+        const complaints = await ComplaintType.find({ status: { $ne: "Inactive" } });
+        const total = await ComplaintType.countDocuments({ status: { $ne: "Inactive" } });
         res.status(200).json({ complaints, total });
     } catch (err) {
         res.status(500).json({ error: err.message });

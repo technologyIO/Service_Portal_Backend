@@ -274,7 +274,11 @@ router.get('/equipment-details/:serialnumber', async (req, res) => {
         const { serialnumber } = req.params;
 
         // 1. Retrieve equipment data using the serial number
-        const equipmentData = await Equipment.findOne({ serialnumber });
+        const equipmentData = await Equipment.findOne({
+            serialnumber: serialnumber,
+            status: { $ne: "Inactive" }
+        });
+
         if (!equipmentData) {
             return res.status(404).json({
                 message: 'No equipment data found for the provided serial number'
@@ -283,17 +287,23 @@ router.get('/equipment-details/:serialnumber', async (req, res) => {
 
         // 2. Using the material code from the equipment, find AMC contract data
         const materialCode = equipmentData.materialcode;
+
         const amcContract = await AMCContract.findOne(
-            { materialcode: materialCode },
+            {
+                materialcode: materialCode,
+                status: { $ne: "Inactive" }
+            },
             { startdate: 1, enddate: 1, _id: 0 }
         );
+
         const amcContractDates = amcContract
             ? { startdate: amcContract.startdate, enddate: amcContract.enddate }
             : {};
 
+
         // 3. Using the current customer code from the equipment, find customer details
         const customerCode = equipmentData.currentcustomer;
-        const customerData = await Customer.findOne({ customercodeid: customerCode });
+        const customerData = await Customer.findOne({ customercodeid: customerCode, status: { $ne: "Inactive" } });
 
         // ✅ Fixed: Properly structure customer details with all fields
         const customerDetails = customerData ? {
@@ -319,7 +329,7 @@ router.get('/equipment-details/:serialnumber', async (req, res) => {
 
         // 4. Find all equipments that have used this same customer code
         const customerEquipments = await Equipment.find(
-            { currentcustomer: customerCode },
+            { currentcustomer: customerCode, status: { $ne: "Inactive" } },
             'serialnumber materialcode name materialdescription'
         );
 
@@ -835,32 +845,31 @@ router.get('/informatedoc/by-part/:partnoid', async (req, res) => {
 
         // Step 3: Find documents from PMDocMaster (PM type) and FormatMaster
         const [pmDocs, formatDocs] = await Promise.all([
-            // PM Documents from PMDocMaster
+            // PM Documents from PMDocMaster (exclude Inactive)
             PMDocMaster.find({
                 productGroup: productGroup,
-                type: 'IN'
+                type: 'IN',
+                status: { $ne: "Inactive" }
             }).select('chlNo revNo type status createdAt modifiedAt'),
 
-            // Format Documents from FormatMaster
+            // Format Documents from FormatMaster (exclude Inactive)
             FormatMaster.find({
                 productGroup: productGroup,
-                type: 'IN'
+                type: 'IN',
+                status: { $ne: "Inactive" }
             }).select('chlNo revNo type status createdAt updatedAt')
         ]);
 
         res.json({
             success: true,
             productGroup,
-            // PM Documents from PMDocMaster in 'documents' array
             documents: pmDocs.map(doc => ({
                 chlNo: doc.chlNo,
                 revNo: doc.revNo,
             })),
-            // Format Documents from FormatMaster in 'formats' array
             formats: formatDocs.map(doc => ({
                 chlNo: doc.chlNo,
                 revNo: doc.revNo,
-
             }))
         });
     } catch (err) {
@@ -870,6 +879,7 @@ router.get('/informatedoc/by-part/:partnoid', async (req, res) => {
         });
     }
 });
+
 
 router.post("/equipment/bulk", async (req, res) => {
     const response = {

@@ -246,53 +246,90 @@ router.post('/customer/send-email', async (req, res) => {
       </p>
     `;
 
-
-
-    // Prepare email recipients
-    // let recipients = ['ftshivamtiwari222@gmail.com', 'damodara.s@skanray.com'];
-    const cicRecipients = await getCicRecipients();
-
-    // Only use CIC recipients from database, no fallback
-    const recipients = [...cicRecipients];
-
-    // Add service engineer email if available
-    if (serviceEngineer && serviceEngineer.email) {
-        recipients.push(serviceEngineer.email);
-    }
-    const finalRecipients = [...new Set(recipients)];
-
-    // Email options
-    const mailOptions = {
-        from: 'webladmin@skanray-access.com',
-        to: finalRecipients.join(', '),
-        subject: 'New Customer Creation',
-        html: emailContent
-    };
-
     try {
+        // Get CIC recipients from database
+        const cicRecipients = await getCicRecipients();
+
+        // Start with CIC recipients (always included)
+        let recipients = [...cicRecipients];
+
+        // Add recipients based on service engineer user type
+        if (serviceEngineer) {
+            const userType = serviceEngineer.usertype?.toLowerCase();
+
+            if (userType === 'skanray') {
+                // For Skanray user type: add service engineer email and manager emails
+                if (serviceEngineer.email) {
+                    recipients.push(serviceEngineer.email);
+                }
+
+                // Add manager emails if available
+                if (serviceEngineer.manageremail && Array.isArray(serviceEngineer.manageremail)) {
+                    recipients.push(...serviceEngineer.manageremail);
+                }
+            }
+            else if (userType === 'dealer') {
+                // For Dealer user type: add dealer email, service engineer email, and manager emails
+                if (serviceEngineer.dealerEmail) {
+                    recipients.push(serviceEngineer.dealerEmail);
+                }
+
+                if (serviceEngineer.email) {
+                    recipients.push(serviceEngineer.email);
+                }
+
+                // Add manager emails if available
+                if (serviceEngineer.manageremail && Array.isArray(serviceEngineer.manageremail)) {
+                    recipients.push(...serviceEngineer.manageremail);
+                }
+            }
+        }
+
+        // Remove duplicates and filter out empty emails
+        const finalRecipients = [...new Set(recipients)].filter(email =>
+            email && email.trim() !== '' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+        );
+
+        // Email options
+        const mailOptions = {
+            from: 'webladmin@skanray-access.com',
+            to: finalRecipients.join(', '),
+            subject: 'New Customer Creation',
+            html: emailContent
+        };
+
         // Send the email
         await transporter.sendMail(mailOptions);
+
         res.status(200).json({
             message: 'Email sent successfully',
             recipients: finalRecipients,
             recipientCount: finalRecipients.length,
-            cicRecipientsFromDB: cicRecipients.length,
-            serviceEngineerEmail: serviceEngineer?.email || 'N/A',
+            emailBreakdown: {
+                cicRecipientsFromDB: cicRecipients.length,
+                serviceEngineerEmail: serviceEngineer?.email || 'N/A',
+                managerEmails: serviceEngineer?.manageremail?.length || 0,
+                dealerEmail: serviceEngineer?.dealerEmail || 'N/A',
+                userType: serviceEngineer?.usertype || 'N/A'
+            },
             emailDetails: {
                 subject: 'New Customer Creation',
-                from: 'webadmin@skanray-access.com',
+                from: 'webladmin@skanray-access.com',
                 sentAt: new Date().toISOString()
             }
         });
+
     } catch (error) {
+        console.error('Email sending error:', error);
         res.status(500).json({
             message: 'Failed to send email',
             error: error.toString(),
-            intendedRecipients: finalRecipients,
-            recipientCount: finalRecipients.length
+            serviceEngineerUserType: serviceEngineer?.usertype || 'N/A'
         });
     }
 });
+
+
 
 router.get('/customer', async (req, res) => {
     try {
@@ -342,15 +379,17 @@ router.get('/customerphone', async (req, res) => {
 });
 
 
-// router.get('/customer/by-code/:customercode', getCustomerByCode);
 router.get("/customer/by-code/:customercode", async (req, res) => {
     const { customercode } = req.params;
 
     try {
-        const customer = await Customer.findOne({ customercodeid: customercode });
+        const customer = await Customer.findOne({
+            customercodeid: customercode,
+            status: { $ne: "Inactive" } // exclude string "Inactive"
+        });
 
         if (!customer) {
-            return res.status(404).json({ message: "Customer not found" });
+            return res.status(404).json({ message: "Customer not found or inactive" });
         }
 
         res.status(200).json(customer);
@@ -359,6 +398,8 @@ router.get("/customer/by-code/:customercode", async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 });
+
+
 // GET customer by ID
 router.get('/customer/:id', getCustomerById, (req, res) => {
     res.json(res.customer);
