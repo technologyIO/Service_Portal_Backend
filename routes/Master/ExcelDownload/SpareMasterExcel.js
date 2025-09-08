@@ -1,6 +1,6 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const SpareMaster = require('../../../Model/MasterSchema/SpareMasterSchema'); 
+const SpareMaster = require('../../../Model/MasterSchema/SpareMasterSchema');
 const router = express.Router();
 
 // SpareMaster Excel export API
@@ -24,10 +24,10 @@ router.get('/export-sparemaster', async (req, res) => {
             { header: 'Part Number', key: 'PartNumber', width: 20 },
             { header: 'Description', key: 'Description', width: 35 },
             { header: 'Type', key: 'Type', width: 15 },
-            { header: 'Rate (MRP)', key: 'Rate', width: 15 },
-            { header: 'DP (Dealer Price)', key: 'DP', width: 18 },
-            { header: 'Charges (Exchange Price)', key: 'Charges', width: 22 },
-            { header: 'Status', key: 'status', width: 12 }, // Status field added
+            { header: 'Rate', key: 'Rate', width: 15 },
+            { header: 'DP', key: 'DP', width: 18 },
+            { header: 'Charges', key: 'Charges', width: 22 },
+            { header: 'Status', key: 'status', width: 12 },
             { header: 'Spare Image URL', key: 'spareiamegUrl', width: 30 },
             { header: 'Created At', key: 'createdAt', width: 18 },
             { header: 'Updated At', key: 'updatedAt', width: 18 }
@@ -53,7 +53,7 @@ router.get('/export-sparemaster', async (req, res) => {
         // Data rows add kariye
         spareMasterData.forEach((spare, index) => {
             // Charges field ko safely handle kariye (Mixed type hai)
-            const chargesValue = spare.Charges !== null && spare.Charges !== undefined 
+            const chargesValue = spare.Charges !== null && spare.Charges !== undefined
                 ? (typeof spare.Charges === 'object' ? JSON.stringify(spare.Charges) : spare.Charges.toString())
                 : '';
 
@@ -97,7 +97,7 @@ router.get('/export-sparemaster', async (req, res) => {
                     cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
                 } else if (colNumber === 9) { // Status column - center align
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
-                    
+
                     // Status-based conditional formatting
                     const statusValue = cell.value;
                     if (statusValue === 'Active') {
