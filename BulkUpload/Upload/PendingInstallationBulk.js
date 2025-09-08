@@ -26,7 +26,7 @@ const upload = multer({
             'text/csv', // .csv
             'application/csv'
         ];
-        
+
         if (isExcel || isCSV || validMimeTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
@@ -40,31 +40,31 @@ const upload = multer({
 
 // Optimized: Predefined field mappings for faster access - UPDATED with status
 const FIELD_MAPPINGS = {
-    'invoiceno': new Set(['invoiceno', 'invoice_no', 'invoicenumber', 'invoice_number', 'billno', 'bill_no']),
-    'invoicedate': new Set(['invoicedate', 'invoice_date', 'billdate', 'bill_date', 'date']),
-    'distchnl': new Set(['distchnl', 'dist_chnl', 'distributionchannel', 'distribution_channel', 'channel']),
-    'customerid': new Set(['customerid', 'customer_id', 'custid', 'cust_id', 'customercode', 'customer_code']),
-    'customername1': new Set(['customername1', 'customer_name1', 'customername', 'customer_name', 'name1']),
-    'customername2': new Set(['customername2', 'customer_name2', 'name2', 'hospitalname', 'hospital_name']),
+    'invoiceno': new Set(['invoiceno', 'invoice_no', 'invoicenumber', 'invoice_number', 'billno', 'bill_no', 'bill.doc.']),
+    'invoicedate': new Set(['invoicedate', 'invoice_date', 'billdate', 'bill_date', 'date', 'billing date']),
+    'distchnl': new Set(['distchnl', 'dist_chnl', 'distributionchannel', 'distribution_channel', 'channel', 'dchl']),
+    'customerid': new Set(['customerid', 'customer_id', 'custid', 'cust_id', 'customercode', 'customer_code', 'sold-to pt']),
+    'customername1': new Set(['customername1', 'customer_name1', 'customername', 'customer_name', 'name1', 'name 1']),
+    'customername2': new Set(['customername2', 'customer_name2', 'name2', 'hospitalname', 'hospital_name', 'name 2']),
     'customercity': new Set(['customercity', 'customer_city', 'city']),
     'customerpostalcode': new Set(['customerpostalcode', 'customer_postal_code', 'postalcode', 'postal_code', 'pincode', 'zip']),
     'material': new Set(['material', 'materialcode', 'material_code', 'productcode', 'product_code', 'partno', 'part_no']),
     'description': new Set(['description', 'materialdescription', 'material_description', 'productdescription', 'product_description', 'desc']),
-    'serialnumber': new Set(['serialnumber', 'serial_number', 'serialno', 'serial_no', 'sno']),
-    'salesdist': new Set(['salesdist', 'sales_dist', 'salesdistrict', 'sales_district']),
-    'salesoff': new Set(['salesoff', 'sales_off', 'salesoffice', 'sales_office']),
-    'customercountry': new Set(['customercountry', 'customer_country', 'country']),
-    'customerregion': new Set(['customerregion', 'customer_region', 'region']),
-    'currentcustomerid': new Set(['currentcustomerid', 'current_customer_id', 'currentcustid', 'current_cust_id']),
-    'currentcustomername1': new Set(['currentcustomername1', 'current_customer_name1', 'currentcustomername', 'current_customer_name']),
-    'currentcustomername2': new Set(['currentcustomername2', 'current_customer_name2', 'currenthospitalname', 'current_hospital_name']),
-    'currentcustomercity': new Set(['currentcustomercity', 'current_customer_city', 'currentcity', 'current_city']),
-    'currentcustomerregion': new Set(['currentcustomerregion', 'current_customer_region', 'currentregion', 'current_region']),
-    'currentcustomerpostalcode': new Set(['currentcustomerpostalcode', 'current_customer_postal_code', 'currentpostalcode', 'current_postal_code']),
-    'currentcustomercountry': new Set(['currentcustomercountry', 'current_customer_country', 'currentcountry', 'current_country']),
-    'mtl_grp4': new Set(['mtlgrp4', 'mtl_grp4', 'materialgroup4', 'material_group4', 'mtlgroup4', 'mtl_group4']),
-    'key': new Set(['key', 'keyfield', 'key_field', 'id']),
-    'palnumber': new Set(['palnumber', 'pal_number', 'pal', 'palletno', 'pallet_no']),
+    'serialnumber': new Set(['serialnumber', 'serial_number', 'serialno', 'serial_no', 'sno', 'serial number']),
+    'salesdist': new Set(['salesdist', 'sales_dist', 'salesdistrict', 'sales_district', 'diso']),
+    'salesoff': new Set(['salesoff', 'sales_off', 'salesoffice', 'sales_office', 'soff.']),
+    'customercountry': new Set(['customercountry', 'customer_country', 'country', 'cty']),
+    'customerregion': new Set(['customerregion', 'customer_region', 'region', 'rg']),
+    'currentcustomerid': new Set(['currentcustomerid', 'current_customer_id', 'currentcustid', 'current_cust_id', 'customer']),
+    'currentcustomername1': new Set(['currentcustomername1', 'current_customer_name1', 'currentcustomername', 'current_customer_name', 'name 1']),
+    'currentcustomername2': new Set(['currentcustomername2', 'current_customer_name2', 'currenthospitalname', 'current_hospital_name', 'name 2']),
+    'currentcustomercity': new Set(['currentcustomercity', 'current_customer_city', 'currentcity', 'current_city', 'city']),
+    'currentcustomerregion': new Set(['currentcustomerregion', 'current_customer_region', 'currentregion', 'current_region', 'rg']),
+    'currentcustomerpostalcode': new Set(['currentcustomerpostalcode', 'current_customer_postal_code', 'currentpostalcode', 'current_postal_code', 'postalcode']),
+    'currentcustomercountry': new Set(['currentcustomercountry', 'current_customer_country', 'currentcountry', 'current_country', 'cty']),
+    'mtl_grp4': new Set(['mtlgrp4', 'mtl_grp4', 'materialgroup4', 'material_group4', 'mtlgroup4', 'mtl_group4', 'mg 4']),
+    'key': new Set(['key', 'keyfield', 'key_field', 'id', 'generated code']),
+    'palnumber': new Set(['palnumber', 'pal_number', 'pal', 'palletno', 'pallet_no', 'pal number']),
     'status': new Set(['status', 'record_status', 'installation_status', 'pending_status', 'current_status', 'equipment_status'])
 };
 
@@ -170,13 +170,13 @@ function parseUniversalDate(dateInput) {
 // Optimized Excel parsing with buffer reuse
 function parseExcelFile(buffer) {
     try {
-        const workbook = XLSX.read(buffer, { 
-            type: 'buffer', 
+        const workbook = XLSX.read(buffer, {
+            type: 'buffer',
             cellDates: true,
             codepage: 65001 // UTF-8
         });
         const sheetName = workbook.SheetNames[0];
-        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { 
+        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
             defval: '',
             raw: false
         });
@@ -237,8 +237,8 @@ function validateRecord(record, headerMapping) {
 
     // Required field validation - status is NOT required
     const requiredFields = [
-        'invoiceno', 'distchnl', 'customerid', 'material', 
-        'description', 'serialnumber', 'salesdist', 'salesoff', 
+        'invoiceno', 'distchnl', 'customerid', 'material',
+        'description', 'serialnumber', 'salesdist', 'salesoff',
         'currentcustomerid', 'mtl_grp4'
     ];
 
@@ -588,9 +588,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                             if (bulkError.writeErrors) {
                                 bulkError.writeErrors.forEach(error => {
                                     const failedRecord = batchResults.find(r => {
-                                        const serialFromOp = error.op?.serialnumber || 
-                                                            error.op?.insertOne?.document?.serialnumber ||
-                                                            error.op?.updateOne?.filter?.serialnumber;
+                                        const serialFromOp = error.op?.serialnumber ||
+                                            error.op?.insertOne?.document?.serialnumber ||
+                                            error.op?.updateOne?.filter?.serialnumber;
                                         return r.serialnumber === serialFromOp;
                                     });
                                     if (failedRecord) {

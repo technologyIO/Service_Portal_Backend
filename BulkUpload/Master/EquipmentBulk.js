@@ -153,6 +153,7 @@ const FIELD_MAPPINGS = {
     "dealer warranty start",
     "extended warranty start",
     "dealer_warranty_start",
+    "Vendor Wrty Srt",
   ],
   dealerwarrantyenddate: [
     "dealerwarrantyend",
@@ -161,6 +162,7 @@ const FIELD_MAPPINGS = {
     "dealer warranty end",
     "extended warranty end",
     "dealer_warranty_end",
+    "Vendor wrty end",
   ],
   dealer: [
     "dealer", "dealer_name", "dealername", "distributor", "partner", "vendor",

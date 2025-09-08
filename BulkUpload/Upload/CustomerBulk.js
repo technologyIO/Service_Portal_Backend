@@ -39,21 +39,21 @@ const upload = multer({
 
 // Optimized: Predefined field mappings for faster access - UPDATED with status
 const FIELD_MAPPINGS = {
-    'customercodeid': new Set(['customercodeid', 'customercode', 'customer_code', 'customer_id', 'custcode', 'cust_code', 'code']),
-    'customername': new Set(['customername', 'customer_name', 'name1', 'name', 'customername1', 'customer_name1']),
-    'hospitalname': new Set(['hospitalname', 'hospital_name', 'name2', 'customername2', 'customer_name2', 'hospital']),
+    'customercodeid': new Set(['customercodeid', 'customercode', 'customer_code', 'customer_id', 'custcode', 'cust_code', 'code', 'customer']),
+    'customername': new Set(['customername', 'customer_name', 'name1', 'name', 'customername1', 'customer_name1', 'name 1']),
+    'hospitalname': new Set(['hospitalname', 'hospital_name', 'name2', 'customername2', 'customer_name2', 'hospital', 'name 2']),
     'street': new Set(['street', 'streetaddress', 'street_address', 'address1', 'address', 'addr1']),
     'city': new Set(['city', 'cityname', 'city_name']),
     'postalcode': new Set(['postalcode', 'postal_code', 'pincode', 'pin_code', 'zipcode', 'zip_code', 'zip']),
     'district': new Set(['district', 'dist', 'districtname', 'district_name']),
     'state': new Set(['state', 'statename', 'state_name']),
-    'region': new Set(['region', 'regionname', 'region_name', 'zone']),
-    'country': new Set(['country', 'countryname', 'country_name', 'nation']),
-    'telephone': new Set(['telephone', 'phone', 'phonenumber', 'phone_number', 'mobile', 'contact', 'contactno', 'contact_no']),
-    'taxnumber1': new Set(['taxnumber1', 'tax_number1', 'taxno1', 'tax_no1', 'gst', 'gstin', 'tax1']),
-    'taxnumber2': new Set(['taxnumber2', 'tax_number2', 'taxno2', 'tax_no2', 'pan', 'tax2']),
-    'email': new Set(['email', 'emailaddress', 'email_address', 'emailid', 'email_id']),
-    'customertype': new Set(['customertype', 'customer_type', 'type', 'custtype', 'cust_type']),
+    'region': new Set(['region', 'regionname', 'region_name', 'zone', 'rg']),
+    'country': new Set(['country', 'countryname', 'country_name', 'nation', 'cty']),
+    'telephone': new Set(['telephone', 'phone', 'phonenumber', 'phone_number', 'mobile', 'contact', 'contactno', 'contact_no', 'telephone 1']),
+    'taxnumber1': new Set(['taxnumber1', 'tax_number1', 'taxno1', 'tax_no1', 'gst', 'gstin', 'tax1', 'tax number 2']),
+    'taxnumber2': new Set(['taxnumber2', 'tax_number2', 'taxno2', 'tax_no2', 'pan', 'tax2', 'tax number 3']),
+    'email': new Set(['email', 'emailaddress', 'email_address', 'emailid', 'email_id', 'e-mail address']),
+    'customertype': new Set(['customertype', 'customer_type', 'type', 'custtype', 'cust_type', 'customer type']),
     'status': new Set(['status', 'customer_status', 'record_status', 'current_status', 'active_status', 'account_status'])
 };
 

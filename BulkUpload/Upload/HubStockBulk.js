@@ -65,10 +65,10 @@ const upload = multer({
 
 // Optimized: Predefined field mappings for faster access
 const FIELD_MAPPINGS = {
-    'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'code', 'item_code', 'product_code']),
-    'materialdescription': new Set(['materialdescription', 'material_description', 'description', 'desc', 'product_description', 'item_description', 'material_desc']),
-    'quantity': new Set(['quantity', 'qty', 'stock', 'stockquantity', 'stock_quantity', 'available_quantity', 'availablequantity', 'amount']),
-    'storagelocation': new Set(['storagelocation', 'storage_location', 'location', 'warehouse', 'depot', 'storagearea', 'storage_area', 'bin', 'zone']),
+    'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'code', 'item_code', 'product_code', 'material']),
+    'materialdescription': new Set(['materialdescription', 'material_description', 'description', 'desc', 'product_description', 'item_description', 'material_desc', 'material description']),
+    'quantity': new Set(['quantity', 'qty', 'stock', 'stockquantity', 'stock_quantity', 'available_quantity', 'availablequantity', 'amount', 'unrestricted']),
+    'storagelocation': new Set(['storagelocation', 'storage_location', 'location', 'warehouse', 'depot', 'storagearea', 'storage_area', 'bin', 'zone', 'storage location']),
     'status': new Set(['status', 'state', 'condition', 'active', 'inactive'])
 };
 // Optimized normalizeFieldName with memoization

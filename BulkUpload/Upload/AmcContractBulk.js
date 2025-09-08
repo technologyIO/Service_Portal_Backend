@@ -25,7 +25,7 @@ const upload = multer({
             'text/csv', // .csv
             'application/csv'
         ];
-        
+
         if (isExcel || isCSV || validMimeTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
@@ -39,12 +39,12 @@ const upload = multer({
 
 // Optimized: Predefined field mappings for faster access - ADDED STATUS FIELD
 const FIELD_MAPPINGS = {
-    'salesdoc': new Set(['salesdoc', 'sales_doc', 'salesdocument', 'sales_document', 'document', 'docno', 'doc_no']),
-    'startdate': new Set(['startdate', 'start_date', 'begin_date', 'begindate', 'fromdate', 'from_date']),
-    'enddate': new Set(['enddate', 'end_date', 'finish_date', 'finishdate', 'todate', 'to_date', 'expiry_date', 'expirydate']),
-    'satypeZDRC_ZDRN': new Set(['satype', 'sa_type', 'satypezdrc_zdrn', 'satype_zdrc_zdrn', 'type', 'satypezdrczdrn']),
-    'serialnumber': new Set(['serialnumber', 'serial_number', 'serialno', 'serial_no', 'sno']),
-    'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'code', 'item_code', 'product_code']),
+    'salesdoc': new Set(['salesdoc', 'sales_doc', 'salesdocument', 'sales_document', 'document', 'docno', 'doc_no', 'sales doc.']),
+    'startdate': new Set(['startdate', 'start_date', 'begin_date', 'begindate', 'fromdate', 'from_date', 'start dt']),
+    'enddate': new Set(['enddate', 'end_date', 'finish_date', 'finishdate', 'todate', 'to_date', 'expiry_date', 'expirydate', 'end date']),
+    'satypeZDRC_ZDRN': new Set(['satype', 'sa_type', 'satypezdrc_zdrn', 'satype_zdrc_zdrn', 'type', 'satypezdrczdrn', 'SaTy']),
+    'serialnumber': new Set(['serialnumber', 'serial_number', 'serialno', 'serial_no', 'sno', 'serial number']),
+    'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'code', 'item_code', 'product_code', 'material']),
     'status': new Set(['status', 'record_status', 'contract_status', 'amc_status', 'current_status', 'state'])
 };
 
@@ -96,12 +96,12 @@ function mapHeaders(headers) {
 const dateCache = new Map();
 function parseUniversalDate(dateInput) {
     if (!dateInput) return null;
-    
+
     // Handle ### (Excel error) or invalid dates
     if (typeof dateInput === 'string' && (dateInput.includes('#') || dateInput.trim() === '')) {
         return null;
     }
-    
+
     const cacheKey = JSON.stringify(dateInput);
     if (dateCache.has(cacheKey)) return dateCache.get(cacheKey);
 
@@ -149,13 +149,13 @@ function parseUniversalDate(dateInput) {
 // Optimized Excel parsing with buffer reuse
 function parseExcelFile(buffer) {
     try {
-        const workbook = XLSX.read(buffer, { 
-            type: 'buffer', 
+        const workbook = XLSX.read(buffer, {
+            type: 'buffer',
             cellDates: true,
             codepage: 65001 // UTF-8
         });
         const sheetName = workbook.SheetNames[0];
-        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { 
+        return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
             defval: '',
             raw: false
         });
@@ -192,7 +192,7 @@ function createCompositeKey(record) {
         record.materialcode || '',
         record.satypeZDRC_ZDRN || ''
     ];
-    
+
     // Add date parts if available
     if (record.startdate) {
         keyParts.push(record.startdate.toISOString().split('T')[0]); // YYYY-MM-DD format
@@ -200,7 +200,7 @@ function createCompositeKey(record) {
     if (record.enddate) {
         keyParts.push(record.enddate.toISOString().split('T')[0]); // YYYY-MM-DD format
     }
-    
+
     return keyParts.join('|').toLowerCase();
 }
 
@@ -289,13 +289,13 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
             // Date comparison with proper handling
             const existingDate = existingRecord[field] ? new Date(existingRecord[field]) : null;
             const newDate = newRecord[field] ? new Date(newRecord[field]) : null;
-            
+
             if (existingDate && newDate) {
                 // Compare only date part (ignore time differences)
                 const existingDateStr = existingDate.toDateString();
                 const newDateStr = newDate.toDateString();
                 isEqual = existingDateStr === newDateStr;
-                
+
                 existingValue = existingDate.toLocaleDateString('en-GB'); // DD/MM/YYYY format
                 newValue = newDate.toLocaleDateString('en-GB'); // DD/MM/YYYY format
             } else {
@@ -480,7 +480,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         recordResult.action = 'Validation failed';
                         batchResults.push(recordResult);
                         batchFailed++;
-                        
+
                         // Check if it's due to invalid date
                         if (errors.some(err => err.includes('Invalid'))) {
                             batchInvalidDates++;
@@ -637,11 +637,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                                     if (errorIndex < batchResults.length) {
                                         const failedRecord = batchResults[errorIndex];
                                         const originalStatus = failedRecord.status;
-                                        
+
                                         failedRecord.status = 'Failed';
                                         failedRecord.action = `Database ${operationType} failed`;
                                         failedRecord.error = error.errmsg || error.message || 'Unknown database error';
-                                        
+
                                         batchFailed++;
                                         if (originalStatus === 'Created') batchCreated--;
                                         if (originalStatus === 'Updated') batchUpdated--;
@@ -673,17 +673,17 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Process all batches with controlled concurrency
         for (let batchIndex = 0; batchIndex < response.batchProgress.totalBatches; batchIndex += PARALLEL_BATCHES) {
             const batchPromises = [];
-            
+
             // Create batch promises for parallel processing
             for (let j = 0; j < PARALLEL_BATCHES && (batchIndex + j) < response.batchProgress.totalBatches; j++) {
                 const currentBatchIndex = batchIndex + j;
                 const startIdx = currentBatchIndex * BATCH_SIZE;
                 const endIdx = Math.min(startIdx + BATCH_SIZE, jsonData.length);
                 const batch = jsonData.slice(startIdx, endIdx);
-                
+
                 response.batchProgress.currentBatch = currentBatchIndex + 1;
                 response.batchProgress.currentBatchRecords = batch.length;
-                
+
                 batchPromises.push(processBatch(batch, currentBatchIndex));
             }
 
@@ -763,3 +763,4 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 });
 
 module.exports = router;
+

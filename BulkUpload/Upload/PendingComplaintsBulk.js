@@ -49,19 +49,19 @@ const upload = multer({
 
 // Optimized: Predefined field mappings for faster access
 const FIELD_MAPPINGS = {
-  'notificationtype': new Set(['notificationtype', 'notification type', 'type']),
-  'notification_complaintid': new Set(['notificationcomplaintid', 'notification/complaint id', 'complaintid', 'ticketid']),
-  'notificationdate': new Set(['notificationdate', 'notification date', 'date']),
+  'notificationtype': new Set(['notificationtype', 'notification type', 'type', 'notifictn type']),
+  'notification_complaintid': new Set(['notificationcomplaintid', 'notification/complaint id', 'complaintid', 'ticketid', 'notification']),
+  'notificationdate': new Set(['notificationdate', 'notification date', 'date', 'notif.date']),
   'userstatus': new Set(['userstatus', 'user status', 'status']),
   'materialdescription': new Set(['materialdescription', 'material description', 'description']),
   'serialnumber': new Set(['serialnumber', 'serial number', 'sno', 's-no']),
   'devicedata': new Set(['devicedata', 'device data']),
   'salesoffice': new Set(['salesoffice', 'sales office']),
-  'materialcode': new Set(['materialcode', 'material code', 'code']),
-  'reportedproblem': new Set(['reportedproblem', 'reported problem', 'problem']),
-  'dealercode': new Set(['dealercode', 'dealer code']),
-  'customercode': new Set(['customercode', 'customer code']),
-  'partnerresp': new Set(['partnerresp', 'partnerresp.', 'partner response']),
+  'materialcode': new Set(['materialcode', 'material code', 'code', 'material']),
+  'reportedproblem': new Set(['reportedproblem', 'reported problem', 'problem', 'description']),
+  'dealercode': new Set(['dealercode', 'dealer code', 'partnerresp.']),
+  'customercode': new Set(['customercode', 'customer code', 'customer']),
+  'partnerresp': new Set(['partnerresp', 'partnerresp.', 'partner response', 'partnerresp.']),
   'breakdown': new Set(['breakdown', 'break down'])
 };
 
