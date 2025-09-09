@@ -894,20 +894,20 @@ router.post('/login', getUserForLogin, async (req, res) => {
             });
         }
 
-        // 4️⃣ Calculate token expiry at 4 PM
+        // 4️⃣ Calculate token expiry at 10 PM
         const calculateExpiryAt4PM = () => {
             const now = new Date();
             const today4PM = new Date(now);
-            today4PM.setHours(22, 0, 0, 0); // Set to 4:50 PM
+            today4PM.setHours(22, 0, 0, 0);
 
-            // If current time is after 4 PM today, set expiry to 4 PM tomorrow
+            // If current time is after 10 PM today, set expiry to 10 PM tomorrow
             if (now > today4PM) {
                 const tomorrow4PM = new Date(today4PM);
                 tomorrow4PM.setDate(tomorrow4PM.getDate() + 1);
                 return tomorrow4PM;
             }
 
-            // Otherwise, set expiry to 4 PM today
+
             return today4PM;
         };
 

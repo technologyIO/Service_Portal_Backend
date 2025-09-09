@@ -21,7 +21,7 @@ const authenticateToken = async (req, res, next) => {
         } catch (error) {
             if (error.name === 'TokenExpiredError') {
                 return res.status(401).json({
-                    message: 'Session expired at 4 PM. Please login again.',
+                    message: 'Session expired at 10 PM. Please login again.',
                     errorCode: 'TOKEN_EXPIRED'
                 });
             }
@@ -43,7 +43,7 @@ const authenticateToken = async (req, res, next) => {
         // Check if session has expired (double validation)
         if (user.sessionExpiry && new Date() > new Date(user.sessionExpiry)) {
             return res.status(401).json({
-                message: 'Session expired at 4 PM. Please login again.',
+                message: 'Session expired at 10 PM. Please login again.',
                 errorCode: 'SESSION_EXPIRED'
             });
         }
