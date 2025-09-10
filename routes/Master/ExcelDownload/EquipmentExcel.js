@@ -27,7 +27,6 @@ router.get('/export-equipments', async (req, res) => {
             { header: 'Material Description', key: 'materialdescription', width: 30 },
             { header: 'Serial Number', key: 'serialnumber', width: 20 },
             { header: 'Material Code', key: 'materialcode', width: 18 },
-            { header: 'Status', key: 'status', width: 15 },
             { header: 'Current Customer', key: 'currentcustomer', width: 25 },
             { header: 'End Customer', key: 'endcustomer', width: 25 },
             { header: 'Dealer', key: 'dealer', width: 20 },
@@ -38,7 +37,8 @@ router.get('/export-equipments', async (req, res) => {
             { header: 'PAL Number', key: 'palnumber', width: 18 },
             { header: 'Installation Report No.', key: 'installationreportno', width: 25 },
             { header: 'Created At', key: 'createdAt', width: 18 },
-            { header: 'Modified At', key: 'modifiedAt', width: 18 }
+            { header: 'Modified At', key: 'modifiedAt', width: 18 },
+            { header: 'Status', key: 'status', width: 15 }
         ];
 
         // Style only the header row (for performance)
