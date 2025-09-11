@@ -140,6 +140,133 @@ async function checkDuplicateSerialNumber(req, res, next) {
     }
     next();
 }
+
+router.get('/equipment/filter-options', async (req, res) => {
+    try {
+        const equipment = await Equipment.find({}, {
+            materialcode: 1,
+            dealer: 1,
+            currentcustomer: 1,
+            endcustomer: 1
+        });
+
+        const materialCodes = [...new Set(equipment.map(e => e.materialcode).filter(Boolean))];
+        const dealers = [...new Set(equipment.map(e => e.dealer).filter(Boolean))];
+        const currentCustomers = [...new Set(equipment.map(e => e.currentcustomer).filter(Boolean))];
+        const endCustomers = [...new Set(equipment.map(e => e.endcustomer).filter(Boolean))];
+
+        // Combine all customers for the customers filter
+        const allCustomers = [...new Set([...currentCustomers, ...endCustomers])];
+
+        res.json({
+            materialCodes: materialCodes.sort(),
+            dealers: dealers.sort(),
+            customers: allCustomers.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET equipment with filters
+router.get('/equipment/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Status filter
+        if (req.query.status) {
+            filters.status = req.query.status;
+        }
+
+        // Material code filter
+        if (req.query.materialCode) {
+            filters.materialcode = req.query.materialCode;
+        }
+
+        // Dealer filter
+        if (req.query.dealer) {
+            filters.dealer = req.query.dealer;
+        }
+
+        // Current customer filter
+        if (req.query.currentCustomer) {
+            filters.currentcustomer = req.query.currentCustomer;
+        }
+
+        // End customer filter
+        if (req.query.endCustomer) {
+            filters.endcustomer = req.query.endCustomer;
+        }
+
+        // PAL number filter
+        if (req.query.palNumber) {
+            filters.palnumber = { $regex: req.query.palNumber, $options: 'i' };
+        }
+
+        // Created date range filter
+        if (req.query.startDate || req.query.endDate) {
+            filters.createdAt = {};
+            if (req.query.startDate) {
+                filters.createdAt.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                const endDate = new Date(req.query.endDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Customer warranty date filters
+        if (req.query.custWarrantyStartDate) {
+            filters.custWarrantystartdate = {
+                $gte: req.query.custWarrantyStartDate
+            };
+        }
+
+        if (req.query.custWarrantyEndDate) {
+            filters.custWarrantyenddate = {
+                $lte: req.query.custWarrantyEndDate
+            };
+        }
+
+        // Dealer warranty date filters
+        if (req.query.dealerWarrantyStartDate) {
+            filters.dealerwarrantystartdate = {
+                $gte: req.query.dealerWarrantyStartDate
+            };
+        }
+
+        if (req.query.dealerWarrantyEndDate) {
+            filters.dealerwarrantyenddate = {
+                $lte: req.query.dealerWarrantyEndDate
+            };
+        }
+
+        const equipment = await Equipment.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalEquipment = await Equipment.countDocuments(filters);
+        const totalPages = Math.ceil(totalEquipment / limit);
+
+        res.json({
+            equipment,
+            totalPages,
+            totalEquipment,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 // GET all serial numbers
 router.get('/allequipment/serialnumbers', async (req, res) => {
     try {

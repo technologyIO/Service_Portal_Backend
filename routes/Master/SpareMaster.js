@@ -5,6 +5,131 @@ const Product = require("../../Model/MasterSchema/ProductSchema");
 const mongoose = require('mongoose');
 
 
+
+router.get('/addsparemaster/filter-options', async (req, res) => {
+  try {
+    const spareMasters = await SpareMaster.find({}, {
+      Sub_grp: 1,
+      Type: 1
+    });
+
+    const subGroups = [...new Set(spareMasters.map(s => s.Sub_grp).filter(Boolean))];
+    const types = [...new Set(spareMasters.map(s => s.Type).filter(Boolean))];
+
+    res.json({
+      subGroups: subGroups.sort(),
+      types: types.sort()
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET spare masters with filters
+router.get('/addsparemaster/filter', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Build filter object
+    const filters = {};
+
+    // Status filter
+    if (req.query.status) {
+      filters.status = req.query.status;
+    }
+
+    // Sub Group filter
+    if (req.query.subGroup) {
+      filters.Sub_grp = req.query.subGroup;
+    }
+
+    // Type filter
+    if (req.query.type) {
+      filters.Type = req.query.type;
+    }
+
+    // Rate range filter
+    if (req.query.rateMin || req.query.rateMax) {
+      filters.Rate = {};
+      if (req.query.rateMin) {
+        filters.Rate.$gte = parseFloat(req.query.rateMin);
+      }
+      if (req.query.rateMax) {
+        filters.Rate.$lte = parseFloat(req.query.rateMax);
+      }
+    }
+
+    // DP range filter
+    if (req.query.dpMin || req.query.dpMax) {
+      filters.DP = {};
+      if (req.query.dpMin) {
+        filters.DP.$gte = parseFloat(req.query.dpMin);
+      }
+      if (req.query.dpMax) {
+        filters.DP.$lte = parseFloat(req.query.dpMax);
+      }
+    }
+
+    // Charges range filter
+    if (req.query.chargesMin || req.query.chargesMax) {
+      filters.Charges = {};
+      if (req.query.chargesMin) {
+        filters.Charges.$gte = parseFloat(req.query.chargesMin);
+      }
+      if (req.query.chargesMax) {
+        filters.Charges.$lte = parseFloat(req.query.chargesMax);
+      }
+    }
+
+    // Created date range filter
+    if (req.query.createdStartDate || req.query.createdEndDate) {
+      filters.createdAt = {};
+      if (req.query.createdStartDate) {
+        filters.createdAt.$gte = new Date(req.query.createdStartDate);
+      }
+      if (req.query.createdEndDate) {
+        const endDate = new Date(req.query.createdEndDate);
+        endDate.setHours(23, 59, 59, 999);
+        filters.createdAt.$lte = endDate;
+      }
+    }
+
+    // Modified date range filter
+    if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+      filters.updatedAt = {};
+      if (req.query.modifiedStartDate) {
+        filters.updatedAt.$gte = new Date(req.query.modifiedStartDate);
+      }
+      if (req.query.modifiedEndDate) {
+        const endDate = new Date(req.query.modifiedEndDate);
+        endDate.setHours(23, 59, 59, 999);
+        filters.updatedAt.$lte = endDate;
+      }
+    }
+
+    const spareMasters = await SpareMaster.find(filters)
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    const totalSpareMasters = await SpareMaster.countDocuments(filters);
+    const totalPages = Math.ceil(totalSpareMasters / limit);
+
+    res.json({
+      spareMasters,
+      totalPages,
+      totalSpareMasters,
+      currentPage: page,
+      filters: req.query
+    });
+  } catch (err) {
+    console.error('Filter error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.get("/spare-by-partno/:partno", async (req, res) => {
   try {
     const { partno } = req.params;

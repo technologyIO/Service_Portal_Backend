@@ -3,6 +3,69 @@ const router = express.Router();
 const ComplaintType = require('../../Model/ComplaintSchema/ComplaintTypeSchema');
 const mongoose = require('mongoose');
 
+router.get('/complainttype/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Status filter
+        if (req.query.status) {
+            filters.status = req.query.status;
+        }
+
+        // Created date range filter
+        if (req.query.createdStartDate || req.query.createdEndDate) {
+            filters.createdAt = {};
+            if (req.query.createdStartDate) {
+                filters.createdAt.$gte = new Date(req.query.createdStartDate);
+            }
+            if (req.query.createdEndDate) {
+                const endDate = new Date(req.query.createdEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Modified date range filter
+        if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+            filters.modifiedAt = {};
+            if (req.query.modifiedStartDate) {
+                filters.modifiedAt.$gte = new Date(req.query.modifiedStartDate);
+            }
+            if (req.query.modifiedEndDate) {
+                const endDate = new Date(req.query.modifiedEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.modifiedAt.$lte = endDate;
+            }
+        }
+
+        const complaintTypes = await ComplaintType.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalComplaintTypes = await ComplaintType.countDocuments(filters);
+        const totalPages = Math.ceil(totalComplaintTypes / limit);
+
+        res.json({
+            success: true,
+            data: complaintTypes,
+            totalPages,
+            totalComplaintTypes,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
 // CREATE
 router.post('/complainttype', async (req, res) => {
     try {

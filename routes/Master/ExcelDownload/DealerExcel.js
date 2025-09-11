@@ -1,19 +1,203 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Dealer = require('../../../Model/MasterSchema/DealerSchema'); 
+const Dealer = require('../../../Model/MasterSchema/DealerSchema');
 const router = express.Router();
+router.get('/filter-options', async (req, res) => {
+    try {
+        const dealers = await Dealer.find({}, {
+            state: 1,
+            city: 1,
+            personresponsible: 1
+        });
 
-// Dealer Excel export API
+        const states = [...new Set(dealers.flatMap(d => d.state || []))];
+        const cities = [...new Set(dealers.flatMap(d => d.city || []))];
+        const persons = [...new Set(dealers.flatMap(d =>
+            (d.personresponsible || []).map(p => p.name)
+        ))];
+
+        res.json({
+            states: states.sort(),
+            cities: cities.sort(),
+            persons: persons.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+router.get('/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Status filter
+        if (req.query.status) {
+            filters.status = req.query.status;
+        }
+
+        // Date range filter
+        if (req.query.startDate || req.query.endDate) {
+            filters.createdAt = {};
+            if (req.query.startDate) {
+                filters.createdAt.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                const endDate = new Date(req.query.endDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // State filter (array contains)
+        if (req.query.state) {
+            filters.state = { $in: [req.query.state] };
+        }
+
+        // City filter (array contains)
+        if (req.query.city) {
+            filters.city = { $in: [req.query.city] };
+        }
+
+        // Person responsible filter
+        if (req.query.personResponsible) {
+            filters['personresponsible.name'] = {
+                $regex: new RegExp(req.query.personResponsible, 'i')
+            };
+        }
+
+        const dealers = await Dealer.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalDealers = await Dealer.countDocuments(filters);
+        const totalPages = Math.ceil(totalDealers / limit);
+
+        res.json({
+            dealers,
+            totalPages,
+            totalDealers,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
+router.get('/searchdealer', async (req, res) => {
+    try {
+        const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        if (!q || typeof q !== 'string') {
+            return res.status(400).json({ message: 'Query parameter is required and must be a string' });
+        }
+
+        const query = {
+            $or: [
+                { name: { $regex: q, $options: 'i' } },
+                { 'personresponsible.name': { $regex: q, $options: 'i' } },
+                { email: { $regex: q, $options: 'i' } },
+                { dealercode: { $regex: q, $options: 'i' } },
+                { city: { $regex: q, $options: 'i' } },
+                { state: { $regex: q, $options: 'i' } },
+                { pincode: { $regex: q, $options: 'i' } },
+                { address: { $regex: q, $options: 'i' } }
+            ]
+        };
+
+        const dealers = await Dealer.find(query).skip(skip).limit(limit).sort({ createdAt: -1 });
+        const totalDealers = await Dealer.countDocuments(query);
+        const totalPages = Math.ceil(totalDealers / limit);
+
+        res.json({
+            dealers,
+            totalPages,
+            totalDealers,
+            currentPage: page,
+            isSearch: true
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Updated Dealer Excel export with filters and search support
 router.get('/export-dealers', async (req, res) => {
     try {
-        // Sabhi dealer records fetch kariye
-        const dealerData = await Dealer.find({}).lean();
+        let query = {};
+
+        // Check if it's a search export
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            query = {
+                $or: [
+                    { name: searchRegex },
+                    { 'personresponsible.name': searchRegex },
+                    { email: searchRegex },
+                    { dealercode: searchRegex },
+                    { city: searchRegex },
+                    { state: searchRegex },
+                    { pincode: searchRegex },
+                    { address: searchRegex }
+                ]
+            };
+        }
+        // Check if it's a filter export
+        else {
+            // Status filter
+            if (req.query.status) {
+                query.status = req.query.status;
+            }
+
+            // Date range filter
+            if (req.query.startDate || req.query.endDate) {
+                query.createdAt = {};
+                if (req.query.startDate) {
+                    query.createdAt.$gte = new Date(req.query.startDate);
+                }
+                if (req.query.endDate) {
+                    const endDate = new Date(req.query.endDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.createdAt.$lte = endDate;
+                }
+            }
+
+            // State filter
+            if (req.query.state) {
+                query.state = { $in: [req.query.state] };
+            }
+
+            // City filter
+            if (req.query.city) {
+                query.city = { $in: [req.query.city] };
+            }
+
+            // Person responsible filter
+            if (req.query.personResponsible) {
+                query['personresponsible.name'] = {
+                    $regex: new RegExp(req.query.personResponsible, 'i')
+                };
+            }
+        }
+
+        // Fetch dealer data with query
+        const dealerData = await Dealer.find(query).sort({ createdAt: -1 }).lean();
 
         if (!dealerData || dealerData.length === 0) {
             return res.status(404).json({ message: 'No dealer data found' });
         }
 
-        // Nyi Excel workbook banayiye
+        // Create Excel workbook
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Dealers Data');
 
@@ -131,8 +315,15 @@ router.get('/export-dealers', async (req, res) => {
             column.width = maxLength < 10 ? 10 : maxLength > 50 ? 50 : maxLength + 2;
         });
 
-        // Response headers set kariye
-        const fileName = `dealers_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        // Set response headers for file download
+        let fileName = 'dealers_data';
+        if (req.query.search) {
+            fileName = `dealers_search_${req.query.search}`;
+        } else if (req.query.status || req.query.startDate || req.query.endDate || req.query.state || req.query.city || req.query.personResponsible) {
+            fileName = 'dealers_filtered';
+        }
+        fileName += `_${new Date().toISOString().split('T')[0]}.xlsx`;
+
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 

@@ -32,6 +32,73 @@ async function checkDuplicateBranch(req, res, next) {
     return res.status(500).json({ message: err.message });
   }
 }
+router.get('/branch/filter-options', async (req, res) => {
+  try {
+    const branches = await Branch.find({}, { state: 1 });
+
+    const states = [...new Set(branches.map(b => b.state).filter(Boolean))];
+
+    res.json({
+      states: states.sort()
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET branches with filters
+router.get('/branch/filter', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Build filter object
+    const filters = {};
+
+    // Status filter
+    if (req.query.status) {
+      filters.status = req.query.status;
+    }
+
+    // Date range filter
+    if (req.query.startDate || req.query.endDate) {
+      filters.createdAt = {};
+      if (req.query.startDate) {
+        filters.createdAt.$gte = new Date(req.query.startDate);
+      }
+      if (req.query.endDate) {
+        const endDate = new Date(req.query.endDate);
+        endDate.setHours(23, 59, 59, 999);
+        filters.createdAt.$lte = endDate;
+      }
+    }
+
+    // State filter
+    if (req.query.state) {
+      filters.state = req.query.state;
+    }
+
+    const branches = await Branch.find(filters)
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    const totalBranches = await Branch.countDocuments(filters);
+    const totalPages = Math.ceil(totalBranches / limit);
+
+    res.json({
+      branches,
+      totalPages,
+      totalBranches,
+      currentPage: page,
+      filters: req.query
+    });
+  } catch (err) {
+    console.error('Filter error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
 
 router.post("/branch", checkDuplicateBranch, async (req, res) => {
   try {
@@ -312,41 +379,6 @@ router.delete("/branch/:id", async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
-router.get("/searchbranch", async (req, res) => {
-  try {
-    const { q } = req.query;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
 
-    if (!q) {
-      return res.status(400).json({ message: "Query parameter is required" });
-    }
-
-    const query = {
-      $or: [
-        { name: { $regex: q, $options: "i" } },
-        { status: { $regex: q, $options: "i" } },
-        { city: { $regex: q, $options: "i" } },
-        { branchShortCode: { $regex: q, $options: "i" } },
-        { state: { $regex: q, $options: "i" } },
-      ],
-    };
-
-    const branch = await Branch.find(query).skip(skip).limit(limit);
-    const totalBranches = await Branch.countDocuments(query);
-    const totalPages = Math.ceil(totalBranches / limit);
-
-    res.json({
-      branches: branch,
-      totalPages,
-      totalBranches,
-      currentPage: page,
-      isSearch: true,
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
 
 module.exports = router;

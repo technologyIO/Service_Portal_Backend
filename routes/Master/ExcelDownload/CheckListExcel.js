@@ -3,17 +3,108 @@ const ExcelJS = require('exceljs');
 const CheckList = require('../../../Model/CollectionSchema/ChecklistSchema'); 
 const router = express.Router();
 
-// CheckList Excel export API
+// Updated CheckList Excel export with proper search and filter support
 router.get('/export-checklists', async (req, res) => {
     try {
-        // Sabhi checklist records fetch kariye
-        const checklistData = await CheckList.find({}).lean();
+        let query = {};
+        
+        // Check if it's a search export
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            query = {
+                $or: [
+                    { checklisttype: searchRegex },
+                    { status: searchRegex },
+                    { checkpointtype: searchRegex },
+                    { checkpoint: searchRegex },
+                    { prodGroup: searchRegex },
+                    { result: searchRegex },
+                    { resulttype: searchRegex }
+                ]
+            };
+        }
+        // Check if it's a filter export
+        else if (Object.keys(req.query).some(key => 
+            ['status', 'checklistType', 'checkpointType', 'productGroup', 'resultType', 'startDate', 'endDate', 'startVoltageMin', 'startVoltageMax', 'endVoltageMin', 'endVoltageMax'].includes(key) && req.query[key]
+        )) {
+            // Status filter
+            if (req.query.status) {
+                query.status = req.query.status;
+            }
 
-        if (!checklistData || checklistData.length === 0) {
-            return res.status(404).json({ message: 'No checklist data found' });
+            // Checklist type filter
+            if (req.query.checklistType) {
+                query.checklisttype = req.query.checklistType;
+            }
+
+            // Checkpoint type filter 
+            if (req.query.checkpointType) {
+                query.checkpointtype = req.query.checkpointType;
+            }
+
+            // Product group filter
+            if (req.query.productGroup) {
+                query.prodGroup = req.query.productGroup;
+            }
+
+            // Result type filter
+            if (req.query.resultType) {
+                query.resulttype = req.query.resultType;
+            }
+
+            // Created date range filter
+            if (req.query.startDate || req.query.endDate) {
+                query.createdAt = {};
+                if (req.query.startDate) {
+                    query.createdAt.$gte = new Date(req.query.startDate);
+                }
+                if (req.query.endDate) {
+                    const endDate = new Date(req.query.endDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.createdAt.$lte = endDate;
+                }
+            }
+
+            // Start voltage range filter
+            if (req.query.startVoltageMin || req.query.startVoltageMax) {
+                query.startVoltage = {};
+                if (req.query.startVoltageMin) {
+                    query.startVoltage.$gte = req.query.startVoltageMin;
+                }
+                if (req.query.startVoltageMax) {
+                    query.startVoltage.$lte = req.query.startVoltageMax;
+                }
+            }
+
+            // End voltage range filter
+            if (req.query.endVoltageMin || req.query.endVoltageMax) {
+                query.endVoltage = {};
+                if (req.query.endVoltageMin) {
+                    query.endVoltage.$gte = req.query.endVoltageMin;
+                }
+                if (req.query.endVoltageMax) {
+                    query.endVoltage.$lte = req.query.endVoltageMax;
+                }
+            }
         }
 
-        // Nyi Excel workbook banayiye
+        console.log('Excel Export Query:', query); // Debug log
+        console.log('Request Query Params:', req.query); // Debug log
+
+        // Fetch checklist data with query
+        const checklistData = await CheckList.find(query).sort({ createdAt: -1 }).lean();
+
+        console.log('Found records:', checklistData.length); // Debug log
+
+        if (!checklistData || checklistData.length === 0) {
+            return res.status(404).json({ 
+                message: 'No checklist data found',
+                query: query,
+                queryParams: req.query
+            });
+        }
+
+        // Create Excel workbook
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('CheckLists Data');
 
@@ -108,8 +199,17 @@ router.get('/export-checklists', async (req, res) => {
             column.width = maxLength < 10 ? 10 : maxLength > 50 ? 50 : maxLength + 2;
         });
 
-        // Response headers set kariye
-        const fileName = `checklists_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        // Set response headers for file download
+        let fileName = 'checklists_data';
+        if (req.query.search) {
+            fileName = `checklists_search_${req.query.search.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        } else if (Object.keys(req.query).some(key => 
+            ['status', 'checklistType', 'checkpointType', 'productGroup', 'resultType', 'startDate', 'endDate'].includes(key) && req.query[key]
+        )) {
+            fileName = 'checklists_filtered';
+        }
+        fileName += `_${new Date().toISOString().split('T')[0]}.xlsx`;
+
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -121,7 +221,8 @@ router.get('/export-checklists', async (req, res) => {
         console.error('CheckList Excel export error:', error);
         res.status(500).json({
             message: 'Error exporting checklist data to Excel',
-            error: error.message
+            error: error.message,
+            query: req.query
         });
     }
 });

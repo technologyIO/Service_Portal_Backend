@@ -3,17 +3,101 @@ const ExcelJS = require('exceljs');
 const FormatMaster = require('../../../Model/MasterSchema/FormatMasterSchema'); 
 const router = express.Router();
 
-// FormatMaster Excel export API
+// Updated FormatMaster Excel export with filters and search support
 router.get('/export-formatmaster', async (req, res) => {
     try {
-        // Sabhi format master records fetch kariye
-        const formatMasterData = await FormatMaster.find({}).lean();
+        let query = {};
+        
+        // Check if it's a search export
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            query = {
+                $or: [
+                    { productGroup: searchRegex },
+                    { chlNo: searchRegex },
+                    { type: searchRegex },
+                    { status: searchRegex }
+                ]
+            };
+            
+            // If search is a number, also search by revNo
+            if (!isNaN(req.query.search)) {
+                query.$or.push({ revNo: Number(req.query.search) });
+            }
+        }
+        // Check if it's a filter export
+        else if (Object.keys(req.query).some(key => 
+            ['productGroup', 'chlNo', 'revNo', 'type', 'status', 'createdStartDate', 'createdEndDate', 'modifiedStartDate', 'modifiedEndDate'].includes(key) && req.query[key]
+        )) {
+            // Product Group filter
+            if (req.query.productGroup) {
+                query.productGroup = req.query.productGroup;
+            }
 
-        if (!formatMasterData || formatMasterData.length === 0) {
-            return res.status(404).json({ message: 'No format master data found' });
+            // CHL No filter
+            if (req.query.chlNo) {
+                query.chlNo = req.query.chlNo;
+            }
+
+            // Rev No filter
+            if (req.query.revNo) {
+                query.revNo = parseInt(req.query.revNo);
+            }
+
+            // Type filter
+            if (req.query.type) {
+                query.type = req.query.type;
+            }
+
+            // Status filter
+            if (req.query.status) {
+                query.status = req.query.status;
+            }
+
+            // Created date range filter
+            if (req.query.createdStartDate || req.query.createdEndDate) {
+                query.createdAt = {};
+                if (req.query.createdStartDate) {
+                    query.createdAt.$gte = new Date(req.query.createdStartDate);
+                }
+                if (req.query.createdEndDate) {
+                    const endDate = new Date(req.query.createdEndDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.createdAt.$lte = endDate;
+                }
+            }
+
+            // Modified date range filter
+            if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+                query.updatedAt = {};
+                if (req.query.modifiedStartDate) {
+                    query.updatedAt.$gte = new Date(req.query.modifiedStartDate);
+                }
+                if (req.query.modifiedEndDate) {
+                    const endDate = new Date(req.query.modifiedEndDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.updatedAt.$lte = endDate;
+                }
+            }
         }
 
-        // Nyi Excel workbook banayiye
+        console.log('Excel Export Query:', query);
+        console.log('Request Query Params:', req.query);
+
+        // Fetch format master data with query
+        const formatMasterData = await FormatMaster.find(query).sort({ createdAt: -1 }).lean();
+
+        console.log('Found records:', formatMasterData.length);
+
+        if (!formatMasterData || formatMasterData.length === 0) {
+            return res.status(404).json({ 
+                message: 'No format master data found',
+                query: query,
+                queryParams: req.query
+            });
+        }
+
+        // Create Excel workbook
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Format Master Data');
 
@@ -80,6 +164,18 @@ router.get('/export-formatmaster', async (req, res) => {
                 // Center align S.No and Rev No columns
                 if (colNumber === 1 || colNumber === 4) {
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                } else if (colNumber === 6) { // Status column - center align
+                    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+                    // Status-based conditional formatting
+                    const statusValue = cell.value;
+                    if (statusValue === 'Active') {
+                        cell.font = { color: { argb: '008000' }, bold: true }; // Green for Active
+                    } else if (statusValue === 'Inactive') {
+                        cell.font = { color: { argb: 'FF0000' }, bold: true }; // Red for Inactive
+                    } else {
+                        cell.font = { color: { argb: 'FF8C00' }, bold: true }; // Orange for other statuses
+                    }
                 } else {
                     cell.alignment = { vertical: 'middle', horizontal: 'left' };
                 }
@@ -98,8 +194,17 @@ router.get('/export-formatmaster', async (req, res) => {
             column.width = maxLength < 10 ? 10 : maxLength > 50 ? 50 : maxLength + 2;
         });
 
-        // Response headers set kariye
-        const fileName = `format_master_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        // Set response headers for file download
+        let fileName = 'format_master_data';
+        if (req.query.search) {
+            fileName = `format_master_search_${req.query.search.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        } else if (Object.keys(req.query).some(key => 
+            ['productGroup', 'chlNo', 'revNo', 'type', 'status'].includes(key) && req.query[key]
+        )) {
+            fileName = 'format_master_filtered';
+        }
+        fileName += `_${new Date().toISOString().split('T')[0]}.xlsx`;
+
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -111,7 +216,8 @@ router.get('/export-formatmaster', async (req, res) => {
         console.error('FormatMaster Excel export error:', error);
         res.status(500).json({
             message: 'Error exporting format master data to Excel',
-            error: error.message
+            error: error.message,
+            query: req.query
         });
     }
 });

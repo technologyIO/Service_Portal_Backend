@@ -3,7 +3,110 @@ const FormatMaster = require("../../Model/MasterSchema/FormatMasterSchema");
 const mongoose = require('mongoose');
 
 const router = express.Router();
+router.get('/format/filter-options', async (req, res) => {
+    try {
+        const formatMasters = await FormatMaster.find({}, {
+            productGroup: 1,
+            chlNo: 1,
+            type: 1
+        });
 
+        const productGroups = [...new Set(formatMasters.map(fm => fm.productGroup).filter(Boolean))];
+        const chlNos = [...new Set(formatMasters.map(fm => fm.chlNo).filter(Boolean))];
+        const types = [...new Set(formatMasters.map(fm => fm.type).filter(Boolean))];
+
+        res.json({
+            productGroups: productGroups.sort(),
+            chlNos: chlNos.sort(),
+            types: types.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET format masters with filters
+router.get('/format/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Product Group filter
+        if (req.query.productGroup) {
+            filters.productGroup = req.query.productGroup;
+        }
+
+        // CHL No filter
+        if (req.query.chlNo) {
+            filters.chlNo = req.query.chlNo;
+        }
+
+        // Rev No filter
+        if (req.query.revNo) {
+            filters.revNo = parseInt(req.query.revNo);
+        }
+
+        // Type filter
+        if (req.query.type) {
+            filters.type = req.query.type;
+        }
+
+        // Status filter
+        if (req.query.status) {
+            filters.status = req.query.status;
+        }
+
+        // Created date range filter
+        if (req.query.createdStartDate || req.query.createdEndDate) {
+            filters.createdAt = {};
+            if (req.query.createdStartDate) {
+                filters.createdAt.$gte = new Date(req.query.createdStartDate);
+            }
+            if (req.query.createdEndDate) {
+                const endDate = new Date(req.query.createdEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Modified date range filter
+        if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+            filters.updatedAt = {};
+            if (req.query.modifiedStartDate) {
+                filters.updatedAt.$gte = new Date(req.query.modifiedStartDate);
+            }
+            if (req.query.modifiedEndDate) {
+                const endDate = new Date(req.query.modifiedEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.updatedAt.$lte = endDate;
+            }
+        }
+
+        const totalFormatMasters = await FormatMaster.countDocuments(filters);
+        const formatMasters = await FormatMaster.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalPages = Math.ceil(totalFormatMasters / limit);
+
+        res.json({
+            success: true,
+            data: formatMasters,
+            totalFormatMasters,
+            totalPages,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
 router.get("/format/paginated", async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;

@@ -37,7 +37,114 @@ async function checkDuplicateReportedProblem(req, res, next) {
     }
     next();
 }
+router.get('/reportedproblem/filter-options', async (req, res) => {
+    try {
+        const reportedProblems = await ReportedProblem.find({}, {
+            catalog: 1,
+            codegroup: 1,
+            prodgroup: 1
+        });
 
+        const catalogs = [...new Set(reportedProblems.map(rp => rp.catalog).filter(Boolean))];
+        const codeGroups = [...new Set(reportedProblems.map(rp => rp.codegroup).filter(Boolean))];
+        const prodGroups = [...new Set(reportedProblems.map(rp => rp.prodgroup).filter(Boolean))];
+
+        res.json({
+            catalogs: catalogs.sort(),
+            codeGroups: codeGroups.sort(),
+            prodGroups: prodGroups.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET reported problems with filters
+router.get('/reportedproblem/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Catalog filter
+        if (req.query.catalog) {
+            filters.catalog = req.query.catalog;
+        }
+
+        // Code Group filter
+        if (req.query.codegroup) {
+            filters.codegroup = req.query.codegroup;
+        }
+
+        // Product Group filter
+        if (req.query.prodgroup) {
+            filters.prodgroup = req.query.prodgroup;
+        }
+
+        // Name filter
+        if (req.query.name) {
+            filters.name = { $regex: req.query.name, $options: 'i' };
+        }
+
+        // Short Text For Code filter
+        if (req.query.shorttextforcode) {
+            filters.shorttextforcode = { $regex: req.query.shorttextforcode, $options: 'i' };
+        }
+
+        // Status filter
+        if (req.query.status) {
+            filters.status = req.query.status;
+        }
+
+        // Created date range filter
+        if (req.query.createdStartDate || req.query.createdEndDate) {
+            filters.createdAt = {};
+            if (req.query.createdStartDate) {
+                filters.createdAt.$gte = new Date(req.query.createdStartDate);
+            }
+            if (req.query.createdEndDate) {
+                const endDate = new Date(req.query.createdEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Modified date range filter
+        if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+            filters.modifiedAt = {};
+            if (req.query.modifiedStartDate) {
+                filters.modifiedAt.$gte = new Date(req.query.modifiedStartDate);
+            }
+            if (req.query.modifiedEndDate) {
+                const endDate = new Date(req.query.modifiedEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.modifiedAt.$lte = endDate;
+            }
+        }
+
+        const totalReportedProblems = await ReportedProblem.countDocuments(filters);
+        const reportedProblems = await ReportedProblem.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalPages = Math.ceil(totalReportedProblems / limit);
+
+        res.json({
+            reportedProblems,
+            totalReportedProblems,
+            totalPages,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 // GET all reported problems
 router.get('/reportedproblem', async (req, res) => {
     try {
@@ -64,7 +171,7 @@ router.get('/reportedproblem', async (req, res) => {
 router.delete('/reportedproblem/bulk', async (req, res) => {
     try {
         const { ids } = req.body;
-        
+
         // Validate input
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ message: 'Please provide valid IDs array' });
@@ -77,18 +184,18 @@ router.delete('/reportedproblem/bulk', async (req, res) => {
         }
 
         // Delete multiple reported problems
-        const deleteResult = await ReportedProblem.deleteMany({ 
-            _id: { $in: validIds } 
+        const deleteResult = await ReportedProblem.deleteMany({
+            _id: { $in: validIds }
         });
 
         if (deleteResult.deletedCount === 0) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 message: 'No reported problems found to delete',
-                deletedCount: 0 
+                deletedCount: 0
             });
         }
 
-        res.json({ 
+        res.json({
             message: `Successfully deleted ${deleteResult.deletedCount} reported problems`,
             deletedCount: deleteResult.deletedCount,
             requestedCount: validIds.length

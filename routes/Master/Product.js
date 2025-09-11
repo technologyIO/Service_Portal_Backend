@@ -31,7 +31,127 @@ async function checkDuplicatePartNoId(req, res, next) {
     }
     next();
 }
+router.get('/product/filter-options', async (req, res) => {
+    try {
+        const products = await Product.find({}, {
+            productgroup: 1,
+            subgrp: 1
+        });
 
+        const productGroups = [...new Set(products.map(p => p.productgroup).filter(Boolean))];
+        const subGroups = [...new Set(products.map(p => p.subgrp).filter(Boolean))];
+
+        res.json({
+            productGroups: productGroups.sort(),
+            subGroups: subGroups.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET products with filters
+router.get('/product/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Status filter
+        if (req.query.status) {
+            filters.status = req.query.status;
+        }
+
+        // Product group filter
+        if (req.query.productGroup) {
+            filters.productgroup = req.query.productGroup;
+        }
+
+        // Sub group filter
+        if (req.query.subGroup) {
+            filters.subgrp = req.query.subGroup;
+        }
+
+        // Installation checklist status filter
+        if (req.query.installationChecklistStatus) {
+            if (req.query.installationChecklistStatus === 'true') {
+                filters.installationcheckliststatusboolean = true;
+            } else if (req.query.installationChecklistStatus === 'false') {
+                filters.installationcheckliststatusboolean = false;
+            }
+        }
+
+        // PM checklist status filter
+        if (req.query.pmChecklistStatus) {
+            if (req.query.pmChecklistStatus === 'true') {
+                filters.pmcheckliststatusboolean = true;
+            } else if (req.query.pmChecklistStatus === 'false') {
+                filters.pmcheckliststatusboolean = false;
+            }
+        }
+
+        // Created date range filter
+        if (req.query.startDate || req.query.endDate) {
+            filters.createdAt = {};
+            if (req.query.startDate) {
+                filters.createdAt.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                const endDate = new Date(req.query.endDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Launch date range filter
+        if (req.query.launchDateStart || req.query.launchDateEnd) {
+            filters.dateoflaunch = {};
+            if (req.query.launchDateStart) {
+                filters.dateoflaunch.$gte = new Date(req.query.launchDateStart);
+            }
+            if (req.query.launchDateEnd) {
+                const endDate = new Date(req.query.launchDateEnd);
+                endDate.setHours(23, 59, 59, 999);
+                filters.dateoflaunch.$lte = endDate;
+            }
+        }
+
+        // End of sale date range filter
+        if (req.query.endOfSaleDateStart || req.query.endOfSaleDateEnd) {
+            filters.endofsaledate = {};
+            if (req.query.endOfSaleDateStart) {
+                filters.endofsaledate.$gte = new Date(req.query.endOfSaleDateStart);
+            }
+            if (req.query.endOfSaleDateEnd) {
+                const endDate = new Date(req.query.endOfSaleDateEnd);
+                endDate.setHours(23, 59, 59, 999);
+                filters.endofsaledate.$lte = endDate;
+            }
+        }
+
+        const products = await Product.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalProducts = await Product.countDocuments(filters);
+        const totalPages = Math.ceil(totalProducts / limit);
+
+        res.json({
+            products,
+            totalPages,
+            totalProducts,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 // GET all products
 router.get('/product', async (req, res) => {
     try {
@@ -41,12 +161,12 @@ router.get('/product', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
- 
+
 // BULK DELETE Product entries - PLACE THIS BEFORE THE /:id ROUTES
 router.delete('/product/bulk', async (req, res) => {
     try {
         const { ids } = req.body;
-        
+
         // Validate input
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ message: 'Please provide valid IDs array' });
@@ -59,18 +179,18 @@ router.delete('/product/bulk', async (req, res) => {
         }
 
         // Delete multiple products
-        const deleteResult = await Product.deleteMany({ 
-            _id: { $in: validIds } 
+        const deleteResult = await Product.deleteMany({
+            _id: { $in: validIds }
         });
 
         if (deleteResult.deletedCount === 0) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 message: 'No products found to delete',
-                deletedCount: 0 
+                deletedCount: 0
             });
         }
 
-        res.json({ 
+        res.json({
             message: `Successfully deleted ${deleteResult.deletedCount} products`,
             deletedCount: deleteResult.deletedCount,
             requestedCount: validIds.length

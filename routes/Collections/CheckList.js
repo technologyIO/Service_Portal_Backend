@@ -32,7 +32,121 @@ async function checkDuplicate(req, res, next) {
     }
     next();
 }
+router.get('/checklist/filter-options', async (req, res) => {
+    try {
+        const checklists = await CheckList.find({}, {
+            checklisttype: 1,
+            checkpointtype: 1,
+            prodGroup: 1,
+            resulttype: 1
+        });
 
+        const checklistTypes = [...new Set(checklists.map(c => c.checklisttype).filter(Boolean))];
+        const checkpointTypes = [...new Set(checklists.map(c => c.checkpointtype).filter(Boolean))];
+        const productGroups = [...new Set(checklists.map(c => c.prodGroup).filter(Boolean))];
+        const resultTypes = [...new Set(checklists.map(c => c.resulttype).filter(Boolean))];
+
+        res.json({
+            checklistTypes: checklistTypes.sort(),
+            checkpointTypes: checkpointTypes.sort(),
+            productGroups: productGroups.sort(),
+            resultTypes: resultTypes.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET checklists with filters
+router.get('/checklist/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Status filter
+        if (req.query.status) {
+            filters.status = req.query.status;
+        }
+
+        // Checklist type filter
+        if (req.query.checklistType) {
+            filters.checklisttype = req.query.checklistType;
+        }
+
+        // Checkpoint type filter
+        if (req.query.checkpointType) {
+            filters.checkpointtype = req.query.checkpointType;
+        }
+
+        // Product group filter
+        if (req.query.productGroup) {
+            filters.prodGroup = req.query.productGroup;
+        }
+
+        // Result type filter
+        if (req.query.resultType) {
+            filters.resulttype = req.query.resultType;
+        }
+
+        // Created date range filter
+        if (req.query.startDate || req.query.endDate) {
+            filters.createdAt = {};
+            if (req.query.startDate) {
+                filters.createdAt.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                const endDate = new Date(req.query.endDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Start voltage range filter
+        if (req.query.startVoltageMin || req.query.startVoltageMax) {
+            filters.startVoltage = {};
+            if (req.query.startVoltageMin) {
+                filters.startVoltage.$gte = parseFloat(req.query.startVoltageMin);
+            }
+            if (req.query.startVoltageMax) {
+                filters.startVoltage.$lte = parseFloat(req.query.startVoltageMax);
+            }
+        }
+
+        // End voltage range filter  
+        if (req.query.endVoltageMin || req.query.endVoltageMax) {
+            filters.endVoltage = {};
+            if (req.query.endVoltageMin) {
+                filters.endVoltage.$gte = parseFloat(req.query.endVoltageMin);
+            }
+            if (req.query.endVoltageMax) {
+                filters.endVoltage.$lte = parseFloat(req.query.endVoltageMax);
+            }
+        }
+
+        const checklists = await CheckList.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalChecklists = await CheckList.countDocuments(filters);
+        const totalPages = Math.ceil(totalChecklists / limit);
+
+        res.json({
+            checklists,
+            totalPages,
+            totalChecklists,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 router.get('/checklistbymaterial/:materialCode', async (req, res) => {
     try {

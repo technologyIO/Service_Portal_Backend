@@ -3,17 +3,79 @@ const ExcelJS = require('exceljs');
 const ComplaintType = require('../../../Model/ComplaintSchema/ComplaintTypeSchema'); 
 const router = express.Router();
 
-// ComplaintType Excel export API
+// Updated ComplaintType Excel export with filters and search support
 router.get('/export-complainttypes', async (req, res) => {
     try {
-        // Sabhi complaint type records fetch kariye
-        const complaintTypeData = await ComplaintType.find({}).lean();
+        let query = {};
+        
+        // Check if it's a search export
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            query = {
+                $or: [
+                    { name: searchRegex },
+                    { status: { $regex: req.query.search, $options: 'i' } }
+                ]
+            };
+            
+            // If search is boolean-like, convert and search explicitly by status
+            if (req.query.search.toLowerCase() === 'true' || req.query.search.toLowerCase() === 'false') {
+                query.$or.push({ status: req.query.search.toLowerCase() === 'true' });
+            }
+        }
+        // Check if it's a filter export
+        else if (Object.keys(req.query).some(key => 
+            ['status', 'createdStartDate', 'createdEndDate', 'modifiedStartDate', 'modifiedEndDate'].includes(key) && req.query[key]
+        )) {
+            // Status filter
+            if (req.query.status) {
+                query.status = req.query.status;
+            }
 
-        if (!complaintTypeData || complaintTypeData.length === 0) {
-            return res.status(404).json({ message: 'No complaint type data found' });
+            // Created date range filter
+            if (req.query.createdStartDate || req.query.createdEndDate) {
+                query.createdAt = {};
+                if (req.query.createdStartDate) {
+                    query.createdAt.$gte = new Date(req.query.createdStartDate);
+                }
+                if (req.query.createdEndDate) {
+                    const endDate = new Date(req.query.createdEndDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.createdAt.$lte = endDate;
+                }
+            }
+
+            // Modified date range filter
+            if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+                query.modifiedAt = {};
+                if (req.query.modifiedStartDate) {
+                    query.modifiedAt.$gte = new Date(req.query.modifiedStartDate);
+                }
+                if (req.query.modifiedEndDate) {
+                    const endDate = new Date(req.query.modifiedEndDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.modifiedAt.$lte = endDate;
+                }
+            }
         }
 
-        // Nyi Excel workbook banayiye
+        console.log('Excel Export Query:', query);
+        console.log('Request Query Params:', req.query);
+
+        // Fetch complaint type data with query
+        const complaintTypeData = await ComplaintType.find(query).sort({ createdAt: -1 }).lean();
+
+        console.log('Found records:', complaintTypeData.length);
+
+        if (!complaintTypeData || complaintTypeData.length === 0) {
+            return res.status(404).json({ 
+                message: 'No complaint type data found',
+                query: query,
+                queryParams: req.query
+            });
+        }
+
+        // Create Excel workbook
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Complaint Types Data');
 
@@ -92,8 +154,17 @@ router.get('/export-complainttypes', async (req, res) => {
             column.width = maxLength < 10 ? 10 : maxLength > 50 ? 50 : maxLength + 2;
         });
 
-        // Response headers set kariye
-        const fileName = `complaint_types_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        // Set response headers for file download
+        let fileName = 'complaint_types_data';
+        if (req.query.search) {
+            fileName = `complaint_types_search_${req.query.search.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        } else if (Object.keys(req.query).some(key => 
+            ['status', 'createdStartDate', 'createdEndDate', 'modifiedStartDate', 'modifiedEndDate'].includes(key) && req.query[key]
+        )) {
+            fileName = 'complaint_types_filtered';
+        }
+        fileName += `_${new Date().toISOString().split('T')[0]}.xlsx`;
+
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -105,7 +176,8 @@ router.get('/export-complainttypes', async (req, res) => {
         console.error('ComplaintType Excel export error:', error);
         res.status(500).json({
             message: 'Error exporting complaint type data to Excel',
-            error: error.message
+            error: error.message,
+            query: req.query
         });
     }
 });

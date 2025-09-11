@@ -1183,60 +1183,6 @@ router.delete('/user/:id', async (req, res) => {
     }
 });
 
-router.get('/usersearch', async (req, res) => {
-    try {
-        const { q } = req.query;
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
 
-        if (!q) {
-            return res.status(400).json({ message: 'Query parameter is required' });
-        }
-
-        const regexQuery = { $regex: q, $options: 'i' };
-
-        const query = {
-            $or: [
-                { firstname: regexQuery },
-                { lastname: regexQuery },
-                { email: regexQuery },
-                { mobilenumber: regexQuery },
-                { status: regexQuery },
-                { department: regexQuery },
-                { manageremail: regexQuery },
-                { usertype: regexQuery },
-                { employeeid: regexQuery },
-                { 'role.roleName': regexQuery },
-                { 'role.roleId': regexQuery },
-                { 'dealerInfo.dealerName': regexQuery },
-                { 'dealerInfo.dealerId': regexQuery },
-                { 'dealerInfo.dealerEmail': regexQuery },
-                { 'dealerInfo.dealerCode': regexQuery },
-                { zipCode: regexQuery },
-                { branch: regexQuery },
-                { location: regexQuery },
-                { 'skills.productName': regexQuery },
-                { 'skills.productGroup': regexQuery },
-                { 'skills.partNumbers': regexQuery },
-                { 'demographics.values.name': regexQuery },
-            ]
-        };
-
-        const users = await User.find(query, { password: 0 }).skip(skip).limit(limit);
-        const totalUsers = await User.countDocuments(query);
-        const totalPages = Math.ceil(totalUsers / limit);
-
-        res.json({
-            users,
-            totalPages,
-            totalUsers,
-            currentPage: page,
-            isSearch: true
-        });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-});
 
 module.exports = router;

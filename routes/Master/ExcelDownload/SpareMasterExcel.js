@@ -3,17 +3,146 @@ const ExcelJS = require('exceljs');
 const SpareMaster = require('../../../Model/MasterSchema/SpareMasterSchema');
 const router = express.Router();
 
-// SpareMaster Excel export API
+// Updated SpareMaster Excel export with filters and search support
 router.get('/export-sparemaster', async (req, res) => {
     try {
-        // Sabhi spare master records fetch kariye
-        const spareMasterData = await SpareMaster.find({}).lean();
+        let query = {};
+        
+        // Check if it's a search export
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            query = {
+                $or: [
+                    { Sub_grp: searchRegex },
+                    { PartNumber: searchRegex },
+                    { Description: searchRegex },
+                    { Type: searchRegex },
+                    {
+                        $expr: {
+                            $regexMatch: {
+                                input: { $toString: "$Rate" },
+                                regex: req.query.search,
+                                options: "i"
+                            }
+                        }
+                    },
+                    {
+                        $expr: {
+                            $regexMatch: {
+                                input: { $toString: "$DP" },
+                                regex: req.query.search,
+                                options: "i"
+                            }
+                        }
+                    },
+                    {
+                        $expr: {
+                            $regexMatch: {
+                                input: { $toString: "$Charges" },
+                                regex: req.query.search,
+                                options: "i"
+                            }
+                        }
+                    }
+                ]
+            };
+        }
+        // Check if it's a filter export
+        else if (Object.keys(req.query).some(key => 
+            ['status', 'subGroup', 'type', 'rateMin', 'rateMax', 'dpMin', 'dpMax', 'chargesMin', 'chargesMax', 'createdStartDate', 'createdEndDate', 'modifiedStartDate', 'modifiedEndDate'].includes(key) && req.query[key]
+        )) {
+            // Status filter
+            if (req.query.status) {
+                query.status = req.query.status;
+            }
 
-        if (!spareMasterData || spareMasterData.length === 0) {
-            return res.status(404).json({ message: 'No spare master data found' });
+            // Sub Group filter
+            if (req.query.subGroup) {
+                query.Sub_grp = req.query.subGroup;
+            }
+
+            // Type filter
+            if (req.query.type) {
+                query.Type = req.query.type;
+            }
+
+            // Rate range filter
+            if (req.query.rateMin || req.query.rateMax) {
+                query.Rate = {};
+                if (req.query.rateMin) {
+                    query.Rate.$gte = parseFloat(req.query.rateMin);
+                }
+                if (req.query.rateMax) {
+                    query.Rate.$lte = parseFloat(req.query.rateMax);
+                }
+            }
+
+            // DP range filter
+            if (req.query.dpMin || req.query.dpMax) {
+                query.DP = {};
+                if (req.query.dpMin) {
+                    query.DP.$gte = parseFloat(req.query.dpMin);
+                }
+                if (req.query.dpMax) {
+                    query.DP.$lte = parseFloat(req.query.dpMax);
+                }
+            }
+
+            // Charges range filter
+            if (req.query.chargesMin || req.query.chargesMax) {
+                query.Charges = {};
+                if (req.query.chargesMin) {
+                    query.Charges.$gte = parseFloat(req.query.chargesMin);
+                }
+                if (req.query.chargesMax) {
+                    query.Charges.$lte = parseFloat(req.query.chargesMax);
+                }
+            }
+
+            // Created date range filter
+            if (req.query.createdStartDate || req.query.createdEndDate) {
+                query.createdAt = {};
+                if (req.query.createdStartDate) {
+                    query.createdAt.$gte = new Date(req.query.createdStartDate);
+                }
+                if (req.query.createdEndDate) {
+                    const endDate = new Date(req.query.createdEndDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.createdAt.$lte = endDate;
+                }
+            }
+
+            // Modified date range filter
+            if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+                query.updatedAt = {};
+                if (req.query.modifiedStartDate) {
+                    query.updatedAt.$gte = new Date(req.query.modifiedStartDate);
+                }
+                if (req.query.modifiedEndDate) {
+                    const endDate = new Date(req.query.modifiedEndDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.updatedAt.$lte = endDate;
+                }
+            }
         }
 
-        // Nyi Excel workbook banayiye
+        console.log('Excel Export Query:', query);
+        console.log('Request Query Params:', req.query);
+
+        // Fetch spare master data with query
+        const spareMasterData = await SpareMaster.find(query).sort({ createdAt: -1 }).lean();
+
+        console.log('Found records:', spareMasterData.length);
+
+        if (!spareMasterData || spareMasterData.length === 0) {
+            return res.status(404).json({ 
+                message: 'No spare master data found',
+                query: query,
+                queryParams: req.query
+            });
+        }
+
+        // Create Excel workbook
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Spare Master Data');
 
@@ -66,7 +195,7 @@ router.get('/export-sparemaster', async (req, res) => {
                 Rate: spare.Rate || '',
                 DP: spare.DP || '',
                 Charges: chargesValue,
-                status: spare.status || 'Active', // Status field added
+                status: spare.status || 'Active',
                 spareiamegUrl: spare.spareiamegUrl || '',
                 createdAt: spare.createdAt ? new Date(spare.createdAt).toLocaleDateString('en-IN') : '',
                 updatedAt: spare.updatedAt ? new Date(spare.updatedAt).toLocaleDateString('en-IN') : ''
@@ -107,7 +236,7 @@ router.get('/export-sparemaster', async (req, res) => {
                     } else {
                         cell.font = { color: { argb: 'FF8C00' }, bold: true }; // Orange for other statuses
                     }
-                } else if (colNumber === 10) { // Image URL column - wrap text (shifted due to status addition)
+                } else if (colNumber === 10) { // Image URL column - wrap text
                     cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
                 } else if ([6, 7, 8].includes(colNumber)) { // Price columns - right align
                     cell.alignment = { vertical: 'middle', horizontal: 'right' };
@@ -129,8 +258,17 @@ router.get('/export-sparemaster', async (req, res) => {
             column.width = maxLength < 10 ? 10 : maxLength > 50 ? 50 : maxLength + 2;
         });
 
-        // Response headers set kariye
-        const fileName = `spare_master_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        // Set response headers for file download
+        let fileName = 'spare_master_data';
+        if (req.query.search) {
+            fileName = `spare_master_search_${req.query.search.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        } else if (Object.keys(req.query).some(key => 
+            ['status', 'subGroup', 'type', 'rateMin', 'rateMax'].includes(key) && req.query[key]
+        )) {
+            fileName = 'spare_master_filtered';
+        }
+        fileName += `_${new Date().toISOString().split('T')[0]}.xlsx`;
+
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -142,7 +280,8 @@ router.get('/export-sparemaster', async (req, res) => {
         console.error('SpareMaster Excel export error:', error);
         res.status(500).json({
             message: 'Error exporting spare master data to Excel',
-            error: error.message
+            error: error.message,
+            query: req.query
         });
     }
 });

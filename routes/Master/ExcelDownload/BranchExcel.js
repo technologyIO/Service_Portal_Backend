@@ -1,19 +1,96 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const Branch = require('../../../Model/CollectionSchema/BranchSchema'); 
+const Branch = require('../../../Model/CollectionSchema/BranchSchema');
 const router = express.Router();
+router.get("/searchbranch", async (req, res) => {
+    try {
+        const { q } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
-// Branch Excel export API
+        if (!q) {
+            return res.status(400).json({ message: "Query parameter is required" });
+        }
+
+        const query = {
+            $or: [
+                { name: { $regex: q, $options: "i" } },
+                { status: { $regex: q, $options: "i" } },
+                { city: { $regex: q, $options: "i" } },
+                { branchShortCode: { $regex: q, $options: "i" } },
+                { state: { $regex: q, $options: "i" } },
+            ],
+        };
+
+        const branch = await Branch.find(query).skip(skip).limit(limit).sort({ createdAt: -1 });
+        const totalBranches = await Branch.countDocuments(query);
+        const totalPages = Math.ceil(totalBranches / limit);
+
+        res.json({
+            branches: branch,
+            totalPages,
+            totalBranches,
+            currentPage: page,
+            isSearch: true,
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Updated Branch Excel export with filters and search support
 router.get('/export-branches', async (req, res) => {
     try {
-        // Sabhi branch records fetch kariye
-        const branchData = await Branch.find({}).lean();
+        let query = {};
+
+        // Check if it's a search export
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            query = {
+                $or: [
+                    { name: searchRegex },
+                    { status: searchRegex },
+                    { city: searchRegex },
+                    { branchShortCode: searchRegex },
+                    { state: searchRegex }
+                ]
+            };
+        }
+        // Check if it's a filter export
+        else {
+            // Status filter
+            if (req.query.status) {
+                query.status = req.query.status;
+            }
+
+            // Date range filter
+            if (req.query.startDate || req.query.endDate) {
+                query.createdAt = {};
+                if (req.query.startDate) {
+                    query.createdAt.$gte = new Date(req.query.startDate);
+                }
+                if (req.query.endDate) {
+                    const endDate = new Date(req.query.endDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.createdAt.$lte = endDate;
+                }
+            }
+
+            // State filter
+            if (req.query.state) {
+                query.state = req.query.state;
+            }
+        }
+
+        // Fetch branch data with query
+        const branchData = await Branch.find(query).sort({ createdAt: -1 }).lean();
 
         if (!branchData || branchData.length === 0) {
             return res.status(404).json({ message: 'No branch data found' });
         }
 
-        // Nyi Excel workbook banayiye
+        // Create Excel workbook
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Branches Data');
 
@@ -96,8 +173,15 @@ router.get('/export-branches', async (req, res) => {
             column.width = maxLength < 10 ? 10 : maxLength > 50 ? 50 : maxLength + 2;
         });
 
-        // Response headers set kariye
-        const fileName = `branches_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        // Set response headers for file download
+        let fileName = 'branches_data';
+        if (req.query.search) {
+            fileName = `branches_search_${req.query.search}`;
+        } else if (req.query.status || req.query.startDate || req.query.endDate || req.query.state) {
+            fileName = 'branches_filtered';
+        }
+        fileName += `_${new Date().toISOString().split('T')[0]}.xlsx`;
+
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 

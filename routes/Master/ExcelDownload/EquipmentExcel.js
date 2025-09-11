@@ -3,14 +3,107 @@ const ExcelJS = require('exceljs');
 const Equipment = require('../../../Model/MasterSchema/EquipmentSchema');
 const router = express.Router();
 
-// Optimized Equipment Excel export API
+// Updated Equipment Excel export with filters and search support
 router.get('/export-equipments', async (req, res) => {
-    // Set response headers first
-    const fileName = `equipment_data_${new Date().toISOString().split('T')[0]}.xlsx`;
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-
     try {
+        let query = {};
+
+        // Check if it's a search export
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            query = {
+                $or: [
+                    { name: searchRegex },
+                    { materialdescription: searchRegex },
+                    { serialnumber: searchRegex },
+                    { materialcode: searchRegex },
+                    { status: searchRegex },
+                    { currentcustomer: searchRegex },
+                    { dealer: searchRegex },
+                    { palnumber: searchRegex },
+                    { equipmentid: searchRegex },
+                    { installationreportno: searchRegex }
+                ]
+            };
+        }
+        // Check if it's a filter export
+        else if (Object.keys(req.query).some(key =>
+            ['status', 'materialCode', 'dealer', 'currentCustomer', 'endCustomer', 'palNumber', 'startDate', 'endDate', 'custWarrantyStartDate', 'custWarrantyEndDate'].includes(key) && req.query[key]
+        )) {
+            // Status filter
+            if (req.query.status) {
+                query.status = req.query.status;
+            }
+
+            // Material code filter
+            if (req.query.materialCode) {
+                query.materialcode = req.query.materialCode;
+            }
+
+            // Dealer filter
+            if (req.query.dealer) {
+                query.dealer = req.query.dealer;
+            }
+
+            // Current customer filter
+            if (req.query.currentCustomer) {
+                query.currentcustomer = req.query.currentCustomer;
+            }
+
+            // End customer filter
+            if (req.query.endCustomer) {
+                query.endcustomer = req.query.endCustomer;
+            }
+
+            // PAL number filter
+            if (req.query.palNumber) {
+                query.palnumber = { $regex: req.query.palNumber, $options: 'i' };
+            }
+
+            // Created date range filter
+            if (req.query.startDate || req.query.endDate) {
+                query.createdAt = {};
+                if (req.query.startDate) {
+                    query.createdAt.$gte = new Date(req.query.startDate);
+                }
+                if (req.query.endDate) {
+                    const endDate = new Date(req.query.endDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.createdAt.$lte = endDate;
+                }
+            }
+
+            // Customer warranty date filters
+            if (req.query.custWarrantyStartDate) {
+                query.custWarrantystartdate = {
+                    $gte: req.query.custWarrantyStartDate
+                };
+            }
+
+            if (req.query.custWarrantyEndDate) {
+                query.custWarrantyenddate = {
+                    $lte: req.query.custWarrantyEndDate
+                };
+            }
+        }
+
+        console.log('Excel Export Query:', query);
+        console.log('Request Query Params:', req.query);
+
+        // Set response headers for file download
+        let fileName = 'equipment_data';
+        if (req.query.search) {
+            fileName = `equipment_search_${req.query.search.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        } else if (Object.keys(req.query).some(key =>
+            ['status', 'materialCode', 'dealer', 'currentCustomer', 'endCustomer'].includes(key) && req.query[key]
+        )) {
+            fileName = 'equipment_filtered';
+        }
+        fileName += `_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
         // Create streaming workbook writer
         const workbookWriter = new ExcelJS.stream.xlsx.WorkbookWriter({
             stream: res,
@@ -36,9 +129,9 @@ router.get('/export-equipments', async (req, res) => {
             { header: 'Dealer Warranty End Date', key: 'dealerwarrantyenddate', width: 25 },
             { header: 'PAL Number', key: 'palnumber', width: 18 },
             { header: 'Installation Report No.', key: 'installationreportno', width: 25 },
+            { header: 'Status', key: 'status', width: 15 },
             { header: 'Created At', key: 'createdAt', width: 18 },
-            { header: 'Modified At', key: 'modifiedAt', width: 18 },
-            { header: 'Status', key: 'status', width: 15 }
+            { header: 'Modified At', key: 'modifiedAt', width: 18 }
         ];
 
         // Style only the header row (for performance)
@@ -52,9 +145,11 @@ router.get('/export-equipments', async (req, res) => {
         headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
         headerRow.commit();
 
-        // Get MongoDB cursor for streaming
-        const cursor = Equipment.find().lean().cursor();
+        // Get MongoDB cursor for streaming with query
+        const cursor = Equipment.find(query).lean().cursor();
         let rowIndex = 0;
+
+        console.log('Starting cursor stream...');
 
         // Process data in chunks
         cursor.on('data', (equipment) => {
@@ -65,7 +160,6 @@ router.get('/export-equipments', async (req, res) => {
                 materialdescription: equipment.materialdescription || '',
                 serialnumber: equipment.serialnumber || '',
                 materialcode: equipment.materialcode || '',
-                status: equipment.status || '',
                 currentcustomer: equipment.currentcustomer || '',
                 endcustomer: equipment.endcustomer || '',
                 dealer: equipment.dealer || '',
@@ -75,6 +169,7 @@ router.get('/export-equipments', async (req, res) => {
                 dealerwarrantyenddate: equipment.dealerwarrantyenddate || '',
                 palnumber: equipment.palnumber || '',
                 installationreportno: equipment.installationreportno || '',
+                status: equipment.status || '',
                 createdAt: equipment.createdAt ? new Date(equipment.createdAt).toLocaleDateString('en-IN') : '',
                 modifiedAt: equipment.modifiedAt ? new Date(equipment.modifiedAt).toLocaleDateString('en-IN') : ''
             }).commit(); // Commit each row immediately
@@ -86,15 +181,30 @@ router.get('/export-equipments', async (req, res) => {
             if (!res.headersSent) {
                 res.status(500).json({
                     message: 'Database stream error',
-                    error: error.message
+                    error: error.message,
+                    query: query
                 });
             }
         });
 
         cursor.on('end', async () => {
             try {
+                console.log(`Processed ${rowIndex} records`);
+                if (rowIndex === 0) {
+                    // No data found, send error response
+                    if (!res.headersSented) {
+                        workbookWriter.rollback();
+                        res.status(404).json({
+                            message: 'No equipment data found',
+                            query: query,
+                            queryParams: req.query
+                        });
+                        return;
+                    }
+                }
                 await worksheet.commit();
                 await workbookWriter.commit();
+                console.log('Excel export completed successfully');
             } catch (commitError) {
                 console.error('Commit error:', commitError);
                 if (!res.headersSent) {
@@ -105,6 +215,7 @@ router.get('/export-equipments', async (req, res) => {
                 }
             }
         });
+
     } catch (setupError) {
         console.error('Setup error:', setupError);
         if (!res.headersSent) {

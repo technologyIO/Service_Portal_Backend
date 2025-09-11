@@ -172,40 +172,7 @@ router.delete('/aerb/:id', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
-router.get('/searchaerb', async (req, res) => {
-    try {
-        const { q } = req.query;
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
 
-        if (!q) {
-            return res.status(400).json({ message: 'Query parameter "q" is required' });
-        }
-
-        const query = {
-            $or: [
-                { materialcode: { $regex: q, $options: 'i' } },
-                { materialdescription: { $regex: q, $options: 'i' } }
-            ]
-        };
-
-        const aerb = await Aerb.find(query).skip(skip).limit(limit);
-        const totalAerb = await Aerb.countDocuments(query);
-        const totalPages = Math.ceil(totalAerb / limit);
-
-        res.json({
-            aerbEntries: aerb,
-            totalPages,
-            totalAerb,
-            currentPage: page,
-            isSearch: true
-        });
-
-    } catch (err) {
-        res.status(500).json({ message: 'Server error: ' + err.message });
-    }
-});
 
 
 

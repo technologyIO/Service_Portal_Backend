@@ -3,17 +3,95 @@ const ExcelJS = require('exceljs');
 const WarrantyCode = require('../../../Model/MasterSchema/WarrantyCodeSchema'); 
 const router = express.Router();
 
-// WarrantyCode Excel export API
+// Updated WarrantyCode Excel export with filters and search support
 router.get('/export-warrantycodes', async (req, res) => {
     try {
-        // Sabhi warranty code records fetch kariye
-        const warrantyCodeData = await WarrantyCode.find({}).lean();
+        let query = {};
+        
+        // Check if it's a search export
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            query = {
+                $or: [
+                    { warrantycodeid: searchRegex },
+                    { description: searchRegex },
+                    { status: searchRegex }
+                ]
+            };
+            
+            // If search is a number, also search by months
+            if (!isNaN(req.query.search)) {
+                query.$or.push({ months: Number(req.query.search) });
+            }
+        }
+        // Check if it's a filter export
+        else if (Object.keys(req.query).some(key => 
+            ['warrantycodeid', 'description', 'months', 'status', 'createdStartDate', 'createdEndDate', 'modifiedStartDate', 'modifiedEndDate'].includes(key) && req.query[key]
+        )) {
+            // Warranty Code ID filter
+            if (req.query.warrantycodeid) {
+                query.warrantycodeid = req.query.warrantycodeid;
+            }
 
-        if (!warrantyCodeData || warrantyCodeData.length === 0) {
-            return res.status(404).json({ message: 'No warranty code data found' });
+            // Description filter
+            if (req.query.description) {
+                query.description = { $regex: req.query.description, $options: 'i' };
+            }
+
+            // Months filter
+            if (req.query.months) {
+                query.months = parseInt(req.query.months);
+            }
+
+            // Status filter
+            if (req.query.status) {
+                query.status = req.query.status;
+            }
+
+            // Created date range filter
+            if (req.query.createdStartDate || req.query.createdEndDate) {
+                query.createdAt = {};
+                if (req.query.createdStartDate) {
+                    query.createdAt.$gte = new Date(req.query.createdStartDate);
+                }
+                if (req.query.createdEndDate) {
+                    const endDate = new Date(req.query.createdEndDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.createdAt.$lte = endDate;
+                }
+            }
+
+            // Modified date range filter
+            if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+                query.modifiedAt = {};
+                if (req.query.modifiedStartDate) {
+                    query.modifiedAt.$gte = new Date(req.query.modifiedStartDate);
+                }
+                if (req.query.modifiedEndDate) {
+                    const endDate = new Date(req.query.modifiedEndDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    query.modifiedAt.$lte = endDate;
+                }
+            }
         }
 
-        // Nyi Excel workbook banayiye
+        console.log('Excel Export Query:', query);
+        console.log('Request Query Params:', req.query);
+
+        // Fetch warranty code data with query
+        const warrantyCodeData = await WarrantyCode.find(query).sort({ createdAt: -1 }).lean();
+
+        console.log('Found records:', warrantyCodeData.length);
+
+        if (!warrantyCodeData || warrantyCodeData.length === 0) {
+            return res.status(404).json({ 
+                message: 'No warranty code data found',
+                query: query,
+                queryParams: req.query
+            });
+        }
+
+        // Create Excel workbook
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Warranty Codes Data');
 
@@ -80,6 +158,18 @@ router.get('/export-warrantycodes', async (req, res) => {
                     cell.alignment = { vertical: 'middle', horizontal: 'center' };
                 } else if (colNumber === 3) { // Description column - wrap text
                     cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+                } else if (colNumber === 5) { // Status column - center align
+                    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+                    // Status-based conditional formatting
+                    const statusValue = cell.value;
+                    if (statusValue === 'Active') {
+                        cell.font = { color: { argb: '008000' }, bold: true }; // Green for Active
+                    } else if (statusValue === 'Inactive') {
+                        cell.font = { color: { argb: 'FF0000' }, bold: true }; // Red for Inactive
+                    } else {
+                        cell.font = { color: { argb: 'FF8C00' }, bold: true }; // Orange for other statuses
+                    }
                 } else {
                     cell.alignment = { vertical: 'middle', horizontal: 'left' };
                 }
@@ -98,8 +188,17 @@ router.get('/export-warrantycodes', async (req, res) => {
             column.width = maxLength < 10 ? 10 : maxLength > 50 ? 50 : maxLength + 2;
         });
 
-        // Response headers set kariye
-        const fileName = `warranty_codes_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        // Set response headers for file download
+        let fileName = 'warranty_codes_data';
+        if (req.query.search) {
+            fileName = `warranty_codes_search_${req.query.search.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        } else if (Object.keys(req.query).some(key => 
+            ['warrantycodeid', 'description', 'months', 'status'].includes(key) && req.query[key]
+        )) {
+            fileName = 'warranty_codes_filtered';
+        }
+        fileName += `_${new Date().toISOString().split('T')[0]}.xlsx`;
+
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
@@ -111,7 +210,8 @@ router.get('/export-warrantycodes', async (req, res) => {
         console.error('WarrantyCode Excel export error:', error);
         res.status(500).json({
             message: 'Error exporting warranty code data to Excel',
-            error: error.message
+            error: error.message,
+            query: req.query
         });
     }
 });

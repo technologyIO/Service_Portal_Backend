@@ -33,7 +33,119 @@ async function checkDuplicateReplacedPartCode(req, res, next) {
     }
     next();
 }
+router.get('/replacedpartcodes/filter-options', async (req, res) => {
+    try {
+        const replacedPartCodes = await ReplacedPartCode.find({}, {
+            catalog: 1,
+            codegroup: 1,
+            code: 1
+        });
 
+        const catalogs = [...new Set(replacedPartCodes.map(rpc => rpc.catalog).filter(Boolean))];
+        const codeGroups = [...new Set(replacedPartCodes.map(rpc => rpc.codegroup).filter(Boolean))];
+        const codes = [...new Set(replacedPartCodes.map(rpc => rpc.code).filter(Boolean))];
+
+        res.json({
+            catalogs: catalogs.sort(),
+            codeGroups: codeGroups.sort(),
+            codes: codes.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET replaced part codes with filters
+router.get('/replacedpartcodes/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Catalog filter
+        if (req.query.catalog) {
+            filters.catalog = req.query.catalog;
+        }
+
+        // Code Group filter
+        if (req.query.codegroup) {
+            filters.codegroup = req.query.codegroup;
+        }
+
+        // Name filter
+        if (req.query.name) {
+            filters.name = { $regex: req.query.name, $options: 'i' };
+        }
+
+        // Code filter
+        if (req.query.code) {
+            filters.code = req.query.code;
+        }
+
+        // Short Text For Code filter
+        if (req.query.shorttextforcode) {
+            filters.shorttextforcode = { $regex: req.query.shorttextforcode, $options: 'i' };
+        }
+
+        // Serial No filter
+        if (req.query.slno) {
+            filters.slno = { $regex: req.query.slno, $options: 'i' };
+        }
+
+        // Status filter
+        if (req.query.status) {
+            filters.status = req.query.status;
+        }
+
+        // Created date range filter
+        if (req.query.createdStartDate || req.query.createdEndDate) {
+            filters.createdAt = {};
+            if (req.query.createdStartDate) {
+                filters.createdAt.$gte = new Date(req.query.createdStartDate);
+            }
+            if (req.query.createdEndDate) {
+                const endDate = new Date(req.query.createdEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Modified date range filter
+        if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+            filters.modifiedAt = {};
+            if (req.query.modifiedStartDate) {
+                filters.modifiedAt.$gte = new Date(req.query.modifiedStartDate);
+            }
+            if (req.query.modifiedEndDate) {
+                const endDate = new Date(req.query.modifiedEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.modifiedAt.$lte = endDate;
+            }
+        }
+
+        const totalReplacedPartCodes = await ReplacedPartCode.countDocuments(filters);
+        const replacedPartCodes = await ReplacedPartCode.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalPages = Math.ceil(totalReplacedPartCodes / limit);
+
+        res.json({
+            replacedPartCodes,
+            totalReplacedPartCodes,
+            totalPages,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 router.get('/replacedpartcodes', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;

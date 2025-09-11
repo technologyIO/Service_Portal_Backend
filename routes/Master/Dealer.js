@@ -163,46 +163,7 @@ router.delete('/dealer/:id', async (req, res) => {
 });
 
 // SEARCH dealers
-router.get('/searchdealer', async (req, res) => {
-    try {
-        const { q } = req.query;
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
 
-        if (!q || typeof q !== 'string') {
-            return res.status(400).json({ message: 'Query parameter is required and must be a string' });
-        }
-
-        const query = {
-            $or: [
-                { name: { $regex: q, $options: 'i' } },
-                { 'personresponsible.name': { $regex: q, $options: 'i' } },
-                { email: { $regex: q, $options: 'i' } },
-                { dealercode: { $regex: q, $options: 'i' } },
-                { city: { $regex: q, $options: 'i' } },
-                { state: { $regex: q, $options: 'i' } },
-                { pincode: { $regex: q, $options: 'i' } },
-                { address: { $regex: q, $options: 'i' } }
-            ]
-        };
-
-        const dealers = await Dealer.find(query).skip(skip).limit(limit);
-        const totalDealers = await Dealer.countDocuments(query);
-        const totalPages = Math.ceil(totalDealers / limit);
-
-        res.json({
-            dealers,
-            totalPages,
-            totalDealers,
-            currentPage: page,
-            isSearch: true
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: err.message });
-    }
-});
 
 
 
