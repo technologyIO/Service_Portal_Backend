@@ -64,7 +64,161 @@ async function checkDuplicateCustomer(req, res, next) {
     }
     next();
 }
+router.get('/customer/filter-options', async (req, res) => {
+    try {
+        const customers = await Customer.find({}, {
+            customercodeid: 1,
+            city: 1,
+            region: 1,
+            country: 1
+        });
 
+        // const customerCodes = [...new Set(customers.map(c => c.customercodeid).filter(Boolean))];
+        const cities = [...new Set(customers.map(c => c.city).filter(Boolean))];
+        const regions = [...new Set(customers.map(c => c.region).filter(Boolean))];
+        const countries = [...new Set(customers.map(c => c.country).filter(Boolean))];
+
+        res.json({
+            customerCodes: customerCodes.sort(),
+            cities: cities.sort(),
+            regions: regions.sort(),
+            countries: countries.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET customers with filters
+router.get('/customer/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Customer Code filter
+        if (req.query.customercodeid) {
+            filters.customercodeid = req.query.customercodeid;
+        }
+
+        // Customer Name filter
+        if (req.query.customername) {
+            filters.customername = { $regex: req.query.customername, $options: 'i' };
+        }
+
+        // Hospital Name filter
+        if (req.query.hospitalname) {
+            filters.hospitalname = { $regex: req.query.hospitalname, $options: 'i' };
+        }
+
+        // Street filter
+        if (req.query.street) {
+            filters.street = { $regex: req.query.street, $options: 'i' };
+        }
+
+        // City filter
+        if (req.query.city) {
+            filters.city = req.query.city;
+        }
+
+        // Postal Code filter
+        if (req.query.postalcode) {
+            filters.postalcode = { $regex: req.query.postalcode, $options: 'i' };
+        }
+
+        // District filter
+        if (req.query.district) {
+            filters.district = { $regex: req.query.district, $options: 'i' };
+        }
+
+        // Region filter
+        if (req.query.region) {
+            filters.region = req.query.region;
+        }
+
+        // Country filter
+        if (req.query.country) {
+            filters.country = req.query.country;
+        }
+
+        // Telephone filter
+        if (req.query.telephone) {
+            filters.telephone = { $regex: req.query.telephone, $options: 'i' };
+        }
+
+        // Tax Number filters
+        if (req.query.taxnumber1) {
+            filters.taxnumber1 = { $regex: req.query.taxnumber1, $options: 'i' };
+        }
+
+        if (req.query.taxnumber2) {
+            filters.taxnumber2 = { $regex: req.query.taxnumber2, $options: 'i' };
+        }
+
+        // Email filter
+        if (req.query.email) {
+            filters.email = { $regex: req.query.email, $options: 'i' };
+        }
+
+        // Status filter
+        if (req.query.status) {
+            filters.status = req.query.status;
+        }
+
+        // Customer Type filter
+        if (req.query.customertype) {
+            filters.customertype = req.query.customertype;
+        }
+
+        // Created date range filter
+        if (req.query.createdStartDate || req.query.createdEndDate) {
+            filters.createdAt = {};
+            if (req.query.createdStartDate) {
+                filters.createdAt.$gte = new Date(req.query.createdStartDate);
+            }
+            if (req.query.createdEndDate) {
+                const endDate = new Date(req.query.createdEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Modified date range filter
+        if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+            filters.modifiedAt = {};
+            if (req.query.modifiedStartDate) {
+                filters.modifiedAt.$gte = new Date(req.query.modifiedStartDate);
+            }
+            if (req.query.modifiedEndDate) {
+                const endDate = new Date(req.query.modifiedEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.modifiedAt.$lte = endDate;
+            }
+        }
+
+        const totalCustomers = await Customer.countDocuments(filters);
+        const customers = await Customer.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalPages = Math.ceil(totalCustomers / limit);
+
+        res.json({
+            customers,
+            totalCustomers,
+            totalPages,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 // BULK DELETE Customer entries - PLACE THIS BEFORE THE /:id ROUTES
 router.delete('/customer/bulk', async (req, res) => {
     try {
