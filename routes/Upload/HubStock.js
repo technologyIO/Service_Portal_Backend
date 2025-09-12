@@ -34,7 +34,120 @@ async function checkDuplicateMaterialCode(req, res, next) {
     }
     next();
 }
+router.get('/hubstocks/filter-options', async (req, res) => {
+    try {
+        const hubStocks = await HubStock.find({}, {
+            materialcode: 1,
+            storagelocation: 1
+        });
 
+        const materialCodes = [...new Set(hubStocks.map(hs => hs.materialcode).filter(Boolean))];
+        const storageLocations = [...new Set(hubStocks.map(hs => hs.storagelocation).filter(Boolean))];
+
+        res.json({
+            materialCodes: materialCodes.sort(),
+            storageLocations: storageLocations.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET hub stocks with filters - FIXED STATUS FILTERING
+router.get('/hubstocks/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Material Code filter
+        if (req.query.materialcode) {
+            filters.materialcode = req.query.materialcode;
+        }
+
+        // Material Description filter
+        if (req.query.materialdescription) {
+            filters.materialdescription = { $regex: req.query.materialdescription, $options: 'i' };
+        }
+
+        // Exact Quantity filter
+        if (req.query.quantity) {
+            filters.quantity = Number(req.query.quantity);
+        }
+
+        // Quantity range filters
+        if (req.query.quantityMin || req.query.quantityMax) {
+            filters.quantity = {};
+            if (req.query.quantityMin) {
+                filters.quantity.$gte = Number(req.query.quantityMin);
+            }
+            if (req.query.quantityMax) {
+                filters.quantity.$lte = Number(req.query.quantityMax);
+            }
+        }
+
+        // Storage Location filter
+        if (req.query.storagelocation) {
+            filters.storagelocation = req.query.storagelocation;
+        }
+
+        // ✅ FIXED: Status filter with case-insensitive matching
+        if (req.query.status) {
+            // Use case-insensitive regex for exact match
+            filters.status = new RegExp(`^${req.query.status}$`, 'i');
+        }
+
+        // Created date range filter
+        if (req.query.createdStartDate || req.query.createdEndDate) {
+            filters.createdAt = {};
+            if (req.query.createdStartDate) {
+                filters.createdAt.$gte = new Date(req.query.createdStartDate);
+            }
+            if (req.query.createdEndDate) {
+                const endDate = new Date(req.query.createdEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Modified date range filter
+        if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+            filters.updatedAt = {};
+            if (req.query.modifiedStartDate) {
+                filters.updatedAt.$gte = new Date(req.query.modifiedStartDate);
+            }
+            if (req.query.modifiedEndDate) {
+                const endDate = new Date(req.query.modifiedEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.updatedAt.$lte = endDate;
+            }
+        }
+
+        console.log('Applied Filters:', filters); // Debug log
+
+        const totalHubStocks = await HubStock.countDocuments(filters);
+        const hubStocks = await HubStock.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalPages = Math.ceil(totalHubStocks / limit);
+
+        res.json({
+            hubStocks,
+            totalHubStocks,
+            totalPages,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 // BULK DELETE Hub Stock entries - PLACE THIS BEFORE THE /:id ROUTES
 router.delete('/hubstocks/bulk', async (req, res) => {
     try {

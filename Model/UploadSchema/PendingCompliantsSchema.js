@@ -45,7 +45,8 @@ const PendingComplaintsSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    default: "Active"
+    // enum: ['Active', 'Inactive', 'Pending'],
+    default: 'Active'
   },
   productgroup: {
     type: String

@@ -79,7 +79,6 @@ router.get('/customer/filter-options', async (req, res) => {
         const countries = [...new Set(customers.map(c => c.country).filter(Boolean))];
 
         res.json({
-            customerCodes: customerCodes.sort(),
             cities: cities.sort(),
             regions: regions.sort(),
             countries: countries.sort()

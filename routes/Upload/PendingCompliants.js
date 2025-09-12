@@ -59,7 +59,150 @@ async function checkDuplicateComplaintId(req, res, next) {
   }
   next();
 }
+router.get('/pendingcomplaints/filter-options', async (req, res) => {
+  try {
+    const pendingComplaints = await PendingComplaints.find({}, {
+      notificationtype: 1,
+      userstatus: 1,
+      salesoffice: 1,
+      materialcode: 1,
+      dealercode: 1
+    });
 
+    const notificationTypes = [...new Set(pendingComplaints.map(pc => pc.notificationtype).filter(Boolean))];
+    const userStatuses = [...new Set(pendingComplaints.map(pc => pc.userstatus).filter(Boolean))];
+    const salesOffices = [...new Set(pendingComplaints.map(pc => pc.salesoffice).filter(Boolean))];
+    const materialCodes = [...new Set(pendingComplaints.map(pc => pc.materialcode).filter(Boolean))];
+    const dealerCodes = [...new Set(pendingComplaints.map(pc => pc.dealercode).filter(Boolean))];
+
+    res.json({
+      notificationTypes: notificationTypes.sort(),
+      userStatuses: userStatuses.sort(),
+      salesOffices: salesOffices.sort(),
+      materialCodes: materialCodes.sort(),
+      dealerCodes: dealerCodes.sort()
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET pending complaints with filters - FIXED STATUS FILTERING
+router.get('/pendingcomplaints/filter', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Build filter object
+    const filters = {};
+
+    // Notification Type filter
+    if (req.query.notificationtype) {
+      filters.notificationtype = req.query.notificationtype;
+    }
+
+    // Complaint ID filter
+    if (req.query.notification_complaintid) {
+      filters.notification_complaintid = { $regex: req.query.notification_complaintid, $options: 'i' };
+    }
+
+    // User Status filter
+    if (req.query.userstatus) {
+      filters.userstatus = req.query.userstatus;
+    }
+
+    // Material Description filter
+    if (req.query.materialdescription) {
+      filters.materialdescription = { $regex: req.query.materialdescription, $options: 'i' };
+    }
+
+    // Serial Number filter
+    if (req.query.serialnumber) {
+      filters.serialnumber = { $regex: req.query.serialnumber, $options: 'i' };
+    }
+
+    // Sales Office filter
+    if (req.query.salesoffice) {
+      filters.salesoffice = req.query.salesoffice;
+    }
+
+    // Material Code filter
+    if (req.query.materialcode) {
+      filters.materialcode = req.query.materialcode;
+    }
+
+    // Dealer Code filter
+    if (req.query.dealercode) {
+      filters.dealercode = req.query.dealercode;
+    }
+
+    // ✅ FIXED: Status filter with case-insensitive matching
+    if (req.query.status) {
+      filters.status = new RegExp(`^${req.query.status}$`, 'i');
+    }
+
+    // Notification date range filter
+    if (req.query.notificationDateFrom || req.query.notificationDateTo) {
+      filters.notificationdate = {};
+      if (req.query.notificationDateFrom) {
+        filters.notificationdate.$gte = new Date(req.query.notificationDateFrom);
+      }
+      if (req.query.notificationDateTo) {
+        const endDate = new Date(req.query.notificationDateTo);
+        endDate.setHours(23, 59, 59, 999);
+        filters.notificationdate.$lte = endDate;
+      }
+    }
+
+    // Created date range filter
+    if (req.query.createdStartDate || req.query.createdEndDate) {
+      filters.createdAt = {};
+      if (req.query.createdStartDate) {
+        filters.createdAt.$gte = new Date(req.query.createdStartDate);
+      }
+      if (req.query.createdEndDate) {
+        const endDate = new Date(req.query.createdEndDate);
+        endDate.setHours(23, 59, 59, 999);
+        filters.createdAt.$lte = endDate;
+      }
+    }
+
+    // Modified date range filter
+    if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+      filters.modifiedAt = {};
+      if (req.query.modifiedStartDate) {
+        filters.modifiedAt.$gte = new Date(req.query.modifiedStartDate);
+      }
+      if (req.query.modifiedEndDate) {
+        const endDate = new Date(req.query.modifiedEndDate);
+        endDate.setHours(23, 59, 59, 999);
+        filters.modifiedAt.$lte = endDate;
+      }
+    }
+
+    console.log('Applied Filters:', filters); // Debug log
+
+    const totalPendingComplaints = await PendingComplaints.countDocuments(filters);
+    const pendingComplaints = await PendingComplaints.find(filters)
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    const totalPages = Math.ceil(totalPendingComplaints / limit);
+
+    res.json({
+      pendingComplaints,
+      totalPendingComplaints,
+      totalPages,
+      currentPage: page,
+      filters: req.query
+    });
+  } catch (err) {
+    console.error('Filter error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
 // BULK DELETE Pending Complaints entries - PLACE THIS BEFORE THE /:id ROUTES
 router.delete('/pendingcomplaints/bulk', async (req, res) => {
   try {

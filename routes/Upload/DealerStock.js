@@ -33,7 +33,142 @@ async function checkDuplicateMaterialCode(req, res, next) {
     }
     next();
 }
+router.get('/dealerstocks/filter-options', async (req, res) => {
+    try {
+        const dealerStocks = await DealerStock.find({}, {
+            dealercodeid: 1,
+            dealername: 1,
+            dealercity: 1,
+            materialcode: 1,
+            plant: 1
+        });
 
+
+
+        const cities = [...new Set(dealerStocks.map(ds => ds.dealercity).filter(Boolean))];
+        const materialCodes = [...new Set(dealerStocks.map(ds => ds.materialcode).filter(Boolean))];
+        const plants = [...new Set(dealerStocks.map(ds => ds.plant).filter(Boolean))];
+
+        res.json({
+
+            cities: cities.sort(),
+            materialCodes: materialCodes.sort(),
+            plants: plants.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET dealer stocks with filters - FIXED STATUS FILTERING
+router.get('/dealerstocks/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Dealer Code filter
+        if (req.query.dealercodeid) {
+            filters.dealercodeid = req.query.dealercodeid;
+        }
+
+        // Dealer Name filter
+        if (req.query.dealername) {
+            filters.dealername = req.query.dealername;
+        }
+
+        // Dealer City filter
+        if (req.query.dealercity) {
+            filters.dealercity = req.query.dealercity;
+        }
+
+        // Material Code filter
+        if (req.query.materialcode) {
+            filters.materialcode = req.query.materialcode;
+        }
+
+        // Material Description filter
+        if (req.query.materialdescription) {
+            filters.materialdescription = { $regex: req.query.materialdescription, $options: 'i' };
+        }
+
+        // Plant filter
+        if (req.query.plant) {
+            filters.plant = req.query.plant;
+        }
+
+        // Exact Quantity filter
+        if (req.query.unrestrictedquantity) {
+            filters.unrestrictedquantity = Number(req.query.unrestrictedquantity);
+        }
+
+        // Quantity range filters
+        if (req.query.quantityMin || req.query.quantityMax) {
+            filters.unrestrictedquantity = {};
+            if (req.query.quantityMin) {
+                filters.unrestrictedquantity.$gte = Number(req.query.quantityMin);
+            }
+            if (req.query.quantityMax) {
+                filters.unrestrictedquantity.$lte = Number(req.query.quantityMax);
+            }
+        }
+
+        // ✅ FIXED: Status filter with case-insensitive matching
+        if (req.query.status) {
+            filters.status = new RegExp(`^${req.query.status}$`, 'i');
+        }
+
+        // Created date range filter
+        if (req.query.createdStartDate || req.query.createdEndDate) {
+            filters.createdAt = {};
+            if (req.query.createdStartDate) {
+                filters.createdAt.$gte = new Date(req.query.createdStartDate);
+            }
+            if (req.query.createdEndDate) {
+                const endDate = new Date(req.query.createdEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Modified date range filter
+        if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+            filters.modifiedAt = {};
+            if (req.query.modifiedStartDate) {
+                filters.modifiedAt.$gte = new Date(req.query.modifiedStartDate);
+            }
+            if (req.query.modifiedEndDate) {
+                const endDate = new Date(req.query.modifiedEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.modifiedAt.$lte = endDate;
+            }
+        }
+
+        console.log('Applied Filters:', filters); // Debug log
+
+        const totalDealerStocks = await DealerStock.countDocuments(filters);
+        const dealerStocks = await DealerStock.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalPages = Math.ceil(totalDealerStocks / limit);
+
+        res.json({
+            dealerStocks,
+            totalDealerStocks,
+            totalPages,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 // BULK DELETE Dealer Stock entries - PLACE THIS BEFORE THE /:id ROUTES
 router.delete('/dealerstocks/bulk', async (req, res) => {
     try {

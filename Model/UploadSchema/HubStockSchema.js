@@ -1,4 +1,4 @@
-const mongoose = require("mongoose")
+const mongoose = require("mongoose");
 
 const HubStockSchema = new mongoose.Schema({
     materialcode: {
@@ -18,7 +18,8 @@ const HubStockSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        default: 'Active',
+        enum: ['Active', 'Inactive'],
+        default: 'Active'
     },
     createdAt: {
         type: Date,
@@ -28,6 +29,12 @@ const HubStockSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     }
-})
+});
+
+// ✅ Pre-save middleware to update modifiedAt
+HubStockSchema.pre('save', function (next) {
+    this.updatedAt = new Date();
+    next();
+});
 
 module.exports = mongoose.model("HubStock", HubStockSchema);

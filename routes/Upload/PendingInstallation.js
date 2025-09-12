@@ -40,9 +40,203 @@ async function checkDuplicateInvoiceNo(req, res, next) {
     next();
 }
 
-/** 
- * Specific Routes must come before generic parameterized routes.
- */
+router.get('/pendinginstallations/filter-options', async (req, res) => {
+    try {
+        const pendingInstallations = await PendingInstallation.find({}, {
+            distchnl: 1,
+            customercity: 1,
+            material: 1,
+            salesdist: 1,
+            salesoff: 1,
+            customercountry: 1
+        });
+
+        const distChannels = [...new Set(pendingInstallations.map(pi => pi.distchnl).filter(Boolean))];
+        const customerCities = [...new Set(pendingInstallations.map(pi => pi.customercity).filter(Boolean))];
+        const materials = [...new Set(pendingInstallations.map(pi => pi.material).filter(Boolean))];
+        const salesDistricts = [...new Set(pendingInstallations.map(pi => pi.salesdist).filter(Boolean))];
+        const salesOffices = [...new Set(pendingInstallations.map(pi => pi.salesoff).filter(Boolean))];
+        const customerCountries = [...new Set(pendingInstallations.map(pi => pi.customercountry).filter(Boolean))];
+
+        res.json({
+            distChannels: distChannels.sort(),
+            customerCities: customerCities.sort(),
+            materials: materials.sort(),
+            salesDistricts: salesDistricts.sort(),
+            salesOffices: salesOffices.sort(),
+            customerCountries: customerCountries.sort()
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET pending installations with filters - FIXED STATUS FILTERING
+router.get('/pendinginstallations/filter', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Build filter object
+        const filters = {};
+
+        // Invoice No filter
+        if (req.query.invoiceno) {
+            filters.invoiceno = { $regex: req.query.invoiceno, $options: 'i' };
+        }
+
+        // Distribution Channel filter
+        if (req.query.distchnl) {
+            filters.distchnl = req.query.distchnl;
+        }
+
+        // Customer ID filter
+        if (req.query.customerid) {
+            filters.customerid = { $regex: req.query.customerid, $options: 'i' };
+        }
+
+        // Customer Name 1 filter
+        if (req.query.customername1) {
+            filters.customername1 = { $regex: req.query.customername1, $options: 'i' };
+        }
+
+        // Customer Name 2 filter
+        if (req.query.customername2) {
+            filters.customername2 = { $regex: req.query.customername2, $options: 'i' };
+        }
+
+        // Customer City filter
+        if (req.query.customercity) {
+            filters.customercity = req.query.customercity;
+        }
+
+        // Customer Postal Code filter
+        if (req.query.customerpostalcode) {
+            filters.customerpostalcode = { $regex: req.query.customerpostalcode, $options: 'i' };
+        }
+
+        // Material filter
+        if (req.query.material) {
+            filters.material = req.query.material;
+        }
+
+        // Description filter
+        if (req.query.description) {
+            filters.description = { $regex: req.query.description, $options: 'i' };
+        }
+
+        // Serial Number filter
+        if (req.query.serialnumber) {
+            filters.serialnumber = { $regex: req.query.serialnumber, $options: 'i' };
+        }
+
+        // Sales District filter
+        if (req.query.salesdist) {
+            filters.salesdist = req.query.salesdist;
+        }
+
+        // Sales Office filter
+        if (req.query.salesoff) {
+            filters.salesoff = req.query.salesoff;
+        }
+
+        // Customer Country filter
+        if (req.query.customercountry) {
+            filters.customercountry = req.query.customercountry;
+        }
+
+        // Customer Region filter
+        if (req.query.customerregion) {
+            filters.customerregion = { $regex: req.query.customerregion, $options: 'i' };
+        }
+
+        // Current Customer ID filter
+        if (req.query.currentcustomerid) {
+            filters.currentcustomerid = { $regex: req.query.currentcustomerid, $options: 'i' };
+        }
+
+        // PAL Number filter
+        if (req.query.palnumber) {
+            filters.palnumber = { $regex: req.query.palnumber, $options: 'i' };
+        }
+
+        // Material Group 4 filter
+        if (req.query.mtl_grp4) {
+            filters.mtl_grp4 = { $regex: req.query.mtl_grp4, $options: 'i' };
+        }
+
+        // Key filter
+        if (req.query.key) {
+            filters.key = { $regex: req.query.key, $options: 'i' };
+        }
+
+        // ✅ FIXED: Status filter with case-insensitive matching
+        if (req.query.status) {
+            filters.status = new RegExp(`^${req.query.status}$`, 'i');
+        }
+
+        // Invoice date range filter
+        if (req.query.invoiceDateFrom || req.query.invoiceDateTo) {
+            filters.invoicedate = {};
+            if (req.query.invoiceDateFrom) {
+                filters.invoicedate.$gte = new Date(req.query.invoiceDateFrom);
+            }
+            if (req.query.invoiceDateTo) {
+                const endDate = new Date(req.query.invoiceDateTo);
+                endDate.setHours(23, 59, 59, 999);
+                filters.invoicedate.$lte = endDate;
+            }
+        }
+
+        // Created date range filter
+        if (req.query.createdStartDate || req.query.createdEndDate) {
+            filters.createdAt = {};
+            if (req.query.createdStartDate) {
+                filters.createdAt.$gte = new Date(req.query.createdStartDate);
+            }
+            if (req.query.createdEndDate) {
+                const endDate = new Date(req.query.createdEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.createdAt.$lte = endDate;
+            }
+        }
+
+        // Modified date range filter
+        if (req.query.modifiedStartDate || req.query.modifiedEndDate) {
+            filters.modifiedAt = {};
+            if (req.query.modifiedStartDate) {
+                filters.modifiedAt.$gte = new Date(req.query.modifiedStartDate);
+            }
+            if (req.query.modifiedEndDate) {
+                const endDate = new Date(req.query.modifiedEndDate);
+                endDate.setHours(23, 59, 59, 999);
+                filters.modifiedAt.$lte = endDate;
+            }
+        }
+
+        console.log('Applied Filters:', filters); // Debug log
+
+        const totalPendingInstallations = await PendingInstallation.countDocuments(filters);
+        const pendingInstallations = await PendingInstallation.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        const totalPages = Math.ceil(totalPendingInstallations / limit);
+
+        res.json({
+            pendingInstallations,
+            totalPendingInstallations,
+            totalPages,
+            currentPage: page,
+            filters: req.query
+        });
+    } catch (err) {
+        console.error('Filter error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
 
 // BULK DELETE Pending Installation entries - PLACE THIS BEFORE THE /:id ROUTES
 router.delete('/pendinginstallations/bulk', async (req, res) => {

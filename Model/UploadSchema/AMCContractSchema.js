@@ -27,16 +27,11 @@ const AMCContractSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        required: true
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    modifiedAt: {
-        type: Date,
-        default: Date.now
+        enum: ['Active', 'Inactive', 'Pending'],
+        default: 'Active'
     }
+}, {
+    timestamps: { createdAt: 'createdAt', updatedAt: 'modifiedAt' }
 });
 
 module.exports = mongoose.model("AMCContract", AMCContractSchema);
