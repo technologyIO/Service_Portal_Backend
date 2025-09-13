@@ -798,6 +798,25 @@ router.post('/login/web', getUserForLogin, async (req, res) => {
     try {
         const user = res.user;
 
+        // Check if login expiry date exists
+        if (!user.loginexpirydate) {
+            return res.status(403).json({
+                message: 'You do not have a login expiry date. You cannot login.',
+                errorCode: 'NO_LOGIN_EXPIRY'
+            });
+        }
+
+        // Check if login expiry date has passed
+        const currentDate = new Date();
+        const expiryDate = new Date(user.loginexpirydate);
+
+        if (currentDate > expiryDate) {
+            return res.status(403).json({
+                message: 'Your login date has expired. Please contact admin.',
+                errorCode: 'LOGIN_EXPIRED'
+            });
+        }
+
         // Verify password
         const isMatch = await bcrypt.compare(req.body.password, user.password);
         if (!isMatch) {
@@ -852,12 +871,30 @@ router.post('/login/web', getUserForLogin, async (req, res) => {
     }
 });
 
-// LOGIN route
 
 router.post('/login', getUserForLogin, async (req, res) => {
     try {
         const user = res.user;
         const currentDeviceId = req.body.deviceid;
+
+        // Check if login expiry date exists
+        if (!user.loginexpirydate) {
+            return res.status(403).json({
+                message: 'You do not have a login expiry date. You cannot login.',
+                errorCode: 'NO_LOGIN_EXPIRY'
+            });
+        }
+
+        // Check if login expiry date has passed
+        const currentDate = new Date();
+        const expiryDate = new Date(user.loginexpirydate);
+
+        if (currentDate > expiryDate) {
+            return res.status(403).json({
+                message: 'Your login date has expired. Please contact admin.',
+                errorCode: 'LOGIN_EXPIRED'
+            });
+        }
 
         // 1️⃣ Validate password
         const isMatch = await bcrypt.compare(req.body.password, user.password);
@@ -906,7 +943,6 @@ router.post('/login', getUserForLogin, async (req, res) => {
                 tomorrow4PM.setDate(tomorrow4PM.getDate() + 1);
                 return tomorrow4PM;
             }
-
 
             return today4PM;
         };
@@ -968,6 +1004,7 @@ router.post('/login', getUserForLogin, async (req, res) => {
         });
     }
 });
+
 router.post('/logout', authenticateToken, async (req, res) => {
     try {
         const user = req.user;
