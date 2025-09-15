@@ -10,28 +10,62 @@ const iconv = require('iconv-lite'); // Add this dependency: npm install iconv-l
 // Optimized: Pre-compiled regex patterns
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
 const MULTISPACE_REGEX = /\s+/g;
-// Add regex patterns for cleaning special characters
-const SPECIAL_CHARS_REGEX = /[^\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g; // Remove non-printable chars
-const INVALID_CHARS_REGEX = /[\uFFFD\u0000-\u001F\u007F-\u009F]/g; // Remove replacement chars and control chars
+const SPECIAL_CHARS_REGEX = /[^\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g;
+const INVALID_CHARS_REGEX = /[\uFFFD\u0000-\u001F\u007F-\u009F]/g;
 
-// Memory storage with optimized settings
+// FIXED: More liberal file acceptance
 const storage = multer.memoryStorage();
 const upload = multer({
     storage,
     fileFilter: (req, file, cb) => {
-        const ext = file.originalname.toLowerCase().slice(-4);
-        if (
-            file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || // .xlsx
-            file.mimetype === 'application/vnd.ms-excel' || // .xls
-            file.mimetype === 'text/csv' || // .csv
-            file.mimetype === 'application/csv' ||
-            ext === '.csv' ||
-            ext === '.xlsx' ||
-            ext === '.xls'
-        ) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'), false);
+        try {
+            const fileName = file.originalname.toLowerCase();
+            console.log('File details:', {
+                originalname: file.originalname,
+                mimetype: file.mimetype,
+                size: file.size
+            });
+            
+            // Get file extension properly
+            const fileExt = fileName.substring(fileName.lastIndexOf('.'));
+            
+            // Comprehensive MIME type checking
+            const validMimeTypes = [
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+                'application/vnd.ms-excel', // .xls
+                'application/excel',
+                'application/x-excel',
+                'application/x-msexcel',
+                'text/csv',
+                'application/csv',
+                'text/comma-separated-values',
+                'text/plain',
+                'application/octet-stream' // Many Excel files come as this
+            ];
+            
+            const validExtensions = ['.csv', '.xlsx', '.xls'];
+            
+            // Check both MIME type and extension
+            const mimeTypeValid = validMimeTypes.includes(file.mimetype);
+            const extensionValid = validExtensions.includes(fileExt);
+            
+            console.log('Validation:', {
+                mimeTypeValid,
+                extensionValid,
+                fileExt,
+                mimetype: file.mimetype
+            });
+            
+            if (mimeTypeValid || extensionValid) {
+                cb(null, true);
+            } else {
+                const error = new Error(`Unsupported file format. File: ${file.originalname}, MIME: ${file.mimetype}, Extension: ${fileExt}`);
+                console.error('File filter error:', error.message);
+                cb(error, false);
+            }
+        } catch (error) {
+            console.error('File filter exception:', error);
+            cb(error, false);
         }
     },
     limits: {
@@ -55,110 +89,185 @@ function cleanText(text) {
     if (!text || typeof text !== 'string') return '';
     
     return text
-        // Remove invalid Unicode characters and replacement characters
         .replace(INVALID_CHARS_REGEX, '')
-        // Remove other special/non-printable characters but keep basic Latin and extended Latin
         .replace(SPECIAL_CHARS_REGEX, ' ')
-        // Replace multiple spaces with single space
         .replace(MULTISPACE_REGEX, ' ')
-        // Trim whitespace
         .trim();
 }
 
-// Enhanced Excel parsing with encoding handling
+// FIXED: Enhanced Excel parsing with better error handling
 function parseExcelFile(buffer) {
     try {
-        const workbook = XLSX.read(buffer, { 
-            type: 'buffer', 
-            cellDates: true,
-            codepage: 65001, // UTF-8 encoding
-            raw: false // This ensures strings are properly processed
-        });
+        console.log('Parsing Excel file, buffer size:', buffer.length);
+        
+        // Try multiple parsing approaches
+        let workbook;
+        try {
+            // First attempt with standard options
+            workbook = XLSX.read(buffer, { 
+                type: 'buffer', 
+                cellDates: true,
+                codepage: 65001,
+                raw: false,
+                dense: false
+            });
+        } catch (firstError) {
+            console.log('First parse attempt failed, trying alternative options:', firstError.message);
+            // Second attempt with more permissive options
+            try {
+                workbook = XLSX.read(buffer, { 
+                    type: 'buffer',
+                    raw: true // Try with raw data
+                });
+            } catch (secondError) {
+                console.log('Second parse attempt failed, trying buffer as array:', secondError.message);
+                // Third attempt treating as array buffer
+                workbook = XLSX.read(new Uint8Array(buffer), { 
+                    type: 'array'
+                });
+            }
+        }
+        
+        if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+            throw new Error('No sheets found in Excel file');
+        }
+        
         const sheetName = workbook.SheetNames[0];
-        const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { 
+        console.log('Using sheet:', sheetName);
+        
+        const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet) {
+            throw new Error(`Sheet "${sheetName}" not found`);
+        }
+        
+        // Convert to JSON with proper options
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
             defval: '', 
             raw: false,
-            blankrows: false // Skip blank rows
+            blankrows: false,
+            header: 1 // Get array format first to handle headers properly
         });
         
-        // Clean all text fields in the data
-        return jsonData.map(row => {
-            const cleanedRow = {};
-            for (const [key, value] of Object.entries(row)) {
-                cleanedRow[key] = typeof value === 'string' ? cleanText(value) : value;
-            }
-            return cleanedRow;
-        });
+        if (!jsonData || jsonData.length === 0) {
+            throw new Error('No data found in Excel sheet');
+        }
+        
+        // Convert array format to object format
+        const headers = jsonData[0];
+        const dataRows = jsonData.slice(1);
+        
+        const result = dataRows.map(row => {
+            const obj = {};
+            headers.forEach((header, index) => {
+                if (header && header.toString().trim()) {
+                    const value = row[index];
+                    obj[header.toString().trim()] = value !== undefined && value !== null ? 
+                        (typeof value === 'string' ? cleanText(value) : value.toString()) : '';
+                }
+            });
+            return obj;
+        }).filter(row => Object.keys(row).length > 0); // Remove empty rows
+        
+        console.log('Excel parsing successful, rows found:', result.length);
+        return result;
+        
     } catch (error) {
-        throw new Error(`Excel parsing error: ${error.message}`);
+        console.error('Excel parsing error details:', error);
+        throw new Error(`Excel parsing failed: ${error.message}`);
     }
 }
 
-// Enhanced CSV parsing with encoding detection and handling
+// FIXED: Enhanced CSV parsing with better encoding handling
 function parseCSVFile(buffer) {
     return new Promise((resolve, reject) => {
-        const results = [];
-        
-        // Try to detect encoding and convert to UTF-8
-        let csvContent;
         try {
-            // First try UTF-8
-            csvContent = buffer.toString('utf8');
+            console.log('Parsing CSV file, buffer size:', buffer.length);
             
-            // If we detect encoding issues, try different encodings
-            if (csvContent.includes('\uFFFD') || csvContent.includes('�')) {
-                // Try Windows-1252 (common for Excel CSV exports)
-                if (iconv.encodingExists('win1252')) {
-                    csvContent = iconv.decode(buffer, 'win1252');
-                } else if (iconv.encodingExists('iso-8859-1')) {
-                    csvContent = iconv.decode(buffer, 'iso-8859-1');
-                } else {
-                    // Fallback: clean the UTF-8 version
-                    csvContent = cleanText(csvContent);
+            const results = [];
+            
+            // Enhanced encoding detection
+            let csvContent;
+            try {
+                // Try UTF-8 first
+                csvContent = buffer.toString('utf8');
+                
+                // Check for encoding issues
+                if (csvContent.includes('\uFFFD') || csvContent.includes('�')) {
+                    console.log('UTF-8 encoding issues detected, trying alternative encodings');
+                    
+                    // Try Windows-1252
+                    if (iconv.encodingExists('win1252')) {
+                        csvContent = iconv.decode(buffer, 'win1252');
+                        console.log('Using Windows-1252 encoding');
+                    } else if (iconv.encodingExists('iso-8859-1')) {
+                        csvContent = iconv.decode(buffer, 'iso-8859-1');
+                        console.log('Using ISO-8859-1 encoding');
+                    } else {
+                        csvContent = cleanText(csvContent);
+                        console.log('Using cleaned UTF-8');
+                    }
                 }
+            } catch (encodingError) {
+                console.warn('Encoding detection failed, using UTF-8:', encodingError.message);
+                csvContent = buffer.toString('utf8');
             }
-        } catch (encodingError) {
-            console.warn('Encoding detection failed, using UTF-8:', encodingError.message);
-            csvContent = buffer.toString('utf8');
-        }
-        
-        const stream = Readable.from(csvContent)
-            .pipe(csv({
-                mapValues: ({ value }) => cleanText(value), // Apply text cleaning here
-                strict: false, // Be more lenient with malformed CSV
-                skipLines: 0,
-                skipEmptyLines: true,
-                separator: ',', // Explicitly set separator
-                quote: '"', // Explicitly set quote character
-                escape: '"' // Explicitly set escape character
-            }))
-            .on('data', (data) => {
-                // Additional cleaning for each row
-                const cleanedData = {};
-                for (const [key, value] of Object.entries(data)) {
-                    cleanedData[cleanText(key)] = cleanText(value);
-                }
-                results.push(cleanedData);
-            })
-            .on('end', () => resolve(results))
-            .on('error', (error) => {
-                console.error('CSV parsing error:', error);
-                reject(error);
-            });
+            
+            // Create readable stream
+            const stream = Readable.from(csvContent)
+                .pipe(csv({
+                    mapValues: ({ value }) => cleanText(value.toString()),
+                    strict: false,
+                    skipLines: 0,
+                    skipEmptyLines: true,
+                    separator: ',',
+                    quote: '"',
+                    escape: '"'
+                }))
+                .on('data', (data) => {
+                    const cleanedData = {};
+                    for (const [key, value] of Object.entries(data)) {
+                        const cleanKey = cleanText(key);
+                        const cleanValue = cleanText(value.toString());
+                        if (cleanKey) {
+                            cleanedData[cleanKey] = cleanValue;
+                        }
+                    }
+                    if (Object.keys(cleanedData).length > 0) {
+                        results.push(cleanedData);
+                    }
+                })
+                .on('end', () => {
+                    console.log('CSV parsing successful, rows found:', results.length);
+                    resolve(results);
+                })
+                .on('error', (error) => {
+                    console.error('CSV parsing error:', error);
+                    reject(new Error(`CSV parsing failed: ${error.message}`));
+                });
 
-        // Ensure stream is properly destroyed on errors
-        stream.on('error', () => stream.destroy());
+            // Set timeout for CSV parsing
+            setTimeout(() => {
+                if (!stream.destroyed) {
+                    stream.destroy();
+                    reject(new Error('CSV parsing timeout'));
+                }
+            }, 30000); // 30 second timeout
+            
+        } catch (error) {
+            console.error('CSV parsing setup error:', error);
+            reject(new Error(`CSV setup failed: ${error.message}`));
+        }
     });
 }
 
-// Optimized normalizeFieldName with memoization (remains the same)
+// Optimized normalizeFieldName with memoization
 const normalizedFieldCache = new Map();
 function normalizeFieldName(fieldName) {
     if (!fieldName) return '';
     if (normalizedFieldCache.has(fieldName)) {
         return normalizedFieldCache.get(fieldName);
     }
-    const normalized = cleanText(fieldName) // Use cleanText instead
+    const normalized = cleanText(fieldName.toString())
         .toLowerCase()
         .replace(NON_ALPHANUMERIC_REGEX, '')
         .trim();
@@ -174,15 +283,13 @@ function mapHeaders(headers) {
     for (const header of headers) {
         const normalizedHeader = normalizeFieldName(header);
 
-        // Skip if we've already mapped this exact header
         if (seenFields.has(normalizedHeader)) continue;
         seenFields.add(normalizedHeader);
 
-        // Find the first matching schema field
         for (const [schemaField, variations] of Object.entries(FIELD_MAPPINGS)) {
             if (variations.has(normalizedHeader)) {
                 mappedHeaders[header] = schemaField;
-                break; // Move to next header once we find a match
+                break;
             }
         }
     }
@@ -196,30 +303,27 @@ function validateRecord(record, headerMapping) {
     const errors = [];
     const providedFields = [];
 
-    // Map headers to schema fields
     for (const [originalHeader, schemaField] of Object.entries(headerMapping)) {
         if (record[originalHeader] === undefined || record[originalHeader] === null) continue;
 
         let value = String(record[originalHeader]).trim();
         if (value === '' || value === 'undefined' || value === 'null') continue;
 
-        // Apply enhanced text cleaning, especially for description fields
         if (schemaField === 'materialdescription' || schemaField === 'dealername') {
             value = cleanText(value);
         } else {
             value = cleanText(value);
         }
 
-        // Final cleanup for multiple spaces
         value = value.replace(MULTISPACE_REGEX, ' ').trim();
 
-        if (value) { // Only add if not empty after cleaning
+        if (value) {
             cleanedRecord[schemaField] = value;
             providedFields.push(schemaField);
         }
     }
 
-    // Required field validations (rest remains the same)
+    // Required field validations
     if (!cleanedRecord.dealercodeid) {
         errors.push('Dealer Code is required');
     }
@@ -242,7 +346,6 @@ function validateRecord(record, headerMapping) {
         errors.push('Unrestricted Quantity is required');
     }
 
-    // Early exit if required fields are missing
     if (errors.length > 0) {
         return { cleanedRecord, errors, providedFields };
     }
@@ -277,7 +380,6 @@ function validateRecord(record, headerMapping) {
         cleanedRecord.unrestrictedquantity = quantity;
     }
 
-    // Default status
     if (!cleanedRecord.status) {
         cleanedRecord.status = 'Active';
     }
@@ -285,12 +387,11 @@ function validateRecord(record, headerMapping) {
     return { cleanedRecord, errors, providedFields };
 }
 
-// MAIN ROUTE - Optimized with parallel processing and bulk operations
+// MAIN ROUTE - Enhanced with better file detection
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
-    const BATCH_SIZE = 2000; // Increased batch size for better performance
-    const PARALLEL_BATCHES = 3; // Process multiple batches in parallel
+    const BATCH_SIZE = 2000;
+    const PARALLEL_BATCHES = 3;
 
-    // Initialize response object with optimized structure
     const response = {
         status: 'processing',
         startTime: new Date(),
@@ -324,11 +425,21 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     };
 
     try {
+        console.log('=== BULK UPLOAD START ===');
+        
         if (!req.file) {
+            console.error('No file uploaded');
             response.status = 'failed';
             response.errors.push('No file uploaded');
             return res.status(400).json(response);
         }
+
+        console.log('File received:', {
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+            bufferLength: req.file.buffer.length
+        });
 
         // Set headers for streaming response
         res.setHeader('Content-Type', 'application/json');
@@ -337,40 +448,74 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
 
-        // Parse file with optimized method selection
+        // FIXED: Enhanced file parsing with better detection
         let jsonData;
         const fileName = req.file.originalname.toLowerCase();
-        const fileExt = fileName.slice(-4);
+        const fileExt = fileName.substring(fileName.lastIndexOf('.'));
+
+        console.log('File parsing details:', {
+            fileName,
+            fileExt,
+            mimetype: req.file.mimetype
+        });
 
         try {
-            if (fileExt === '.csv') {
+            // Determine file type by extension first, then by MIME type
+            if (fileExt === '.csv' || req.file.mimetype.includes('csv') || req.file.mimetype === 'text/plain') {
+                console.log('Parsing as CSV file');
                 jsonData = await parseCSVFile(req.file.buffer);
-            } else if (fileExt === '.xlsx' || fileExt === '.xls') {
+            } else if (fileExt === '.xlsx' || fileExt === '.xls' || 
+                       req.file.mimetype.includes('excel') || 
+                       req.file.mimetype.includes('spreadsheet') ||
+                       req.file.mimetype === 'application/octet-stream') {
+                console.log('Parsing as Excel file');
                 jsonData = parseExcelFile(req.file.buffer);
             } else {
-                throw new Error('Unsupported file format');
+                // Try to detect by content if extension/MIME type are unclear
+                console.log('File type unclear, attempting auto-detection');
+                try {
+                    // Try Excel first (more reliable detection)
+                    jsonData = parseExcelFile(req.file.buffer);
+                    console.log('Auto-detected as Excel file');
+                } catch (excelError) {
+                    console.log('Excel parsing failed, trying CSV:', excelError.message);
+                    try {
+                        jsonData = await parseCSVFile(req.file.buffer);
+                        console.log('Auto-detected as CSV file');
+                    } catch (csvError) {
+                        console.error('Both Excel and CSV parsing failed');
+                        throw new Error(`Unable to parse file. Excel error: ${excelError.message}, CSV error: ${csvError.message}`);
+                    }
+                }
             }
         } catch (parseError) {
+            console.error('File parsing failed:', parseError);
             response.status = 'failed';
             response.errors.push(`File parsing error: ${parseError.message}`);
             return res.status(400).json(response);
         }
 
         if (!jsonData || jsonData.length === 0) {
+            console.error('No data found in file');
             response.status = 'failed';
-            response.errors.push('No data found in file');
+            response.errors.push('No data found in file or file is empty');
             return res.status(400).json(response);
         }
+
+        console.log('File parsed successfully, records found:', jsonData.length);
 
         response.totalRecords = jsonData.length;
         response.batchProgress.totalBatches = Math.ceil(jsonData.length / BATCH_SIZE);
 
         // Map headers with optimized method
         const headers = Object.keys(jsonData[0] || {});
+        console.log('Headers found:', headers);
+        
         const headerMapping = mapHeaders(headers);
         response.headerMapping = headerMapping;
+        console.log('Header mapping:', headerMapping);
 
-        // Check for required fields with optimized lookup
+        // Check for required fields
         const requiredFields = ['dealercodeid', 'dealername', 'dealercity', 'materialcode', 'materialdescription', 'plant', 'unrestrictedquantity'];
         const missingFields = requiredFields.filter(field => !Object.values(headerMapping).includes(field));
         
@@ -384,6 +529,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 'plant': 'Plant',
                 'unrestrictedquantity': 'Unrestricted Quantity'
             };
+            console.error('Missing required fields:', missingFields);
             response.status = 'failed';
             response.errors.push(
                 `Required headers not found: ${missingFields.map(f => fieldDisplayNames[f]).join(', ')}. ` +
@@ -395,9 +541,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Send initial response
         res.write(JSON.stringify(response) + '\n');
 
-        // Phase 1: Delete existing records (optimized)
+        // Phase 1: Delete existing records
         response.deletionPhase.status = 'processing';
-        const totalExisting = await DealerStock.estimatedDocumentCount(); // Faster than countDocuments
+        const totalExisting = await DealerStock.estimatedDocumentCount();
         response.deletionPhase.totalExisting = totalExisting;
         
         if (totalExisting > 0) {
@@ -406,9 +552,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 deletionPhase: { ...response.deletionPhase, status: 'deleting' }
             }) + '\n');
             
-            // Use collection.drop() for faster deletion when we're replacing all data
             await DealerStock.collection.drop();
-            await DealerStock.createCollection(); // Recreate collection immediately
+            await DealerStock.createCollection();
             
             response.deletionPhase.deleted = totalExisting;
             response.summary.deletedExisting = totalExisting;
@@ -431,7 +576,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             let batchFailed = 0;
             let batchSkipped = 0;
 
-            // Process each record in the batch
             for (const [index, record] of batch.entries()) {
                 const rowNumber = (batchIndex * BATCH_SIZE) + index + 1;
                 const recordResult = {
@@ -492,7 +636,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             // Process valid records in bulk
             if (validRecords.length > 0) {
                 try {
-                    // Use insertMany with ordered: false for better performance
                     const insertResult = await DealerStock.insertMany(validRecords, { 
                         ordered: false,
                         lean: true
@@ -501,7 +644,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     batchCreated = insertResult.length;
                     
                 } catch (insertError) {
-                    // Handle MongoDB BulkWriteError properly
                     if (insertError.name === 'BulkWriteError' || insertError.name === 'MongoBulkWriteError') {
                         const insertedCount = insertError.result?.insertedCount || 0;
                         const failedCount = validRecords.length - insertedCount;
@@ -509,7 +651,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         batchCreated = insertedCount;
                         batchFailed += failedCount;
                         
-                        // Update record statuses based on actual results
                         if (insertError.writeErrors && insertError.writeErrors.length > 0) {
                             insertError.writeErrors.forEach((writeError) => {
                                 const failedIndex = writeError.index;
@@ -521,7 +662,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                             });
                         }
                     } else {
-                        // Handle other types of errors
                         batchResults.forEach(result => {
                             if (result.status === 'Created') {
                                 result.status = 'Failed';
@@ -554,18 +694,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             response.batchProgress.currentBatch = batchIndex + 1;
             response.batchProgress.currentBatchRecords = batch.length;
 
-            // Send progress update
             res.write(JSON.stringify({
                 ...response,
                 batchProgress: response.batchProgress
             }) + '\n');
 
-            // Process batch with controlled parallelism
             if (batchPromises.length >= PARALLEL_BATCHES) {
                 const completedBatch = await Promise.race(batchPromises);
                 batchPromises.splice(batchPromises.indexOf(completedBatch), 1);
 
-                // Update response with completed batch results
                 response.processedRecords += completedBatch.batchResults.length;
                 response.successfulRecords += completedBatch.batchCreated;
                 response.failedRecords += completedBatch.batchFailed;
@@ -597,7 +734,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         while (batchPromises.length > 0) {
             const completedBatch = await batchPromises.shift();
 
-            // Update response with completed batch results
             response.processedRecords += completedBatch.batchResults.length;
             response.successfulRecords += completedBatch.batchCreated;
             response.failedRecords += completedBatch.batchFailed;
@@ -633,6 +769,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             `Failed: ${response.summary.failed}, ` +
             `File Duplicates: ${response.summary.duplicatesInFile}, ` +
             `Total Skipped: ${response.summary.skippedTotal}`;
+
+        console.log('=== BULK UPLOAD COMPLETED ===');
+        console.log('Final summary:', response.summary);
 
         res.write(JSON.stringify(response) + '\n');
         res.end();

@@ -207,7 +207,7 @@ router.get("/search/:partno", async (req, res) => {
     const result = spareMasters.map(record => ({
       PartNumber: record.PartNumber,
       Description: record.Description,
-      Image: record.spareImageUrl // corrected field name
+      Image: record.spareiamegUrl  
     }));
 
     res.status(200).json(result);
