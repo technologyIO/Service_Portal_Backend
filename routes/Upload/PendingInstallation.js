@@ -525,7 +525,7 @@ router.post('/pendinginstallations', checkDuplicateInvoiceNo, async (req, res) =
 });
 
 // UPDATE a PendingInstallation
-router.put('/pendinginstallations/:id', getPendingInstallationById, checkDuplicateInvoiceNo, async (req, res) => {
+router.put('/pendinginstallations/:id', getPendingInstallationById, async (req, res) => {
     if (req.body.invoiceno != null) {
         res.pendingInstallation.invoiceno = req.body.invoiceno;
     }
