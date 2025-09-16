@@ -46,23 +46,57 @@ const upload = multer({
   }
 });
 
-
-// Optimized: Predefined field mappings for faster access
+// Updated FIELD_MAPPINGS with all SAP variations
 const FIELD_MAPPINGS = {
-  'notificationtype': new Set(['notificationtype', 'notification type', 'type', 'notifictn type']),
-  'notification_complaintid': new Set(['notificationcomplaintid', 'notification/complaint id', 'complaintid', 'ticketid', 'notification']),
-  'notificationdate': new Set(['notificationdate', 'notification date', 'date', 'notif.date']),
-  'userstatus': new Set(['userstatus', 'user status', 'status']),
-  'materialdescription': new Set(['materialdescription', 'material description', 'description']),
-  'serialnumber': new Set(['serialnumber', 'serial number', 'sno', 's-no']),
-  'devicedata': new Set(['devicedata', 'device data']),
-  'salesoffice': new Set(['salesoffice', 'sales office']),
-  'materialcode': new Set(['materialcode', 'material code', 'code', 'material']),
-  'reportedproblem': new Set(['reportedproblem', 'reported problem', 'problem', 'description']),
-  'dealercode': new Set(['dealercode', 'dealer code', 'partnerresp.']),
-  'customercode': new Set(['customercode', 'customer code', 'customer']),
-  'partnerresp': new Set(['partnerresp', 'partnerresp.', 'partner response', 'partnerresp.']),
-  'breakdown': new Set(['breakdown', 'break down'])
+  'notificationtype': new Set([
+    'notificationtype', 'notification type', 'type', 'notifictn type', 'notifctntype'
+  ]),
+  'notification_complaintid': new Set([
+    'notificationcomplaintid', 'notification/complaint id', 'complaintid', 'ticketid', 
+    'notification', 'complaint id', 'notification id', 'notificationid'
+  ]),
+  'notificationdate': new Set([
+    'notificationdate', 'notification date', 'date', 'notif.date', 'notifdate',
+    'complaint date', 'created date'
+  ]),
+  'userstatus': new Set([
+    'userstatus', 'user status', 'status', 'complaint status'
+  ]),
+  'materialdescription': new Set([
+    'materialdescription', 'material description', 'description', 'material desc',
+    'product description', 'item description'
+  ]),
+  'serialnumber': new Set([
+    'serialnumber', 'serial number', 'sno', 's-no', 'serial no', 'serialno'
+  ]),
+  'devicedata': new Set([
+    'devicedata', 'device data', 'device info', 'equipment data'
+  ]),
+  'salesoffice': new Set([
+    'salesoffice', 'sales office', 'office', 'branch office'
+  ]),
+  'materialcode': new Set([
+    'materialcode', 'material code', 'code', 'material', 'product code',
+    'item code', 'part code'
+  ]),
+  'reportedproblem': new Set([
+    'reportedproblem', 'reported problem', 'problem', 'description', 'issue',
+    'complaint description', 'problem description'
+  ]),
+  'dealercode': new Set([
+    'dealercode', 'dealer code', 'partnerresp.', 'partner code', 'vendor code',
+    'supplier code'
+  ]),
+  'customercode': new Set([
+    'customercode', 'customer code', 'customer', 'client code', 'cust code'
+  ]),
+  'partnerresp': new Set([
+    'partnerresp', 'partnerresp.', 'partner response', 'partner resp', 
+    'vendor response', 'dealer response'
+  ]),
+  'breakdown': new Set([
+    'breakdown', 'break down', 'failure', 'malfunction'
+  ])
 };
 
 // Optimized normalizeFieldName with memoization
@@ -102,28 +136,6 @@ function mapHeaders(headers) {
   }
 
   return mappedHeaders;
-}
-
-// Optimized: Inline simple functions
-function checkForChanges(existingRecord, newRecord, providedFields) {
-  let hasAnyChange = false;
-  const changeDetails = [];
-
-  for (const field of providedFields) {
-    const existingValue = existingRecord[field] ? String(existingRecord[field]).trim() : '';
-    const newValue = newRecord[field] ? String(newRecord[field]).trim() : '';
-
-    if (existingValue !== newValue) {
-      hasAnyChange = true;
-      changeDetails.push({
-        field,
-        oldValue: existingValue,
-        newValue
-      });
-    }
-  }
-
-  return { hasChanges: hasAnyChange, changeDetails };
 }
 
 // Optimized Excel parsing with buffer reuse
@@ -177,7 +189,6 @@ function parseExcelFile(buffer) {
     throw new Error(`Excel parsing failed: ${error.message}`);
   }
 }
-
 
 // Optimized CSV parsing with stream control
 function parseCSVFile(buffer) {
@@ -268,10 +279,10 @@ function validateRecord(record, headerMapping) {
   return { cleanedRecord, errors, providedFields };
 }
 
-// MAIN ROUTE - Optimized with parallel processing and bulk operations
+// MAIN ROUTE - Updated with FULL DELETE & UPLOAD functionality
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
-  const BATCH_SIZE = 2000; // Increased batch size for better performance
-  const PARALLEL_BATCHES = 3; // Process multiple batches in parallel
+  const BATCH_SIZE = 2000;
+  const PARALLEL_BATCHES = 3;
 
   // Initialize response object with optimized structure
   const response = {
@@ -281,15 +292,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     processedRecords: 0,
     successfulRecords: 0,
     failedRecords: 0,
+    deletedRecords: 0, // New field for tracking deletions
     results: [],
     summary: {
       created: 0,
       updated: 0,
       failed: 0,
       duplicatesInFile: 0,
-      existingRecords: 0,
-      skippedTotal: 0,
-      noChangesSkipped: 0
+      deleted: 0, // New field for deleted records
+      skippedTotal: 0
     },
     headerMapping: {},
     errors: [],
@@ -299,6 +310,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       totalBatches: 0,
       batchSize: BATCH_SIZE,
       currentBatchRecords: 0
+    },
+    deleteOperation: {
+      status: 'pending',
+      deletedCount: 0,
+      message: ''
     }
   };
 
@@ -350,6 +366,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     const headerMapping = mapHeaders(headers);
     response.headerMapping = headerMapping;
 
+    console.log('Header mapping:', headerMapping);
+    console.log('Available headers:', headers);
+    console.log('Mapped fields:', Object.values(headerMapping));
+
     // Check for required fields with optimized lookup
     const hasRequiredFields = ['notification_complaintid', 'materialdescription'].every(field =>
       Object.values(headerMapping).includes(field)
@@ -365,15 +385,58 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     // Send initial response
     res.write(JSON.stringify(response) + '\n');
 
+    // **FULL DELETE OPERATION** - Delete all existing complaints before upload
+    try {
+      response.deleteOperation.status = 'in-progress';
+      response.deleteOperation.message = 'Deleting all existing pending complaints...';
+      
+      // Send delete progress update
+      res.write(JSON.stringify({
+        ...response,
+        deleteOperation: response.deleteOperation
+      }) + '\n');
+
+      console.log('Starting full delete operation...');
+      const deleteResult = await PendingComplaints.deleteMany({});
+      
+      response.deleteOperation.status = 'completed';
+      response.deleteOperation.deletedCount = deleteResult.deletedCount;
+      response.deleteOperation.message = `Successfully deleted ${deleteResult.deletedCount} existing complaints`;
+      response.summary.deleted = deleteResult.deletedCount;
+      response.deletedRecords = deleteResult.deletedCount;
+
+      console.log(`Deleted ${deleteResult.deletedCount} existing complaints`);
+
+      // Send delete completion update
+      res.write(JSON.stringify({
+        ...response,
+        deleteOperation: response.deleteOperation
+      }) + '\n');
+
+    } catch (deleteError) {
+      console.error('Delete operation failed:', deleteError);
+      response.deleteOperation.status = 'failed';
+      response.deleteOperation.message = `Delete operation failed: ${deleteError.message}`;
+      response.errors.push(`Failed to delete existing complaints: ${deleteError.message}`);
+      
+      // Send delete failure update
+      res.write(JSON.stringify({
+        ...response,
+        deleteOperation: response.deleteOperation
+      }) + '\n');
+
+      // Continue with upload even if delete fails (optional - you can make this stricter)
+      response.warnings.push('Proceeding with upload despite delete failure');
+    }
+
     const processedComplaintIds = new Set();
     let currentRow = 0;
 
-    // Process data in parallel batches
+    // Process data in parallel batches - NOW ONLY CREATING NEW RECORDS
     const processBatch = async (batch, batchIndex) => {
       const batchResults = [];
       const validRecords = [];
       let batchCreated = 0;
-      let batchUpdated = 0;
       let batchFailed = 0;
       let batchSkipped = 0;
 
@@ -427,105 +490,62 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         }
       }
 
-      // Process valid records in bulk
+      // Process valid records in bulk - ONLY INSERT OPERATIONS NOW
       if (validRecords.length > 0) {
-        // Find existing records in bulk
-        const complaintIds = validRecords.map(r => r.cleanedRecord.notification_complaintid);
-        const existingRecords = await PendingComplaints.find({
-          notification_complaintid: { $in: complaintIds }
-        }).lean();
-
-        const existingRecordsMap = new Map();
-        existingRecords.forEach(rec => {
-          existingRecordsMap.set(rec.notification_complaintid, rec);
-        });
-
-        // Prepare bulk operations
         const bulkOps = [];
         const now = new Date();
 
-        for (const { cleanedRecord, recordResult, providedFields } of validRecords) {
-          const existingRecord = existingRecordsMap.get(cleanedRecord.notification_complaintid);
-
-          if (existingRecord) {
-            response.summary.existingRecords++;
-
-            const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields);
-
-            if (comparisonResult.hasChanges) {
-              const updateData = { modifiedAt: now };
-              providedFields.forEach(field => {
-                updateData[field] = cleanedRecord[field];
-              });
-
-              bulkOps.push({
-                updateOne: {
-                  filter: { notification_complaintid: cleanedRecord.notification_complaintid },
-                  update: { $set: updateData }
-                }
-              });
-
-              const changesList = comparisonResult.changeDetails.map(change =>
-                `${change.field}: "${change.oldValue}" → "${change.newValue}"`
-              ).join(', ');
-
-              recordResult.status = 'Updated';
-              recordResult.action = 'Updated existing record';
-              recordResult.changeDetails = comparisonResult.changeDetails;
-              recordResult.changesText = changesList;
-              recordResult.warnings.push(`Changes detected: ${changesList}`);
-
-              batchUpdated++;
-            } else {
-              recordResult.status = 'Skipped';
-              recordResult.action = 'No changes detected';
-              recordResult.changeDetails = [];
-              recordResult.changesText = 'No changes detected';
-              recordResult.warnings.push('Record already exists with identical data');
-
-              batchSkipped++;
-            }
-          } else {
-            bulkOps.push({
-              insertOne: {
-                document: {
-                  ...cleanedRecord,
-                  createdAt: now,
-                  modifiedAt: now
-                }
+        for (const { cleanedRecord, recordResult } of validRecords) {
+          // Since we deleted all records, we only need to insert new ones
+          bulkOps.push({
+            insertOne: {
+              document: {
+                ...cleanedRecord,
+                createdAt: now,
+                modifiedAt: now
               }
-            });
+            }
+          });
 
-            recordResult.status = 'Created';
-            recordResult.action = 'Created new record';
-            recordResult.changeDetails = [];
-            recordResult.changesText = 'New record created';
+          recordResult.status = 'Created';
+          recordResult.action = 'Created new record';
+          recordResult.changeDetails = [];
+          recordResult.changesText = 'New record created after full delete';
 
-            batchCreated++;
-          }
-
+          batchCreated++;
           batchResults.push(recordResult);
         }
 
-        // Execute bulk operations if any
+        // Execute bulk insert operations
         if (bulkOps.length > 0) {
           try {
             await PendingComplaints.bulkWrite(bulkOps, { ordered: false });
+            console.log(`Successfully inserted ${bulkOps.length} records in batch ${batchIndex + 1}`);
           } catch (bulkError) {
+            console.error('Bulk insert error:', bulkError);
             // Handle bulk errors by marking affected records as failed
             if (bulkError.writeErrors) {
               bulkError.writeErrors.forEach(error => {
                 const failedRecord = batchResults.find(r =>
-                  r.notification_complaintid === error.op?.notification_complaintid ||
-                  r.notification_complaintid === error.op?.updateOne?.filter?.notification_complaintid
+                  r.notification_complaintid === error.op?.document?.notification_complaintid
                 );
                 if (failedRecord) {
                   failedRecord.status = 'Failed';
-                  failedRecord.action = 'Bulk operation failed';
+                  failedRecord.action = 'Bulk insert failed';
                   failedRecord.error = error.errmsg;
                   batchFailed++;
-                  if (failedRecord.status === 'Created') batchCreated--;
-                  if (failedRecord.status === 'Updated') batchUpdated--;
+                  batchCreated--;
+                }
+              });
+            } else {
+              // If no specific write errors, mark all as failed
+              batchResults.forEach(result => {
+                if (result.status === 'Created') {
+                  result.status = 'Failed';
+                  result.action = 'Bulk insert failed';
+                  result.error = bulkError.message;
+                  batchFailed++;
+                  batchCreated--;
                 }
               });
             }
@@ -536,7 +556,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       return {
         batchResults,
         batchCreated,
-        batchUpdated,
+        batchUpdated: 0, // No updates in full delete mode
         batchFailed,
         batchSkipped
       };
@@ -565,17 +585,13 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
         // Update response with completed batch results
         response.processedRecords += completedBatch.batchResults.length;
-        response.successfulRecords += completedBatch.batchCreated + completedBatch.batchUpdated;
+        response.successfulRecords += completedBatch.batchCreated;
         response.failedRecords += completedBatch.batchFailed;
         response.summary.created += completedBatch.batchCreated;
-        response.summary.updated += completedBatch.batchUpdated;
         response.summary.failed += completedBatch.batchFailed;
         response.summary.skippedTotal += completedBatch.batchSkipped;
         response.summary.duplicatesInFile += completedBatch.batchResults.filter(
           r => r.status === 'Skipped' && r.error === 'Duplicate Notification/Complaint ID in file'
-        ).length;
-        response.summary.noChangesSkipped += completedBatch.batchResults.filter(
-          r => r.status === 'Skipped' && r.action === 'No changes detected'
         ).length;
         response.results.push(...completedBatch.batchResults);
 
@@ -584,7 +600,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
           batchCompleted: true,
           batchSummary: {
             created: completedBatch.batchCreated,
-            updated: completedBatch.batchUpdated,
+            updated: 0,
             failed: completedBatch.batchFailed,
             skipped: completedBatch.batchSkipped
           },
@@ -602,17 +618,13 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
       // Update response with completed batch results
       response.processedRecords += completedBatch.batchResults.length;
-      response.successfulRecords += completedBatch.batchCreated + completedBatch.batchUpdated;
+      response.successfulRecords += completedBatch.batchCreated;
       response.failedRecords += completedBatch.batchFailed;
       response.summary.created += completedBatch.batchCreated;
-      response.summary.updated += completedBatch.batchUpdated;
       response.summary.failed += completedBatch.batchFailed;
       response.summary.skippedTotal += completedBatch.batchSkipped;
       response.summary.duplicatesInFile += completedBatch.batchResults.filter(
         r => r.status === 'Skipped' && r.error === 'Duplicate Notification/Complaint ID in file'
-      ).length;
-      response.summary.noChangesSkipped += completedBatch.batchResults.filter(
-        r => r.status === 'Skipped' && r.action === 'No changes detected'
       ).length;
       response.results.push(...completedBatch.batchResults);
 
@@ -621,7 +633,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         batchCompleted: true,
         batchSummary: {
           created: completedBatch.batchCreated,
-          updated: completedBatch.batchUpdated,
+          updated: 0,
           failed: completedBatch.batchFailed,
           skipped: completedBatch.batchSkipped
         },
@@ -635,13 +647,11 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     response.endTime = new Date();
     response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
 
-    response.message = `Processing completed successfully. ` +
+    response.message = `Full delete & upload completed successfully. ` +
+      `Deleted: ${response.summary.deleted}, ` +
       `Created: ${response.summary.created}, ` +
-      `Updated: ${response.summary.updated}, ` +
       `Failed: ${response.summary.failed}, ` +
       `File Duplicates: ${response.summary.duplicatesInFile}, ` +
-      `Existing Records: ${response.summary.existingRecords}, ` +
-      `No Changes Skipped: ${response.summary.noChangesSkipped}, ` +
       `Total Skipped: ${response.summary.skippedTotal}`;
 
     res.write(JSON.stringify(response) + '\n');

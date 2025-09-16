@@ -336,21 +336,33 @@ router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, r
         const employeeid = req.params.employeeid;
         const { search, limit = 100, skip = 0 } = req.query;
 
-        // 1. Find the user by employee ID
+
+
+
+
         const user = await User.findOne({ employeeid: employeeid });
+
         if (!user) {
+
             return res.status(404).json({ message: 'User not found' });
         }
+
+
 
         // 2. Extract all part numbers from user's skills
         const partNumbers = [];
         user.skills.forEach(skill => {
+
             if (skill.partNumbers && skill.partNumbers.length > 0) {
+
                 partNumbers.push(...skill.partNumbers);
             }
         });
 
+
+
         if (partNumbers.length === 0) {
+
             return res.status(404).json({ message: 'No part numbers found in user skills' });
         }
 
@@ -360,15 +372,19 @@ router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, r
             status: { $ne: "Inactive" }  // ✅ exclude inactive
         };
 
+
+
         // Add search functionality if search term is provided
         if (search && search.trim()) {
             query.serialnumber = {
                 $regex: search.trim(),
                 $options: 'i' // Case insensitive
             };
+
         }
 
         // 4. Get total count for pagination info
+
         const totalCount = await PendingInstallation.countDocuments(query);
 
         // 5. Find installations with pagination and search
@@ -378,10 +394,12 @@ router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, r
             .limit(parseInt(limit));
 
         if (installations.length === 0) {
+            const message = search
+                ? 'No installations found matching search criteria'
+                : 'No installations found matching user skills';
+
             return res.status(404).json({
-                message: search
-                    ? 'No installations found matching search criteria'
-                    : 'No installations found matching user skills',
+                message,
                 serialNumbers: [],
                 pagination: {
                     total: totalCount,
@@ -398,7 +416,7 @@ router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, r
         // 7. Calculate pagination info
         const hasMore = (parseInt(skip) + parseInt(limit)) < totalCount;
 
-        res.json({
+        const responseData = {
             serialNumbers,
             pagination: {
                 total: totalCount,
@@ -407,13 +425,15 @@ router.get('/pendinginstallations/user-serialnumbers/:employeeid', async (req, r
                 hasMore,
                 returned: serialNumbers.length
             }
-        });
+        };
+
+        res.json(responseData);
 
     } catch (err) {
-        console.error('Error in user-serialnumbers API:', err);
         res.status(500).json({ message: err.message });
     }
 });
+
 
 
 // DELETE PendingInstallation by Serial Number

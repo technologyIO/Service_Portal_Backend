@@ -4,7 +4,7 @@ const router = express.Router();
 const multer = require('multer');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-const { parse, isValid } = require('date-fns');
+const { parse, isValid, parseISO, format } = require('date-fns');
 const PendingInstallation = require('../../Model/UploadSchema/PendingInstallationSchema');
 
 // Optimized: Pre-compiled regex patterns
@@ -38,33 +38,33 @@ const upload = multer({
     }
 });
 
-// Optimized: Predefined field mappings for faster access - UPDATED with status
+// FIXED: Updated field mappings to handle normalized field names correctly
 const FIELD_MAPPINGS = {
-    'invoiceno': new Set(['invoiceno', 'invoice_no', 'invoicenumber', 'invoice_number', 'billno', 'bill_no', 'bill.doc.']),
-    'invoicedate': new Set(['invoicedate', 'invoice_date', 'billdate', 'bill_date', 'date', 'billing date']),
+    'invoiceno': new Set(['invoiceno', 'invoice_no', 'invoicenumber', 'invoice_number', 'billno', 'bill_no', 'billdoc', 'bill.doc.', 'billdoc']),
+    'invoicedate': new Set(['invoicedate', 'invoice_date', 'billdate', 'bill_date', 'date', 'billing date', 'billingdate']),
     'distchnl': new Set(['distchnl', 'dist_chnl', 'distributionchannel', 'distribution_channel', 'channel', 'dchl']),
-    'customerid': new Set(['customerid', 'customer_id', 'custid', 'cust_id', 'customercode', 'customer_code', 'sold-to pt']),
-    'customername1': new Set(['customername1', 'customer_name1', 'customername', 'customer_name', 'name1', 'name 1']),
-    'customername2': new Set(['customername2', 'customer_name2', 'name2', 'hospitalname', 'hospital_name', 'name 2']),
+    'customerid': new Set(['customerid', 'customer_id', 'custid', 'cust_id', 'customercode', 'customer_code', 'sold-to pt', 'soldtopt', 'soldto', 'soldtopt']),
+    'customername1': new Set(['customername1', 'customer_name1', 'customername', 'customer_name', 'name1', 'name 1', 'name1']),
+    'customername2': new Set(['customername2', 'customer_name2', 'name2', 'hospitalname', 'hospital_name', 'name 2', 'name2']),
     'customercity': new Set(['customercity', 'customer_city', 'city']),
-    'customerpostalcode': new Set(['customerpostalcode', 'customer_postal_code', 'postalcode', 'postal_code', 'pincode', 'zip']),
+    'customerpostalcode': new Set(['customerpostalcode', 'customer_postal_code', 'postalcode', 'postal_code', 'pincode', 'zip', 'postalcode']),
     'material': new Set(['material', 'materialcode', 'material_code', 'productcode', 'product_code', 'partno', 'part_no']),
     'description': new Set(['description', 'materialdescription', 'material_description', 'productdescription', 'product_description', 'desc']),
-    'serialnumber': new Set(['serialnumber', 'serial_number', 'serialno', 'serial_no', 'sno', 'serial number']),
+    'serialnumber': new Set(['serialnumber', 'serial_number', 'serialno', 'serial_no', 'sno', 'serial number', 'serialnumber']),
     'salesdist': new Set(['salesdist', 'sales_dist', 'salesdistrict', 'sales_district', 'diso']),
-    'salesoff': new Set(['salesoff', 'sales_off', 'salesoffice', 'sales_office', 'soff.']),
+    'salesoff': new Set(['salesoff', 'sales_off', 'salesoffice', 'sales_office', 'soff.', 'soff', 'sofficer']),
     'customercountry': new Set(['customercountry', 'customer_country', 'country', 'cty']),
     'customerregion': new Set(['customerregion', 'customer_region', 'region', 'rg']),
     'currentcustomerid': new Set(['currentcustomerid', 'current_customer_id', 'currentcustid', 'current_cust_id', 'customer']),
-    'currentcustomername1': new Set(['currentcustomername1', 'current_customer_name1', 'currentcustomername', 'current_customer_name', 'name 1']),
-    'currentcustomername2': new Set(['currentcustomername2', 'current_customer_name2', 'currenthospitalname', 'current_hospital_name', 'name 2']),
+    'currentcustomername1': new Set(['currentcustomername1', 'current_customer_name1', 'currentcustomername', 'current_customer_name', 'name 1', 'name1']),
+    'currentcustomername2': new Set(['currentcustomername2', 'current_customer_name2', 'currenthospitalname', 'current_hospital_name', 'name 2', 'name2']),
     'currentcustomercity': new Set(['currentcustomercity', 'current_customer_city', 'currentcity', 'current_city', 'city']),
     'currentcustomerregion': new Set(['currentcustomerregion', 'current_customer_region', 'currentregion', 'current_region', 'rg']),
     'currentcustomerpostalcode': new Set(['currentcustomerpostalcode', 'current_customer_postal_code', 'currentpostalcode', 'current_postal_code', 'postalcode']),
     'currentcustomercountry': new Set(['currentcustomercountry', 'current_customer_country', 'currentcountry', 'current_country', 'cty']),
-    'mtl_grp4': new Set(['mtlgrp4', 'mtl_grp4', 'materialgroup4', 'material_group4', 'mtlgroup4', 'mtl_group4', 'mg 4']),
-    'key': new Set(['key', 'keyfield', 'key_field', 'id', 'generated code']),
-    'palnumber': new Set(['palnumber', 'pal_number', 'pal', 'palletno', 'pallet_no', 'pal number']),
+    'mtl_grp4': new Set(['mtlgrp4', 'mtl_grp4', 'materialgroup4', 'material_group4', 'mtlgroup4', 'mtl_group4', 'mg 4', 'mg4', 'materialgrp4']),
+    'key': new Set(['key', 'keyfield', 'key_field', 'id', 'generated code', 'generatedcode']),
+    'palnumber': new Set(['palnumber', 'pal_number', 'pal', 'palletno', 'pallet_no', 'pal number', 'palnumber']),
     'status': new Set(['status', 'record_status', 'installation_status', 'pending_status', 'current_status', 'equipment_status'])
 };
 
@@ -90,15 +90,17 @@ function mapHeaders(headers) {
 
     for (const header of headers) {
         const normalizedHeader = normalizeFieldName(header);
+        const originalHeader = header.toLowerCase().trim();
 
         // Skip if we've already mapped this exact header
         if (seenFields.has(normalizedHeader)) continue;
         seenFields.add(normalizedHeader);
 
-        // Find the first matching schema field
+        // Find the first matching schema field - check both normalized and original
         for (const [schemaField, variations] of Object.entries(FIELD_MAPPINGS)) {
-            if (variations.has(normalizedHeader)) {
+            if (variations.has(normalizedHeader) || variations.has(originalHeader)) {
                 mappedHeaders[header] = schemaField;
+                console.log(`Mapped header "${header}" (normalized: "${normalizedHeader}") to "${schemaField}"`);
                 break; // Move to next header once we find a match
             }
         }
@@ -122,7 +124,7 @@ function cleanText(text) {
     return cleaned;
 }
 
-// Optimized date parsing with cache
+// ENHANCED: Comprehensive date parsing function
 const dateCache = new Map();
 function parseUniversalDate(dateInput) {
     if (!dateInput) return null;
@@ -133,34 +135,108 @@ function parseUniversalDate(dateInput) {
 
     let result = null;
 
-    if (typeof dateInput === 'number') {
-        try {
-            const excelDate = XLSX.SSF.parse_date_code(dateInput);
-            result = new Date(excelDate.y, excelDate.m - 1, excelDate.d);
-        } catch (e) {
-            result = null;
-        }
-    } else {
-        const formats = [
-            'dd/MM/yyyy', 'dd-MM-yyyy', 'dd.MM.yyyy',
-            'MM/dd/yyyy', 'MM-dd-yyyy', 'MM.dd.yyyy',
-            'yyyy/MM/dd', 'yyyy-MM-dd', 'yyyy.MM.dd',
-            'd/M/yyyy', 'd-M-yyyy', 'd.M.yyyy',
-            'M/d/yyyy', 'M-d-yyyy', 'M.d.yyyy',
-            'dd/MM/yy', 'dd-MM-yy', 'dd.MM.yy'
-        ];
-
-        for (const format of formats) {
+    try {
+        // Handle Excel serial date numbers
+        if (typeof dateInput === 'number' && dateInput > 25000 && dateInput < 100000) {
             try {
-                const parsedDate = parse(dateInput.toString(), format, new Date());
-                if (isValid(parsedDate)) {
-                    result = parsedDate;
-                    break;
+                const excelDate = XLSX.SSF.parse_date_code(dateInput);
+                if (excelDate && excelDate.y && excelDate.m && excelDate.d) {
+                    result = new Date(excelDate.y, excelDate.m - 1, excelDate.d);
                 }
             } catch (e) {
-                continue;
+                console.log('Excel date parsing failed:', e.message);
             }
         }
+
+        // If Excel parsing failed or input is string, try string parsing
+        if (!result && (typeof dateInput === 'string' || typeof dateInput === 'number')) {
+            const dateString = String(dateInput).trim();
+            
+            // Skip empty or obviously invalid strings
+            if (!dateString || dateString === '0' || dateString.length < 6) {
+                dateCache.set(cacheKey, null);
+                return null;
+            }
+
+            // Try ISO date format first
+            try {
+                const isoDate = parseISO(dateString);
+                if (isValid(isoDate)) {
+                    result = isoDate;
+                }
+            } catch (e) {
+                // ISO parsing failed, continue with other formats
+            }
+
+            // If ISO failed, try common date formats
+            if (!result) {
+                const formats = [
+                    // DD/MM/YYYY formats
+                    'dd/MM/yyyy', 'dd/MM/yy', 'd/M/yyyy', 'd/M/yy',
+                    'dd-MM-yyyy', 'dd-MM-yy', 'd-M-yyyy', 'd-M-yy',
+                    'dd.MM.yyyy', 'dd.MM.yy', 'd.M.yyyy', 'd.M.yy',
+                    
+                    // MM/DD/YYYY formats
+                    'MM/dd/yyyy', 'MM/dd/yy', 'M/d/yyyy', 'M/d/yy',
+                    'MM-dd-yyyy', 'MM-dd-yy', 'M-d-yyyy', 'M-d-yy',
+                    'MM.dd.yyyy', 'MM.dd.yy', 'M.d.yyyy', 'M.d.yy',
+                    
+                    // YYYY/MM/DD formats
+                    'yyyy/MM/dd', 'yyyy/M/d', 'yy/MM/dd', 'yy/M/d',
+                    'yyyy-MM-dd', 'yyyy-M-d', 'yy-MM-dd', 'yy-M-d',
+                    'yyyy.MM.dd', 'yyyy.M.d', 'yy.MM.dd', 'yy.M.d',
+                    
+                    // Additional formats
+                    'dd MMM yyyy', 'dd-MMM-yyyy', 'dd.MMM.yyyy',
+                    'MMM dd yyyy', 'MMM-dd-yyyy', 'MMM.dd.yyyy',
+                    'yyyy MMM dd', 'yyyy-MMM-dd', 'yyyy.MMM.dd',
+                    
+                    // Compact formats
+                    'ddMMyyyy', 'MMddyyyy', 'yyyyMMdd',
+                    'ddMMyy', 'MMddyy', 'yyMMdd'
+                ];
+
+                for (const formatString of formats) {
+                    try {
+                        const parsedDate = parse(dateString, formatString, new Date());
+                        if (isValid(parsedDate)) {
+                            // Validate year range (1900-2100)
+                            const year = parsedDate.getFullYear();
+                            if (year >= 1900 && year <= 2100) {
+                                result = parsedDate;
+                                break;
+                            }
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+            }
+
+            // Last resort: try JavaScript Date constructor
+            if (!result) {
+                try {
+                    const jsDate = new Date(dateString);
+                    if (isValid(jsDate) && !isNaN(jsDate.getTime())) {
+                        const year = jsDate.getFullYear();
+                        if (year >= 1900 && year <= 2100) {
+                            result = jsDate;
+                        }
+                    }
+                } catch (e) {
+                    // Final fallback failed
+                }
+            }
+        }
+
+        // Validate final result
+        if (result && (isNaN(result.getTime()) || result.getFullYear() < 1900 || result.getFullYear() > 2100)) {
+            result = null;
+        }
+
+    } catch (error) {
+        console.log('Date parsing error:', error.message, 'for input:', dateInput);
+        result = null;
     }
 
     dateCache.set(cacheKey, result);
@@ -173,12 +249,14 @@ function parseExcelFile(buffer) {
         const workbook = XLSX.read(buffer, {
             type: 'buffer',
             cellDates: true,
+            dateNF: 'dd/mm/yyyy',
             codepage: 65001 // UTF-8
         });
         const sheetName = workbook.SheetNames[0];
         return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
             defval: '',
-            raw: false
+            raw: false,
+            dateNF: 'dd/mm/yyyy'
         });
     } catch (error) {
         throw new Error(`Excel parsing error: ${error.message}`);
@@ -228,6 +306,8 @@ function validateRecord(record, headerMapping) {
             if (parsedDate) {
                 cleanedRecord[schemaField] = parsedDate;
                 providedFields.push(schemaField);
+            } else {
+                console.log(`Warning: Could not parse date "${record[originalHeader]}" for field ${originalHeader}`);
             }
         } else {
             cleanedRecord[schemaField] = cleanText(value);
@@ -263,7 +343,7 @@ function validateRecord(record, headerMapping) {
 
     // Set default status only if not provided
     if (!cleanedRecord.status || cleanedRecord.status.trim() === '') {
-        cleanedRecord.status = 'Pending';
+        cleanedRecord.status = 'Active';
     }
 
     return { cleanedRecord, errors, providedFields };
@@ -275,8 +355,17 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
     const changeDetails = [];
 
     for (const field of providedFields) {
-        const existingValue = existingRecord[field] ? String(existingRecord[field]).trim() : '';
-        const newValue = newRecord[field] ? String(newRecord[field]).trim() : '';
+        let existingValue = '';
+        let newValue = '';
+
+        // Special handling for dates
+        if (field === 'invoicedate') {
+            existingValue = existingRecord[field] ? format(new Date(existingRecord[field]), 'dd/MM/yyyy') : '';
+            newValue = newRecord[field] ? format(new Date(newRecord[field]), 'dd/MM/yyyy') : '';
+        } else {
+            existingValue = existingRecord[field] ? String(existingRecord[field]).trim() : '';
+            newValue = newRecord[field] ? String(newRecord[field]).trim() : '';
+        }
 
         if (existingValue !== newValue) {
             hasAnyChange = true;
