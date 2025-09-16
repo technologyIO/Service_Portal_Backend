@@ -25,10 +25,10 @@ const upload = multer({
                 mimetype: file.mimetype,
                 size: file.size
             });
-            
+
             // Get file extension properly
             const fileExt = fileName.substring(fileName.lastIndexOf('.'));
-            
+
             // Comprehensive MIME type checking
             const validMimeTypes = [
                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
@@ -42,20 +42,20 @@ const upload = multer({
                 'text/plain',
                 'application/octet-stream' // Many Excel files come as this
             ];
-            
+
             const validExtensions = ['.csv', '.xlsx', '.xls'];
-            
+
             // Check both MIME type and extension
             const mimeTypeValid = validMimeTypes.includes(file.mimetype);
             const extensionValid = validExtensions.includes(fileExt);
-            
+
             console.log('Validation:', {
                 mimeTypeValid,
                 extensionValid,
                 fileExt,
                 mimetype: file.mimetype
             });
-            
+
             if (mimeTypeValid || extensionValid) {
                 cb(null, true);
             } else {
@@ -74,20 +74,22 @@ const upload = multer({
 });
 
 // Field mappings remain the same
+// Updated FIELD_MAPPINGS - Add normalized versions without spaces
 const FIELD_MAPPINGS = {
-    'dealercodeid': new Set(['dealercodeid', 'dealer_code_id', 'dealercode', 'dealer_code', 'code', 'dealerid', 'dealer_id']),
-    'dealername': new Set(['dealername', 'dealer_name', 'name', 'dealer', 'dealertitle', 'dealer_title']),
+    'dealercodeid': new Set(['dealercodeid', 'dealer_code_id', 'dealercode', 'dealer_code', 'code', 'dealerid', 'dealer_id', 'vendor']),
+    'dealername': new Set(['dealername', 'dealer_name', 'name', 'dealer', 'dealertitle', 'dealer_title', 'name1', 'name 1']), // Added 'name1'
     'dealercity': new Set(['dealercity', 'dealer_city', 'city', 'location', 'dealerlocation', 'dealer_location']),
-    'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'productcode', 'product_code', 'itemcode', 'item_code']),
-    'materialdescription': new Set(['materialdescription', 'material_description', 'description', 'desc', 'product_description', 'item_description', 'material_desc']),
+    'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'productcode', 'product_code', 'itemcode', 'item_code', 'material']),
+    'materialdescription': new Set(['materialdescription', 'material_description', 'description', 'desc', 'product_description', 'item_description', 'material_desc', 'materialdescription']), // Added 'materialdescription'
     'plant': new Set(['plant', 'factory', 'location', 'facility', 'warehouse', 'depot']),
-    'unrestrictedquantity': new Set(['unrestrictedquantity', 'unrestricted_quantity', 'quantity', 'qty', 'stock', 'available_quantity', 'available_qty', 'free_stock', 'freestock'])
+    'unrestrictedquantity': new Set(['unrestrictedquantity', 'unrestricted_quantity', 'quantity', 'qty', 'stock', 'available_quantity', 'available_qty', 'free_stock', 'freestock', 'unrestricted'])
 };
+
 
 // Enhanced function to clean and normalize text
 function cleanText(text) {
     if (!text || typeof text !== 'string') return '';
-    
+
     return text
         .replace(INVALID_CHARS_REGEX, '')
         .replace(SPECIAL_CHARS_REGEX, ' ')
@@ -99,13 +101,13 @@ function cleanText(text) {
 function parseExcelFile(buffer) {
     try {
         console.log('Parsing Excel file, buffer size:', buffer.length);
-        
+
         // Try multiple parsing approaches
         let workbook;
         try {
             // First attempt with standard options
-            workbook = XLSX.read(buffer, { 
-                type: 'buffer', 
+            workbook = XLSX.read(buffer, {
+                type: 'buffer',
                 cellDates: true,
                 codepage: 65001,
                 raw: false,
@@ -115,62 +117,62 @@ function parseExcelFile(buffer) {
             console.log('First parse attempt failed, trying alternative options:', firstError.message);
             // Second attempt with more permissive options
             try {
-                workbook = XLSX.read(buffer, { 
+                workbook = XLSX.read(buffer, {
                     type: 'buffer',
                     raw: true // Try with raw data
                 });
             } catch (secondError) {
                 console.log('Second parse attempt failed, trying buffer as array:', secondError.message);
                 // Third attempt treating as array buffer
-                workbook = XLSX.read(new Uint8Array(buffer), { 
+                workbook = XLSX.read(new Uint8Array(buffer), {
                     type: 'array'
                 });
             }
         }
-        
+
         if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
             throw new Error('No sheets found in Excel file');
         }
-        
+
         const sheetName = workbook.SheetNames[0];
         console.log('Using sheet:', sheetName);
-        
+
         const worksheet = workbook.Sheets[sheetName];
         if (!worksheet) {
             throw new Error(`Sheet "${sheetName}" not found`);
         }
-        
+
         // Convert to JSON with proper options
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
-            defval: '', 
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+            defval: '',
             raw: false,
             blankrows: false,
             header: 1 // Get array format first to handle headers properly
         });
-        
+
         if (!jsonData || jsonData.length === 0) {
             throw new Error('No data found in Excel sheet');
         }
-        
+
         // Convert array format to object format
         const headers = jsonData[0];
         const dataRows = jsonData.slice(1);
-        
+
         const result = dataRows.map(row => {
             const obj = {};
             headers.forEach((header, index) => {
                 if (header && header.toString().trim()) {
                     const value = row[index];
-                    obj[header.toString().trim()] = value !== undefined && value !== null ? 
+                    obj[header.toString().trim()] = value !== undefined && value !== null ?
                         (typeof value === 'string' ? cleanText(value) : value.toString()) : '';
                 }
             });
             return obj;
         }).filter(row => Object.keys(row).length > 0); // Remove empty rows
-        
+
         console.log('Excel parsing successful, rows found:', result.length);
         return result;
-        
+
     } catch (error) {
         console.error('Excel parsing error details:', error);
         throw new Error(`Excel parsing failed: ${error.message}`);
@@ -182,19 +184,19 @@ function parseCSVFile(buffer) {
     return new Promise((resolve, reject) => {
         try {
             console.log('Parsing CSV file, buffer size:', buffer.length);
-            
+
             const results = [];
-            
+
             // Enhanced encoding detection
             let csvContent;
             try {
                 // Try UTF-8 first
                 csvContent = buffer.toString('utf8');
-                
+
                 // Check for encoding issues
                 if (csvContent.includes('\uFFFD') || csvContent.includes('�')) {
                     console.log('UTF-8 encoding issues detected, trying alternative encodings');
-                    
+
                     // Try Windows-1252
                     if (iconv.encodingExists('win1252')) {
                         csvContent = iconv.decode(buffer, 'win1252');
@@ -211,7 +213,7 @@ function parseCSVFile(buffer) {
                 console.warn('Encoding detection failed, using UTF-8:', encodingError.message);
                 csvContent = buffer.toString('utf8');
             }
-            
+
             // Create readable stream
             const stream = Readable.from(csvContent)
                 .pipe(csv({
@@ -252,7 +254,7 @@ function parseCSVFile(buffer) {
                     reject(new Error('CSV parsing timeout'));
                 }
             }, 30000); // 30 second timeout
-            
+
         } catch (error) {
             console.error('CSV parsing setup error:', error);
             reject(new Error(`CSV setup failed: ${error.message}`));
@@ -426,7 +428,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
     try {
         console.log('=== BULK UPLOAD START ===');
-        
+
         if (!req.file) {
             console.error('No file uploaded');
             response.status = 'failed';
@@ -464,10 +466,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             if (fileExt === '.csv' || req.file.mimetype.includes('csv') || req.file.mimetype === 'text/plain') {
                 console.log('Parsing as CSV file');
                 jsonData = await parseCSVFile(req.file.buffer);
-            } else if (fileExt === '.xlsx' || fileExt === '.xls' || 
-                       req.file.mimetype.includes('excel') || 
-                       req.file.mimetype.includes('spreadsheet') ||
-                       req.file.mimetype === 'application/octet-stream') {
+            } else if (fileExt === '.xlsx' || fileExt === '.xls' ||
+                req.file.mimetype.includes('excel') ||
+                req.file.mimetype.includes('spreadsheet') ||
+                req.file.mimetype === 'application/octet-stream') {
                 console.log('Parsing as Excel file');
                 jsonData = parseExcelFile(req.file.buffer);
             } else {
@@ -510,7 +512,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Map headers with optimized method
         const headers = Object.keys(jsonData[0] || {});
         console.log('Headers found:', headers);
-        
+
         const headerMapping = mapHeaders(headers);
         response.headerMapping = headerMapping;
         console.log('Header mapping:', headerMapping);
@@ -518,7 +520,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Check for required fields
         const requiredFields = ['dealercodeid', 'dealername', 'dealercity', 'materialcode', 'materialdescription', 'plant', 'unrestrictedquantity'];
         const missingFields = requiredFields.filter(field => !Object.values(headerMapping).includes(field));
-        
+
         if (missingFields.length > 0) {
             const fieldDisplayNames = {
                 'dealercodeid': 'Dealer Code',
@@ -545,23 +547,23 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         response.deletionPhase.status = 'processing';
         const totalExisting = await DealerStock.estimatedDocumentCount();
         response.deletionPhase.totalExisting = totalExisting;
-        
+
         if (totalExisting > 0) {
             res.write(JSON.stringify({
                 ...response,
                 deletionPhase: { ...response.deletionPhase, status: 'deleting' }
             }) + '\n');
-            
+
             await DealerStock.collection.drop();
             await DealerStock.createCollection();
-            
+
             response.deletionPhase.deleted = totalExisting;
             response.summary.deletedExisting = totalExisting;
         }
-        
+
         response.deletionPhase.status = 'completed';
         response.deletionPhase.progress = 100;
-        
+
         res.write(JSON.stringify({
             ...response,
             deletionPhase: response.deletionPhase
@@ -605,7 +607,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     }
 
                     const uniqueKey = `${cleanedRecord.dealercodeid}_${cleanedRecord.materialcode}_${cleanedRecord.plant}`;
-                    
+
                     if (processedKeys.has(uniqueKey)) {
                         recordResult.status = 'Skipped';
                         recordResult.error = 'Duplicate combination in file';
@@ -618,12 +620,12 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
                     processedKeys.add(uniqueKey);
                     validRecords.push(cleanedRecord);
-                    
+
                     recordResult.status = 'Created';
                     recordResult.action = 'Created new record';
                     batchResults.push(recordResult);
                     batchCreated++;
-                    
+
                 } catch (err) {
                     recordResult.status = 'Failed';
                     recordResult.action = 'Validation error';
@@ -636,21 +638,21 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             // Process valid records in bulk
             if (validRecords.length > 0) {
                 try {
-                    const insertResult = await DealerStock.insertMany(validRecords, { 
+                    const insertResult = await DealerStock.insertMany(validRecords, {
                         ordered: false,
                         lean: true
                     });
-                    
+
                     batchCreated = insertResult.length;
-                    
+
                 } catch (insertError) {
                     if (insertError.name === 'BulkWriteError' || insertError.name === 'MongoBulkWriteError') {
                         const insertedCount = insertError.result?.insertedCount || 0;
                         const failedCount = validRecords.length - insertedCount;
-                        
+
                         batchCreated = insertedCount;
                         batchFailed += failedCount;
-                        
+
                         if (insertError.writeErrors && insertError.writeErrors.length > 0) {
                             insertError.writeErrors.forEach((writeError) => {
                                 const failedIndex = writeError.index;
@@ -669,7 +671,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                                 result.error = insertError.message;
                             }
                         });
-                        
+
                         batchFailed += validRecords.length;
                         batchCreated = 0;
                     }

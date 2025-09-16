@@ -38,12 +38,13 @@ const upload = multer({
 });
 
 // Optimized: Predefined field mappings for faster access - ADDED STATUS FIELD
+// FIXED: Updated field mappings with normalized versions
 const FIELD_MAPPINGS = {
-    'salesdoc': new Set(['salesdoc', 'sales_doc', 'salesdocument', 'sales_document', 'document', 'docno', 'doc_no', 'sales doc.']),
-    'startdate': new Set(['startdate', 'start_date', 'begin_date', 'begindate', 'fromdate', 'from_date', 'start dt']),
-    'enddate': new Set(['enddate', 'end_date', 'finish_date', 'finishdate', 'todate', 'to_date', 'expiry_date', 'expirydate', 'end date']),
-    'satypeZDRC_ZDRN': new Set(['satype', 'sa_type', 'satypezdrc_zdrn', 'satype_zdrc_zdrn', 'type', 'satypezdrczdrn', 'SaTy']),
-    'serialnumber': new Set(['serialnumber', 'serial_number', 'serialno', 'serial_no', 'sno', 'serial number']),
+    'salesdoc': new Set(['salesdoc', 'sales_doc', 'salesdocument', 'sales_document', 'document', 'docno', 'doc_no', 'salesdoc']), // Added normalized version
+    'startdate': new Set(['startdate', 'start_date', 'begin_date', 'begindate', 'fromdate', 'from_date', 'startdt']), // Added normalized version
+    'enddate': new Set(['enddate', 'end_date', 'finish_date', 'finishdate', 'todate', 'to_date', 'expiry_date', 'expirydate', 'enddate']), // Added normalized version  
+    'satypeZDRC_ZDRN': new Set(['satype', 'sa_type', 'satypezdrc_zdrn', 'satype_zdrc_zdrn', 'type', 'satypezdrczdrn', 'saty']), // Changed 'SaTy' to 'saty'
+    'serialnumber': new Set(['serialnumber', 'serial_number', 'serialno', 'serial_no', 'sno', 'serialnumber']), // Added normalized version
     'materialcode': new Set(['materialcode', 'material_code', 'partno', 'part_no', 'code', 'item_code', 'product_code', 'material']),
     'status': new Set(['status', 'record_status', 'contract_status', 'amc_status', 'current_status', 'state'])
 };
