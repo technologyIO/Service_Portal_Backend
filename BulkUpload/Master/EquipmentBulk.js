@@ -73,6 +73,7 @@ const FIELD_MAPPINGS = {
     "productcode",
     "item_code",
     "itemcode",
+    "material",
   ],
   materialdescription: [
     "material description",
@@ -104,6 +105,7 @@ const FIELD_MAPPINGS = {
     "customer",
     "client_code",
     "clientcode",
+    "curcustomer",
   ],
   endcustomer: [
     "end customer",
@@ -131,6 +133,7 @@ const FIELD_MAPPINGS = {
     "customer warrantystartdate",
     "customer warranty startdate",
     "customerwarrantystart",
+    "cus. wrty start",
   ],
   custWarrantyenddate: [
     "custwarrantyend",
@@ -149,6 +152,7 @@ const FIELD_MAPPINGS = {
     "customer warrantyenddate",
     "customer warranty enddate",
     "customerwarrantyend",
+    "cust. wrty end",
   ],
   dealerwarrantystartdate: [
     "dealerwarrantystart",
@@ -157,6 +161,7 @@ const FIELD_MAPPINGS = {
     "dealer warranty start",
     "extended warranty start",
     "dealer_warranty_start",
+    "vendor wrty srt",
   ],
   dealerwarrantyenddate: [
     "dealerwarrantyend",
@@ -165,6 +170,7 @@ const FIELD_MAPPINGS = {
     "dealer warranty end",
     "extended warranty end",
     "dealer_warranty_end",
+    "Vendor wrty end",
   ],
   dealer: ["dealer", "dealer_name", "dealer name", "distributor", "partner", "reseller", "vendor"],
   palnumber: ["pal number", "palnumber", "pal_number", "pal no", "pal_no", "pal"],
