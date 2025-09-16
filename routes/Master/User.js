@@ -563,6 +563,46 @@ router.get('/user', async (req, res) => {
     }
 });
 
+router.get('/user/technicians', async (req, res) => {
+    console.log('Fetching technicians...');
+    try {
+        const technicians = await User.find({ 
+            status: 'Active',
+            // Only include users with non-expired login
+            $or: [
+                { loginexpirydate: { $exists: false } },
+                { loginexpirydate: null },
+                { loginexpirydate: { $gte: new Date() } }
+            ]
+        })
+        .select('firstname lastname email employeeid role.roleName department')
+        .sort({ firstname: 1 })
+        .lean();
+
+        // Transform data
+        const transformedTechnicians = technicians.map(tech => ({
+            _id: tech._id,
+            name: `${tech.firstname} ${tech.lastname || ''}`.trim(),
+            email: tech.email,
+            employeeid: tech.employeeid,
+            role: tech.role?.roleName || 'User'
+        }));
+
+        res.json({
+            success: true,
+            data: transformedTechnicians
+        });
+
+    } catch (error) {
+        console.error('Error fetching technicians:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching technicians',
+            error: error.message
+        });
+    }
+});
+
 // GET a user by ID
 router.get('/user/:id', getUserById, (req, res) => {
     res.json(res.user);
