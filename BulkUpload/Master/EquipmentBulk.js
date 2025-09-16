@@ -73,7 +73,6 @@ const FIELD_MAPPINGS = {
     "productcode",
     "item_code",
     "itemcode",
-    "material",
   ],
   materialdescription: [
     "material description",
@@ -97,7 +96,14 @@ const FIELD_MAPPINGS = {
   ],
   equipmentid: ["equipment", "equipmentid", "equipment_id", "equipment id", "machine_id", "machineid"],
   currentcustomer: [
-    "currentcustomer", "current_customer", "customer_code", "customercode", "customer", "custcode", "curcustomer",
+    "current customer",
+    "currentcustomer",
+    "current_customer",
+    "customer_code",
+    "customercode",
+    "customer",
+    "client_code",
+    "clientcode",
   ],
   endcustomer: [
     "end customer",
@@ -125,7 +131,6 @@ const FIELD_MAPPINGS = {
     "customer warrantystartdate",
     "customer warranty startdate",
     "customerwarrantystart",
-    "cus. wrty start",
   ],
   custWarrantyenddate: [
     "custwarrantyend",
@@ -144,7 +149,6 @@ const FIELD_MAPPINGS = {
     "customer warrantyenddate",
     "customer warranty enddate",
     "customerwarrantyend",
-    "Cust. wrty end",
   ],
   dealerwarrantystartdate: [
     "dealerwarrantystart",
@@ -153,7 +157,6 @@ const FIELD_MAPPINGS = {
     "dealer warranty start",
     "extended warranty start",
     "dealer_warranty_start",
-    "Vendor Wrty Srt",
   ],
   dealerwarrantyenddate: [
     "dealerwarrantyend",
@@ -162,11 +165,8 @@ const FIELD_MAPPINGS = {
     "dealer warranty end",
     "extended warranty end",
     "dealer_warranty_end",
-    "Vendor wrty end",
   ],
-  dealer: [
-    "dealer", "dealer_name", "dealername", "distributor", "partner", "vendor",
-  ],
+  dealer: ["dealer", "dealer_name", "dealer name", "distributor", "partner", "reseller", "vendor"],
   palnumber: ["pal number", "palnumber", "pal_number", "pal no", "pal_no", "pal"],
   installationreportno: [
     "ir number",
@@ -949,7 +949,7 @@ function validateRecord(record, lineNumber) {
     "endcustomer",
     "custWarrantystartdate",
     "custWarrantyenddate",
-    // "dealer",
+    "dealer",
   ]
 
   // Check required fields
@@ -1553,7 +1553,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
                   materialDescription: record.materialdescription || "",
                   serialNumber: serialnumber,
                   customerCode: record.currentcustomer || "",
-                  // region: customer?.region || "",
+                  region: customer?.region || "",
                   city: customer?.city || "",
                   branch: customer?.branch || "",
                   pmDueDate: dueDate,
@@ -1616,7 +1616,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
                   materialDescription: record.materialdescription || "",
                   serialNumber: serialnumber,
                   customerCode: record.currentcustomer || "",
-                  // region: customer?.region || "",
+                  region: customer?.region || "",
                   city: customer?.city || "",
                   branch: customer?.branch || "",
                   pmDueDate: dueDate,
@@ -1684,7 +1684,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
                     materialDescription: record.materialdescription || "",
                     serialNumber: serialnumber,
                     customerCode: record.currentcustomer || "",
-                    // region: customer?.region || "",
+                    region: customer?.region || "",
                     city: customer?.city || "",
                     branch: customer?.branch || "",
                     pmDueDate: dueDate,
