@@ -47,16 +47,17 @@ const upload = multer({
 });
 
 // Updated FIELD_MAPPINGS with all SAP variations
+// Updated FIELD_MAPPINGS with properly normalized versions
 const FIELD_MAPPINGS = {
   'notificationtype': new Set([
-    'notificationtype', 'notification type', 'type', 'notifictn type', 'notifctntype'
+    'notificationtype', 'notification type', 'type', 'notifictn type', 'notifctntype', 'notifictntype' // Added normalized version
   ]),
   'notification_complaintid': new Set([
-    'notificationcomplaintid', 'notification/complaint id', 'complaintid', 'ticketid', 
+    'notificationcomplaintid', 'notification/complaint id', 'complaintid', 'ticketid',
     'notification', 'complaint id', 'notification id', 'notificationid'
   ]),
   'notificationdate': new Set([
-    'notificationdate', 'notification date', 'date', 'notif.date', 'notifdate',
+    'notificationdate', 'notification date', 'date', 'notifdate', 'notifdate', // Added normalized version
     'complaint date', 'created date'
   ]),
   'userstatus': new Set([
@@ -84,20 +85,21 @@ const FIELD_MAPPINGS = {
     'complaint description', 'problem description'
   ]),
   'dealercode': new Set([
-    'dealercode', 'dealer code', 'partnerresp.', 'partner code', 'vendor code',
+    'dealercode', 'dealer code', 'partnerresp', 'partnerresp.', 'partner code', 'vendor code', // Added normalized versions
     'supplier code'
   ]),
   'customercode': new Set([
     'customercode', 'customer code', 'customer', 'client code', 'cust code'
   ]),
   'partnerresp': new Set([
-    'partnerresp', 'partnerresp.', 'partner response', 'partner resp', 
+    'partnerresp', 'partnerresp.', 'partner response', 'partner resp',
     'vendor response', 'dealer response'
   ]),
   'breakdown': new Set([
     'breakdown', 'break down', 'failure', 'malfunction'
   ])
 };
+
 
 // Optimized normalizeFieldName with memoization
 const normalizedFieldCache = new Map();
@@ -389,7 +391,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     try {
       response.deleteOperation.status = 'in-progress';
       response.deleteOperation.message = 'Deleting all existing pending complaints...';
-      
+
       // Send delete progress update
       res.write(JSON.stringify({
         ...response,
@@ -398,7 +400,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
       console.log('Starting full delete operation...');
       const deleteResult = await PendingComplaints.deleteMany({});
-      
+
       response.deleteOperation.status = 'completed';
       response.deleteOperation.deletedCount = deleteResult.deletedCount;
       response.deleteOperation.message = `Successfully deleted ${deleteResult.deletedCount} existing complaints`;
@@ -418,7 +420,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       response.deleteOperation.status = 'failed';
       response.deleteOperation.message = `Delete operation failed: ${deleteError.message}`;
       response.errors.push(`Failed to delete existing complaints: ${deleteError.message}`);
-      
+
       // Send delete failure update
       res.write(JSON.stringify({
         ...response,

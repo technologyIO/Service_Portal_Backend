@@ -112,8 +112,8 @@ const proposalSchema = new mongoose.Schema({
     proposalNumber: { type: String, unique: true },
     currentRevision: { type: Number, default: 0 },
     revisions: [revisionSchema],
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    createdBy: { type: String },
+    updatedBy: { type: String },
     statusHistory: [{
         status: String,
         changedAt: { type: Date, default: Date.now },
