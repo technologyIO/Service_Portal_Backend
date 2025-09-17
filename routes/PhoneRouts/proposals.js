@@ -534,7 +534,7 @@ router.post('/:proposalId/assign', async (req, res) => {
                 new: true,
                 runValidators: true
             }
-        ).populate('assignedTo', 'firstname lastname email employeeid');
+        );
 
         if (!updatedProposal) {
             return res.status(404).json({
@@ -559,6 +559,86 @@ router.post('/:proposalId/assign', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error assigning proposal',
+            errorCode: 'SERVER_ERROR',
+            error: error.message
+        });
+    }
+});
+
+router.post('/bulk-assign', async (req, res) => {
+    try {
+        const { proposalIds, assignedTo } = req.body;
+
+        // Validate required fields
+        if (!proposalIds || !Array.isArray(proposalIds) || proposalIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'proposalIds array is required and must not be empty',
+                errorCode: 'INVALID_PROPOSAL_IDS'
+            });
+        }
+
+        // Verify the assigned user exists and is active
+        const assignedToUser = await User.findOne({ 
+            employeeid: assignedTo,
+            status: 'Active'
+        });
+        if (!assignedToUser) {
+            return res.status(404).json({
+                success: false,
+                message: 'Assigned user not found or inactive',
+                errorCode: 'ASSIGNED_USER_NOT_FOUND'
+            });
+        }
+
+        // Verify all Proposals exist
+        const existingProposals = await Proposal.find({ 
+            _id: { $in: proposalIds } 
+        }).select('_id proposalNumber');
+
+        if (existingProposals.length !== proposalIds.length) {
+            const foundIds = existingProposals.map(p => p._id.toString());
+            const notFoundIds = proposalIds.filter(id => !foundIds.includes(id));
+            
+            return res.status(400).json({
+                success: false,
+                message: `Some proposals not found: ${notFoundIds.join(', ')}`,
+                errorCode: 'PROPOSALS_NOT_FOUND',
+                notFoundIds
+            });
+        }
+
+        // Perform bulk update - Override createdBy for all Proposals
+        const updateResult = await Proposal.updateMany(
+            { _id: { $in: proposalIds } },
+            {
+                $set: {
+                    createdBy: assignedTo,  // Override createdBy field
+                }
+            }
+        );
+
+        // Get updated Proposal numbers for response
+        const updatedProposals = await Proposal.find({ 
+            _id: { $in: proposalIds } 
+        }).select('_id proposalNumber createdBy');
+
+        res.json({
+            success: true,
+            message: `Successfully assigned ${updateResult.modifiedCount} proposals to ${assignedToUser.firstname} ${assignedToUser.lastname}`,
+            data: {
+                assignedCount: updateResult.modifiedCount,
+                failedCount: proposalIds.length - updateResult.modifiedCount,
+                totalRequested: proposalIds.length,
+                updatedProposals: updatedProposals
+            }
+        });
+
+    } catch (error) {
+        console.error('Bulk Proposal assignment error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error in bulk proposal assignment',
             errorCode: 'SERVER_ERROR',
             error: error.message
         });

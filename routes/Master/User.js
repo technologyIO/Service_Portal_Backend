@@ -564,7 +564,6 @@ router.get('/user', async (req, res) => {
 });
 
 router.get('/user/technicians', async (req, res) => {
-    console.log('Fetching technicians...');
     try {
         const technicians = await User.find({ 
             status: 'Active',
