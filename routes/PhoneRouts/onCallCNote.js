@@ -476,6 +476,7 @@ router.post('/', async (req, res) => {
             revisions: onCall.revisions,
             currentRevision: onCall.currentRevision,
             status: 'draft',
+            createdBy: onCall.createdBy,
             issuedBy: req.user?.id || null
         };
 
@@ -767,7 +768,7 @@ router.post('/:cnoteNumber/cancel', async (req, res) => {
     }
 });
 
- 
+
 router.delete('/:cnoteNumber', async (req, res) => {
     try {
         const { cnoteNumber } = req.params;

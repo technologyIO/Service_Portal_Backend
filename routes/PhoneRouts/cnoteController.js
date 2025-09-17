@@ -481,6 +481,7 @@ router.post('/', async (req, res) => {
         const cnote = new CNote({
             ...cnoteData,
             status: 'draft',
+            createdBy: proposal.createdBy,
             issuedBy: req.user?.id || user?.id || null,
             cnoteNumber
         });

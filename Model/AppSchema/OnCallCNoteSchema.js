@@ -117,6 +117,9 @@ const OnCallCNoteSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     },
+    createdBy: {
+        type: String
+    },
     issuedAt: Date,
     issuedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 });
