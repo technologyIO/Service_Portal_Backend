@@ -5,6 +5,7 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
 const Dealer = require('../../Model/MasterSchema/DealerSchema');
+const User = require('../../Model/MasterSchema/UserSchema');
 
 // Optimized: Pre-compiled regex patterns
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9]/g;
@@ -44,7 +45,7 @@ const upload = multer({
     }
 });
 
-// Field mappings for Dealer schema - comprehensive variations
+// Updated Field mappings for Dealer schema
 const FIELD_MAPPINGS = {
     'name': new Set([
         'name', 'dealername', 'dealer_name', 'dealer-name',
@@ -84,9 +85,7 @@ const FIELD_MAPPINGS = {
     'personresponsible': new Set([
         'personresponsible', 'person_responsible', 'person-responsible',
         'responsible_person', 'responsibleperson', 'contact_person',
-        'contactperson', 'manager', 'incharge', 'representative'
-    ]),
-    'employeeid': new Set([
+        'contactperson', 'manager', 'incharge', 'representative',
         'employeeid', 'employee_id', 'employee-id', 'empid',
         'emp_id', 'emp-id', 'staffid', 'staff_id',
         'personnel_id', 'personnelid'
@@ -203,11 +202,11 @@ function getFileType(fileName, mimeType) {
 // Helper function to parse array fields (state, city, personresponsible)
 function parseArrayField(value, fieldType = 'string') {
     if (!value || value.trim() === '') return [];
-    
+
     // Handle different separators
     const separators = [',', ';', '|', '\n', '\r\n'];
     let items = [value];
-    
+
     // Try each separator to split the value
     for (const separator of separators) {
         if (value.includes(separator)) {
@@ -215,35 +214,54 @@ function parseArrayField(value, fieldType = 'string') {
             break;
         }
     }
-    
+
     // Clean and filter items
     items = items
         .map(item => item.trim())
         .filter(item => item !== '' && item !== 'undefined' && item !== 'null')
         .map(item => item.replace(MULTISPACE_REGEX, ' '));
-    
+
     return items.length > 0 ? items : [];
 }
 
-// Helper function to parse person responsible field
-function parsePersonResponsible(nameValue, employeeIdValue) {
-    const names = parseArrayField(nameValue);
+// Updated function to parse employee IDs only
+function parseEmployeeIds(employeeIdValue) {
+    if (!employeeIdValue) return [];
+
     const employeeIds = parseArrayField(employeeIdValue);
-    
-    const personResponsible = [];
-    
-    // Match names with employee IDs
-    for (let i = 0; i < Math.max(names.length, employeeIds.length); i++) {
-        const name = names[i] || `Person ${i + 1}`;
-        const employeeid = employeeIds[i] || `EMP${String(i + 1).padStart(3, '0')}`;
-        
-        personResponsible.push({
-            name: name,
-            employeeid: employeeid
+
+    // Clean and validate employee IDs
+    return employeeIds
+        .filter(id => id && id.trim() !== '')
+        .map(id => id.trim().toUpperCase()); // Normalize to uppercase
+}
+
+// Function to lookup user names by employee IDs
+async function lookupUsersByEmployeeIds(employeeIds) {
+    if (!employeeIds || employeeIds.length === 0) return [];
+
+    try {
+        const users = await User.find({
+            employeeid: { $in: employeeIds }
+        }, {
+            employeeid: 1,
+            firstname: 1,
+            lastname: 1,
+            _id: 0
+        }).lean();
+
+        // Create a map for quick lookup
+        const userMap = new Map();
+        users.forEach(user => {
+            const fullName = `${user.firstname} ${user.lastname || ''}`.trim();
+            userMap.set(user.employeeid, fullName);
         });
+
+        return userMap;
+    } catch (error) {
+        console.error('Error looking up users:', error);
+        return new Map();
     }
-    
-    return personResponsible;
 }
 
 // Function to check for changes between existing and new records
@@ -254,7 +272,7 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
     for (const field of providedFields) {
         let oldValue = existingRecord[field];
         let newValue = newRecord[field];
-        
+
         // Handle array fields comparison
         if (Array.isArray(oldValue) && Array.isArray(newValue)) {
             const oldSorted = JSON.stringify(oldValue.sort());
@@ -263,15 +281,19 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
                 hasChanges = true;
                 changes.push({
                     field,
-                    oldValue: oldValue.join(', '),
-                    newValue: newValue.join(', ')
+                    oldValue: oldValue.map(item =>
+                        typeof item === 'object' ? JSON.stringify(item) : item
+                    ).join(', '),
+                    newValue: newValue.map(item =>
+                        typeof item === 'object' ? JSON.stringify(item) : item
+                    ).join(', ')
                 });
             }
         } else {
             // Handle regular fields
             oldValue = oldValue || '';
             newValue = newValue || '';
-            
+
             if (oldValue !== newValue) {
                 hasChanges = true;
                 changes.push({
@@ -294,17 +316,15 @@ function generateUniqueKey(record) {
     return `${record.dealercode}`.toLowerCase();
 }
 
-// Record validation to match Dealer schema requirements
-function validateRecord(record, headerMapping) {
+// Updated record validation to match Dealer schema requirements
+async function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
     const providedFields = [];
     const errors = [];
+    const warnings = [];
 
-    // Track if we have person responsible data
-    let hasPersonName = false;
-    let hasEmployeeId = false;
-    let personNames = '';
-    let employeeIds = '';
+    // Track employee IDs for person responsible
+    let employeeIds = [];
 
     // Map headers to schema fields
     for (const [originalHeader, schemaField] of Object.entries(headerMapping)) {
@@ -321,11 +341,7 @@ function validateRecord(record, headerMapping) {
                 providedFields.push(schemaField);
             }
         } else if (schemaField === 'personresponsible') {
-            personNames = value;
-            hasPersonName = true;
-        } else if (schemaField === 'employeeid') {
-            employeeIds = value;
-            hasEmployeeId = true;
+            employeeIds = parseEmployeeIds(value);
         } else if (schemaField === 'status') {
             cleanedRecord['status'] = value.replace(MULTISPACE_REGEX, ' ').trim();
             providedFields.push(schemaField);
@@ -336,9 +352,29 @@ function validateRecord(record, headerMapping) {
         }
     }
 
-    // Handle person responsible if we have the data
-    if (hasPersonName || hasEmployeeId) {
-        const personResponsible = parsePersonResponsible(personNames, employeeIds);
+    // Handle person responsible with user lookup
+    if (employeeIds.length > 0) {
+        const userMap = await lookupUsersByEmployeeIds(employeeIds);
+        const personResponsible = [];
+
+        for (const employeeId of employeeIds) {
+            const userName = userMap.get(employeeId);
+
+            if (userName) {
+                personResponsible.push({
+                    name: userName,
+                    employeeid: employeeId
+                });
+            } else {
+                // If user not found, add warning but still include with placeholder name
+                warnings.push(`Employee ID ${employeeId} not found in User database`);
+                personResponsible.push({
+                    name: `Unknown User (${employeeId})`,
+                    employeeid: employeeId
+                });
+            }
+        }
+
         if (personResponsible.length > 0) {
             cleanedRecord['personresponsible'] = personResponsible;
             providedFields.push('personresponsible');
@@ -348,7 +384,7 @@ function validateRecord(record, headerMapping) {
     // Required fields validation
     const requiredFields = ['name', 'dealercode', 'email', 'state', 'city', 'address', 'pincode'];
     for (const field of requiredFields) {
-        if (!cleanedRecord[field] || 
+        if (!cleanedRecord[field] ||
             (Array.isArray(cleanedRecord[field]) && cleanedRecord[field].length === 0)) {
             errors.push(`${field} is required`);
         }
@@ -356,7 +392,7 @@ function validateRecord(record, headerMapping) {
 
     // Early exit if required fields are missing
     if (errors.length > 0) {
-        return { cleanedRecord, errors, providedFields };
+        return { cleanedRecord, errors, providedFields, warnings };
     }
 
     // Length validation
@@ -375,22 +411,6 @@ function validateRecord(record, headerMapping) {
         }
     }
 
-    // Email validation
-    // if (cleanedRecord.email) {
-    //     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    //     if (!emailRegex.test(cleanedRecord.email)) {
-    //         errors.push('Invalid email format');
-    //     }
-    // }
-
-    // Pincode validation
-    // if (cleanedRecord.pincode) {
-    //     const pincodeRegex = /^[0-9]{6}$/;
-    //     if (!pincodeRegex.test(cleanedRecord.pincode)) {
-    //         errors.push('Pincode must be 6 digits');
-    //     }
-    // }
-
     // Set default values
     if (!cleanedRecord.status || cleanedRecord.status.trim() === '') {
         cleanedRecord.status = 'Active';
@@ -405,20 +425,21 @@ function validateRecord(record, headerMapping) {
 
     // Ensure person responsible has at least one entry if not provided
     if (!cleanedRecord.personresponsible || cleanedRecord.personresponsible.length === 0) {
+        warnings.push('No valid employee IDs provided for person responsible, using default');
         cleanedRecord.personresponsible = [{
             name: 'Default Contact',
             employeeid: 'DEFAULT001'
         }];
     }
 
-    return { cleanedRecord, errors, providedFields };
+    return { cleanedRecord, errors, providedFields, warnings };
 }
 
 // MAIN ROUTE - Dealer Bulk Upload
 router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
-    const BATCH_SIZE = 1000; // Reduced batch size for complex nested data
+    const BATCH_SIZE = 500; // Reduced batch size due to user lookups
     const PARALLEL_BATCHES = 2; // Reduced parallelism for safety
-    const BULK_WRITE_BATCH_SIZE = 200; // Smaller bulk write batches
+    const BULK_WRITE_BATCH_SIZE = 100; // Smaller bulk write batches
 
     // Initialize response object
     const response = {
@@ -437,6 +458,7 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
             existingRecords: 0,
             skippedTotal: 0,
             noChangesSkipped: 0,
+            userLookupWarnings: 0,
             statusUpdates: {
                 total: 0,
                 byStatus: {}
@@ -531,6 +553,7 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
             let batchFailed = 0;
             let batchSkipped = 0;
             let batchStatusUpdates = 0;
+            let batchUserLookupWarnings = 0;
 
             // Process each record in the batch
             for (const record of batch) {
@@ -542,6 +565,7 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
                     email: '',
                     state: [],
                     city: [],
+                    personresponsible: [],
                     status: 'Processing',
                     action: '',
                     error: null,
@@ -551,7 +575,7 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
                 };
 
                 try {
-                    const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
+                    const { cleanedRecord, errors, providedFields, warnings } = await validateRecord(record, headerMapping);
 
                     // Update record result with cleaned data
                     recordResult.name = cleanedRecord.name || 'Unknown';
@@ -559,7 +583,12 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
                     recordResult.email = cleanedRecord.email || 'N/A';
                     recordResult.state = cleanedRecord.state || [];
                     recordResult.city = cleanedRecord.city || [];
+                    recordResult.personresponsible = cleanedRecord.personresponsible || [];
                     recordResult.assignedStatus = cleanedRecord.status;
+                    recordResult.warnings = warnings || [];
+
+                    // Count user lookup warnings
+                    batchUserLookupWarnings += warnings.filter(w => w.includes('not found in User database')).length;
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -733,7 +762,8 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
                 batchUpdated,
                 batchFailed,
                 batchSkipped,
-                batchStatusUpdates
+                batchStatusUpdates,
+                batchUserLookupWarnings
             };
         };
 
@@ -766,6 +796,7 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
                 response.summary.updated += completedBatch.batchUpdated;
                 response.summary.failed += completedBatch.batchFailed;
                 response.summary.skippedTotal += completedBatch.batchSkipped;
+                response.summary.userLookupWarnings += completedBatch.batchUserLookupWarnings;
                 response.summary.duplicatesInFile += completedBatch.batchResults.filter(
                     r => r.status === 'Skipped' && r.error === 'Duplicate Dealer Code in file'
                 ).length;
@@ -792,7 +823,8 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
                         created: completedBatch.batchCreated,
                         updated: completedBatch.batchUpdated,
                         failed: completedBatch.batchFailed,
-                        skipped: completedBatch.batchSkipped
+                        skipped: completedBatch.batchSkipped,
+                        userLookupWarnings: completedBatch.batchUserLookupWarnings
                     },
                     batchProgress: response.batchProgress,
                     latestRecords: completedBatch.batchResults.slice(-3)
@@ -814,6 +846,7 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
             response.summary.updated += completedBatch.batchUpdated;
             response.summary.failed += completedBatch.batchFailed;
             response.summary.skippedTotal += completedBatch.batchSkipped;
+            response.summary.userLookupWarnings += completedBatch.batchUserLookupWarnings;
             response.summary.duplicatesInFile += completedBatch.batchResults.filter(
                 r => r.status === 'Skipped' && r.error === 'Duplicate Dealer Code in file'
             ).length;
@@ -829,7 +862,8 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
                     created: completedBatch.batchCreated,
                     updated: completedBatch.batchUpdated,
                     failed: completedBatch.batchFailed,
-                    skipped: completedBatch.batchSkipped
+                    skipped: completedBatch.batchSkipped,
+                    userLookupWarnings: completedBatch.batchUserLookupWarnings
                 },
                 batchProgress: response.batchProgress,
                 latestRecords: completedBatch.batchResults.slice(-3)
@@ -849,7 +883,8 @@ router.post('/dealer-bulk-upload', upload.single('file'), async (req, res) => {
             `Existing Records: ${response.summary.existingRecords}, ` +
             `No Changes Skipped: ${response.summary.noChangesSkipped}, ` +
             `Total Skipped: ${response.summary.skippedTotal}, ` +
-            `Status Updates: ${response.summary.statusUpdates.total}`;
+            `Status Updates: ${response.summary.statusUpdates.total}, ` +
+            `User Lookup Warnings: ${response.summary.userLookupWarnings}`;
 
         res.write(JSON.stringify(response) + '\n');
         res.end();
