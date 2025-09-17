@@ -37,7 +37,7 @@ const upload = multer({
     limits: { fileSize: 50 * 1024 * 1024 }
 });
 
-// Optimized: Predefined field mappings for faster access - UPDATED with status
+// Optimized: Predefined field mappings for faster access
 const FIELD_MAPPINGS = {
     'customercodeid': new Set(['customercodeid', 'customercode', 'customer_code', 'customer_id', 'custcode', 'cust_code', 'code', 'customer']),
     'customername': new Set(['customername', 'customer_name', 'name1', 'name', 'customername1', 'customer_name1', 'name 1']),
@@ -50,8 +50,8 @@ const FIELD_MAPPINGS = {
     'region': new Set(['region', 'regionname', 'region_name', 'zone', 'rg']),
     'country': new Set(['country', 'countryname', 'country_name', 'nation', 'cty']),
     'telephone': new Set(['telephone', 'phone', 'phonenumber', 'phone_number', 'mobile', 'contact', 'contactno', 'contact_no', 'telephone 1']),
-    'taxnumber1': new Set(['taxnumber1', 'tax_number1', 'taxno1', 'tax_no1', 'gst', 'gstin', 'tax1', 'tax number 2']),
-    'taxnumber2': new Set(['taxnumber2', 'tax_number2', 'taxno2', 'tax_no2', 'pan', 'tax2', 'tax number 3']),
+    'taxnumber1': new Set(['taxnumber1', 'tax_number1', 'taxno1', 'tax_no1', 'gst', 'gstin', 'tax1', 'tax number 1']),
+    'taxnumber2': new Set(['taxnumber2', 'tax_number2', 'taxno2', 'tax_no2', 'pan', 'tax2', 'tax number 2']),
     'email': new Set(['email', 'emailaddress', 'email_address', 'emailid', 'email_id', 'e-mail address']),
     'customertype': new Set(['customertype', 'customer_type', 'type', 'custtype', 'cust_type', 'customer type']),
     'status': new Set(['status', 'customer_status', 'record_status', 'current_status', 'active_status', 'account_status'])
@@ -96,7 +96,7 @@ function mapHeaders(headers) {
     return mappedHeaders;
 }
 
-// Optimized: Inline simple functions - UPDATED with status handling
+// Enhanced change detection with better tracking
 function checkForChanges(existingRecord, newRecord, providedFields) {
     let hasAnyChange = false;
     const changeDetails = [];
@@ -149,11 +149,12 @@ function parseCSVFile(buffer) {
     });
 }
 
-// Optimized record validation with early exits - UPDATED with status handling
+// Enhanced record validation with comprehensive error checking
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
     const providedFields = [];
     const errors = [];
+    const warnings = [];
 
     // Map headers to schema fields
     for (const [originalHeader, schemaField] of Object.entries(headerMapping)) {
@@ -166,30 +167,52 @@ function validateRecord(record, headerMapping) {
         providedFields.push(schemaField);
     }
 
-    // Required field validation - status is NOT required
+    // Required field validation
     if (!cleanedRecord.customercodeid) {
         errors.push('Customer Code is required');
     }
     if (!cleanedRecord.customername) {
         errors.push('Customer Name is required');
     }
+   
+    if (!cleanedRecord.city) {
+        errors.push('City is required');
+    }
+    if (!cleanedRecord.postalcode) {
+        errors.push('Postal Code is required');
+    }
+    if (!cleanedRecord.region) {
+        errors.push('Region is required');
+    }
+    if (!cleanedRecord.country) {
+        errors.push('Country is required');
+    }
+    if (!cleanedRecord.telephone) {
+        errors.push('Telephone is required');
+    }
+    if (!cleanedRecord.email) {
+        errors.push('Email is required');
+    }
 
     // Early exit if required fields are missing
     if (errors.length > 0) {
-        return { cleanedRecord, errors, providedFields };
+        return { cleanedRecord, errors, warnings, providedFields };
     }
 
     // Length validation
     if (cleanedRecord.customercodeid.length > 50) {
         errors.push('Customer Code too long (max 50 characters)');
     }
+    if (cleanedRecord.customername && cleanedRecord.customername.length > 100) {
+        warnings.push('Customer Name is quite long');
+    }
 
-    // Email validation - only if provided
+    // Email validation
     if (cleanedRecord.email && !EMAIL_REGEX.test(cleanedRecord.email)) {
         errors.push('Invalid email format');
     }
 
-    // Phone validation - only if provided
+    // Phone validation
     if (cleanedRecord.telephone && !PHONE_REGEX.test(cleanedRecord.telephone)) {
         errors.push('Invalid telephone format');
     }
@@ -197,23 +220,87 @@ function validateRecord(record, headerMapping) {
     // Set default status only if not provided
     if (!cleanedRecord.status || cleanedRecord.status.trim() === '') {
         cleanedRecord.status = 'Active';
+        warnings.push('Status not provided, defaulted to Active');
     }
 
-    return { cleanedRecord, errors, providedFields };
+    return { cleanedRecord, errors, warnings, providedFields };
+}
+
+// Helper function to create latest records update for frontend
+function createLatestRecordsUpdate(validRecords, batchResults, existingRecordsMap) {
+    const latestRecords = [];
+    let recordIndex = 0;
+
+    // Add sample of created records
+    for (let i = 0; i < Math.min(3, batchResults.batchCreated); i++) {
+        if (recordIndex < validRecords.length) {
+            const record = validRecords[recordIndex];
+            const existing = existingRecordsMap.get(record.cleanedRecord.customercodeid);
+            
+            if (!existing) {
+                latestRecords.push({
+                    row: record.recordResult.row,
+                    customercodeid: record.cleanedRecord.customercodeid,
+                    customername: record.cleanedRecord.customername,
+                    hospitalname: record.cleanedRecord.hospitalname,
+                    status: "Created",
+                    action: "Created new customer record",
+                    error: null,
+                    warnings: record.recordResult.warnings || [],
+                    assignedStatus: record.cleanedRecord.status,
+                    statusChanged: false,
+                    changeDetails: [],
+                    changesText: "New customer record created"
+                });
+                recordIndex++;
+            }
+        }
+    }
+
+    // Add sample of updated records
+    for (let i = 0; i < Math.min(3, batchResults.batchUpdated); i++) {
+        if (recordIndex < validRecords.length) {
+            const record = validRecords[recordIndex];
+            const existing = existingRecordsMap.get(record.cleanedRecord.customercodeid);
+            
+            if (existing) {
+                latestRecords.push({
+                    row: record.recordResult.row,
+                    customercodeid: record.cleanedRecord.customercodeid,
+                    customername: record.cleanedRecord.customername,
+                    hospitalname: record.cleanedRecord.hospitalname,
+                    status: "Updated",
+                    action: "Updated existing customer record",
+                    error: null,
+                    warnings: record.recordResult.warnings || [],
+                    assignedStatus: record.cleanedRecord.status,
+                    statusChanged: record.recordResult.statusChanged || false,
+                    changeDetails: record.recordResult.changeDetails || [],
+                    changesText: record.recordResult.changeDetails && record.recordResult.changeDetails.length > 0 
+                        ? `Updated: ${record.recordResult.changeDetails.map(c => c.field).join(', ')}`
+                        : "Customer record updated"
+                });
+                recordIndex++;
+            }
+        }
+    }
+
+    return latestRecords;
 }
 
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
-    const BATCH_SIZE = 2000;
-    const PARALLEL_BATCHES = 3;
+    const BATCH_SIZE = 1000; // Reduced for better performance
+    const PARALLEL_BATCHES = 2; // Reduced for stability
 
-    // UPDATED response structure with status tracking
+    // Enhanced response structure
     const response = {
         status: 'processing',
         startTime: new Date(),
         totalRecords: 0,
         processedRecords: 0,
+        successfulRecords: 0,
         failedRecords: 0,
-        results: [], // sirf failed records yahan push honge
+        results: [], // Only failed records
         summary: {
             created: 0,
             updated: 0,
@@ -282,6 +369,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         const headerMapping = mapHeaders(headers);
         response.headerMapping = headerMapping;
 
+        // Check for required fields
         const hasCustomerCodeField = Object.values(headerMapping).some(f => f === 'customercodeid');
         if (!hasCustomerCodeField) {
             response.status = 'failed';
@@ -301,31 +389,35 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             const batchFailedRecords = [];
             const validRecords = [];
             let batchFailed = 0;
-            let batchSkipped = 0;
             let batchCreated = 0;
             let batchUpdated = 0;
             let batchNoChangesSkipped = 0;
             let batchStatusUpdates = 0;
 
+            // Process and validate each record
             for (const record of batch) {
                 currentRow++;
                 const recordResult = {
                     row: currentRow,
                     customercodeid: '',
                     customername: '',
+                    hospitalname: '',
                     status: 'Processing',
                     action: '',
                     error: null,
                     warnings: [],
-                    assignedStatus: null, // Track assigned status
-                    statusChanged: false // Track if status was changed
+                    assignedStatus: null,
+                    statusChanged: false,
+                    changeDetails: []
                 };
 
                 try {
-                    const { cleanedRecord, errors, providedFields } = validateRecord(record, headerMapping);
+                    const { cleanedRecord, errors, warnings, providedFields } = validateRecord(record, headerMapping);
                     recordResult.customercodeid = cleanedRecord.customercodeid || 'Unknown';
                     recordResult.customername = cleanedRecord.customername || 'N/A';
+                    recordResult.hospitalname = cleanedRecord.hospitalname || 'N/A';
                     recordResult.assignedStatus = cleanedRecord.status;
+                    recordResult.warnings = warnings;
 
                     if (errors.length > 0) {
                         recordResult.status = 'Failed';
@@ -336,6 +428,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         continue;
                     }
 
+                    // Check for duplicates in file
                     if (processedCustomerCodes.has(cleanedRecord.customercodeid)) {
                         recordResult.status = 'Failed';
                         recordResult.error = 'Duplicate Customer Code in file';
@@ -358,6 +451,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 }
             }
 
+            // Database operations for valid records
             if (validRecords.length > 0) {
                 const customerCodes = validRecords.map(r => r.cleanedRecord.customercodeid);
                 const existingRecords = await Customer.find({
@@ -378,10 +472,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     if (existingRecord) {
                         response.summary.existingRecords++;
 
-                        // Handle status for existing records
+                        // Handle status updates
                         const statusFromFile = providedFields.includes('status');
                         if (!statusFromFile) {
-                            // Keep existing status if not provided in file
                             cleanedRecord.status = existingRecord.status;
                             recordResult.assignedStatus = existingRecord.status;
                         } else if (cleanedRecord.status !== existingRecord.status) {
@@ -390,6 +483,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         }
 
                         const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields);
+                        recordResult.changeDetails = comparisonResult.changeDetails;
 
                         if (comparisonResult.hasChanges) {
                             const updateData = { modifiedAt: now };
@@ -397,7 +491,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                                 updateData[field] = cleanedRecord[field];
                             });
 
-                            // Update status if provided in file but not in providedFields check
                             if (statusFromFile || cleanedRecord.status !== existingRecord.status) {
                                 updateData.status = cleanedRecord.status;
                             }
@@ -411,10 +504,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
 
                             batchUpdated++;
                         } else {
-                            // No changes detected => count skip, but no detail in failed list
                             batchNoChangesSkipped++;
                         }
                     } else {
+                        // Create new record
                         bulkOps.push({
                             insertOne: {
                                 document: {
@@ -429,65 +522,68 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     }
                 }
 
-                // Update summary counts
-                response.summary.created += batchCreated;
-                response.summary.updated += batchUpdated;
-                response.summary.noChangesSkipped += batchNoChangesSkipped;
-                response.summary.skippedTotal += batchNoChangesSkipped;
-                response.summary.statusUpdates.total += batchStatusUpdates;
-
-                // Track status updates by status value
-                validRecords.forEach(({ recordResult }) => {
-                    if (recordResult.statusChanged) {
-                        const status = recordResult.assignedStatus;
-                        if (!response.summary.statusUpdates.byStatus[status]) {
-                            response.summary.statusUpdates.byStatus[status] = 0;
-                        }
-                        response.summary.statusUpdates.byStatus[status]++;
-                    }
-                });
-
+                // Execute bulk operations
                 if (bulkOps.length > 0) {
                     try {
                         await Customer.bulkWrite(bulkOps, { ordered: false });
                     } catch (bulkError) {
                         if (bulkError.writeErrors) {
                             bulkError.writeErrors.forEach(error => {
-                                const failedRecordExists = batchFailedRecords.find(r =>
-                                    r.customercodeid === error.op?.customercodeid ||
-                                    r.customercodeid === error.op?.updateOne?.filter?.customercodeid
-                                );
-                                if (failedRecordExists) return;
+                                const failedOp = error.op;
+                                const customerCode = failedOp?.customercodeid || 
+                                                   failedOp?.insertOne?.document?.customercodeid ||
+                                                   failedOp?.updateOne?.filter?.customercodeid || 'Unknown';
 
                                 batchFailedRecords.push({
-                                    row: 'N/A',
-                                    customercodeid: error.op?.customercodeid || 'Unknown',
-                                    customername: '',
+                                    row: 'DB Error',
+                                    customercodeid: customerCode,
+                                    customername: failedOp?.customername || 'N/A',
+                                    hospitalname: failedOp?.hospitalname || 'N/A',
                                     status: 'Failed',
-                                    action: 'Bulk operation failed',
-                                    error: error.errmsg,
+                                    action: 'Database operation failed',
+                                    error: error.errmsg || 'Unknown database error',
                                     warnings: [],
                                     assignedStatus: null,
-                                    statusChanged: false
+                                    statusChanged: false,
+                                    changeDetails: []
                                 });
                                 batchFailed++;
                             });
                         }
                     }
                 }
+
+                // Create latest records for frontend
+                const latestRecords = createLatestRecordsUpdate(validRecords, {
+                    batchCreated,
+                    batchUpdated,
+                    batchFailed,
+                    batchNoChangesSkipped
+                }, existingRecordsMap);
+
+                return {
+                    batchFailedRecords,
+                    batchFailed,
+                    batchCreated,
+                    batchUpdated,
+                    batchNoChangesSkipped,
+                    batchStatusUpdates,
+                    latestRecords
+                };
             }
 
             return {
                 batchFailedRecords,
                 batchFailed,
-                batchSkipped,
-                batchCreated,
-                batchUpdated,
-                batchNoChangesSkipped,
-                batchStatusUpdates
+                batchCreated: 0,
+                batchUpdated: 0,
+                batchNoChangesSkipped: 0,
+                batchStatusUpdates: 0,
+                latestRecords: []
             };
         };
 
+        // Process batches
         const batchPromises = [];
         for (let batchIndex = 0; batchIndex < response.batchProgress.totalBatches; batchIndex++) {
             const startIdx = batchIndex * BATCH_SIZE;
@@ -497,40 +593,52 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             response.batchProgress.currentBatch = batchIndex + 1;
             response.batchProgress.currentBatchRecords = batch.length;
 
+            // Send batch progress update
             res.write(JSON.stringify({
-                status: response.status,
-                processedRecords: response.processedRecords,
-                failedRecords: response.failedRecords,
-                summary: response.summary,
+                type: 'progress',
                 batchProgress: response.batchProgress
             }) + '\n');
 
+            // Control parallel batch processing
             if (batchPromises.length >= PARALLEL_BATCHES) {
                 const completedBatch = await Promise.race(batchPromises);
-                batchPromises.splice(batchPromises.indexOf(completedBatch), 1);
+                const promiseIndex = batchPromises.indexOf(completedBatch);
+                batchPromises.splice(promiseIndex, 1);
 
-                response.processedRecords += completedBatch.batchFailedRecords.length + (batch.length - completedBatch.batchFailedRecords.length);
-                response.failedRecords += completedBatch.batchFailed;
-                response.summary.failed += completedBatch.batchFailed;
-                response.summary.skippedTotal += completedBatch.batchSkipped;
-                response.summary.duplicatesInFile += completedBatch.batchFailedRecords.filter(
-                    r => r.status === 'Failed' && r.error === 'Duplicate Customer Code in file'
+                // Update response with completed batch results
+                const batchResult = await completedBatch;
+                
+                response.processedRecords += batch.length;
+                response.failedRecords += batchResult.batchFailed;
+                response.summary.created += batchResult.batchCreated;
+                response.summary.updated += batchResult.batchUpdated;
+                response.summary.failed += batchResult.batchFailed;
+                response.summary.noChangesSkipped += batchResult.batchNoChangesSkipped;
+                response.summary.skippedTotal += batchResult.batchNoChangesSkipped;
+                response.summary.statusUpdates.total += batchResult.batchStatusUpdates;
+                
+                // Add failed records to results
+                response.results.push(...batchResult.batchFailedRecords);
+
+                // Count file duplicates
+                response.summary.duplicatesInFile += batchResult.batchFailedRecords.filter(
+                    r => r.error && r.error.includes('Duplicate Customer Code in file')
                 ).length;
-                response.results.push(...completedBatch.batchFailedRecords);
 
+                // Send batch completion update
                 res.write(JSON.stringify({
-                    status: response.status,
+                    type: 'batch_completed',
                     batchCompleted: true,
-                    failedRecords: response.failedRecords,
-                    failedDetails: completedBatch.batchFailedRecords,
                     batchSummary: {
-                        failed: completedBatch.batchFailed,
-                        skipped: completedBatch.batchSkipped,
-                        created: completedBatch.batchCreated,
-                        updated: completedBatch.batchUpdated,
-                        noChangesSkipped: completedBatch.batchNoChangesSkipped,
-                        statusUpdates: completedBatch.batchStatusUpdates
+                        created: batchResult.batchCreated,
+                        updated: batchResult.batchUpdated,
+                        failed: batchResult.batchFailed,
+                        skipped: batchResult.batchNoChangesSkipped
                     },
+                    summary: response.summary,
+                    latestRecords: batchResult.latestRecords,
+                    processedRecords: response.processedRecords,
+                    failedRecords: response.failedRecords,
                     batchProgress: response.batchProgress
                 }) + '\n');
             }
@@ -538,47 +646,66 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             batchPromises.push(processBatch(batch, batchIndex));
         }
 
+        // Process remaining batches
         while (batchPromises.length > 0) {
             const completedBatch = await batchPromises.shift();
+            const batchResult = await completedBatch;
+            
+            response.processedRecords += BATCH_SIZE;
+            response.failedRecords += batchResult.batchFailed;
+            response.summary.created += batchResult.batchCreated;
+            response.summary.updated += batchResult.batchUpdated;
+            response.summary.failed += batchResult.batchFailed;
+            response.summary.noChangesSkipped += batchResult.batchNoChangesSkipped;
+            response.summary.skippedTotal += batchResult.batchNoChangesSkipped;
+            response.summary.statusUpdates.total += batchResult.batchStatusUpdates;
+            
+            response.results.push(...batchResult.batchFailedRecords);
 
-            response.processedRecords += completedBatch.batchFailedRecords.length + (completedBatch.batchSkipped || 0);
-            response.failedRecords += completedBatch.batchFailed;
-            response.summary.failed += completedBatch.batchFailed;
-            response.summary.skippedTotal += completedBatch.batchSkipped;
-            response.summary.duplicatesInFile += completedBatch.batchFailedRecords.filter(
-                r => r.status === 'Failed' && r.error === 'Duplicate Customer Code in file'
+            response.summary.duplicatesInFile += batchResult.batchFailedRecords.filter(
+                r => r.error && r.error.includes('Duplicate Customer Code in file')
             ).length;
-            response.results.push(...completedBatch.batchFailedRecords);
 
             res.write(JSON.stringify({
-                status: response.status,
+                type: 'batch_completed',
                 batchCompleted: true,
-                failedRecords: response.failedRecords,
-                failedDetails: completedBatch.batchFailedRecords,
                 batchSummary: {
-                    failed: completedBatch.batchFailed,
-                    skipped: completedBatch.batchSkipped,
-                    created: completedBatch.batchCreated,
-                    updated: completedBatch.batchUpdated,
-                    noChangesSkipped: completedBatch.batchNoChangesSkipped,
-                    statusUpdates: completedBatch.batchStatusUpdates
+                    created: batchResult.batchCreated,
+                    updated: batchResult.batchUpdated,
+                    failed: batchResult.batchFailed,
+                    skipped: batchResult.batchNoChangesSkipped
                 },
+                summary: response.summary,
+                latestRecords: batchResult.latestRecords,
+                processedRecords: response.processedRecords,
+                failedRecords: response.failedRecords,
                 batchProgress: response.batchProgress
             }) + '\n');
         }
 
+        // Final completion
         response.status = 'completed';
         response.endTime = new Date();
         response.duration = `${((response.endTime - response.startTime) / 1000).toFixed(2)}s`;
+        response.successfulRecords = response.summary.created + response.summary.updated;
 
-        response.message = `Processing completed. Total: ${response.totalRecords}, Created: ${response.summary.created}, Updated: ${response.summary.updated}, Skipped: ${response.summary.skippedTotal}, Failed: ${response.summary.failed}, Duplicates: ${response.summary.duplicatesInFile}, Status Updates: ${response.summary.statusUpdates.total}`;
+        response.message = `Processing completed successfully. Created: ${response.summary.created}, Updated: ${response.summary.updated}, Failed: ${response.summary.failed}, File Duplicates: ${response.summary.duplicatesInFile}, Existing Records: ${response.summary.existingRecords}, No Changes Skipped: ${response.summary.noChangesSkipped}, Total Skipped: ${response.summary.skippedTotal}, Status Updates: ${response.summary.statusUpdates.total}`;
 
+        // Send final response
         res.write(JSON.stringify({
             status: response.status,
+            startTime: response.startTime,
             totalRecords: response.totalRecords,
+            processedRecords: response.totalRecords, // Set to total since all are processed
+            successfulRecords: response.successfulRecords,
             failedRecords: response.failedRecords,
-            failedDetails: response.results,
+            results: response.results,
             summary: response.summary,
+            headerMapping: response.headerMapping,
+            errors: response.errors,
+            warnings: response.warnings,
+            batchProgress: response.batchProgress,
+            endTime: response.endTime,
             duration: response.duration,
             message: response.message
         }) + '\n');
