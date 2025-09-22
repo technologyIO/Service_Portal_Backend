@@ -15,13 +15,13 @@ router.get("/api/region", async (req, res) => {
         (state) => state.region && state.region === region.regionName
       );
 
-      console.log(`Looking for regionName: "${region.regionName}"`);
-      console.log(
-        `Match found:`,
-        matchingState
-          ? { stateId: matchingState.stateId, region: matchingState.region }
-          : "No match"
-      );
+      // console.log(`Looking for regionName: "${region.regionName}"`);
+      // console.log(
+      //   `Match found:`,
+      //   matchingState
+      //     ? { stateId: matchingState.stateId, region: matchingState.region }
+      //     : "No match"
+      // );
 
       return {
         ...region,

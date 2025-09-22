@@ -19,7 +19,6 @@ const storage = multer.diskStorage({
         // Use absolute path from project root
         const uploadDir = path.join(__dirname, '../../uploads');
 
-        console.log(`Upload directory: ${uploadDir}`); // Debugging
 
         // Ensure directory exists
         if (!fs.existsSync(uploadDir)) {
@@ -31,7 +30,6 @@ const storage = multer.diskStorage({
     filename: (req, file, cb) => {
         const ext = path.extname(file.originalname);
         const uniqueName = `${uuidv4()}${ext}`;
-        console.log(`Generated filename: ${uniqueName}`); // Debugging
         cb(null, uniqueName);
     }
 });
@@ -611,7 +609,6 @@ router.get('/user/:id', getUserById, (req, res) => {
 router.get('/alluser', async (req, res) => {
     try {
         const user = await User.find();
-        console.log("Fetched user:", user);
         res.json(user);
     } catch (error) {
         console.error("Error fetching user:", error);
@@ -698,7 +695,6 @@ router.post('/user', upload.single('profileimage'), async (req, res) => {
             const salt = await bcrypt.genSalt(10);
             hashedPassword = await bcrypt.hash(defaultPassword, salt);
         } catch (hashError) {
-            console.error('Password hashing failed:', hashError);
             if (req.file) fs.unlinkSync(req.file.path);
             return res.status(500).json({
                 message: 'Password processing failed',
