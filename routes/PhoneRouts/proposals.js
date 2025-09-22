@@ -126,12 +126,73 @@ router.get("/paginated", async (req, res) => {
       query.status = req.query.status;
     }
 
-    const proposals = await Proposal.find(query)
-      .populate("customer", "customername")
-      .populate("items")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    // const proposals = await Proposal.find(query)
+    //   .populate("customer", "customername")
+    //   .populate("items")
+    //   .sort({ createdAt: -1 })
+    //   .skip(skip)
+    //   .limit(limit);
+
+    const proposals = await Proposal.aggregate([
+      { $match: query },
+
+      // Lookup for createdBy user details
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "employeeid",
+          as: "createdByUser",
+        },
+      },
+      {
+        $addFields: {
+          createdByUser: { $arrayElemAt: ["$createdByUser", 0] },
+        },
+      },
+
+      // Lookup for customer (preserving existing populate)
+    //   {
+    //     $lookup: {
+    //       from: "customers",
+    //       localField: "customer",
+    //       foreignField: "_id",
+    //       as: "customer",
+    //       pipeline: [{ $project: { customername: 1 } }],
+    //     },
+    //   },
+    //   {
+    //     $unwind: {
+    //       path: "$customer",
+    //       preserveNullAndEmptyArrays: true, // Important: keeps records even if no user found
+    //     },
+    //   },
+    //   {
+    //     $addFields: {
+    //       customer: { $arrayElemAt: ["$customer", 0] },
+    //     },
+    //   },
+
+      // Lookup for items (preserving existing populate)
+    //   {
+    //     $lookup: {
+    //       from: "items", // or whatever your items collection name is
+    //       localField: "items",
+    //       foreignField: "_id",
+    //       as: "items",
+    //     },
+    //   },
+    //   {
+    //     $unwind: {
+    //       path: "$items",
+    //       preserveNullAndEmptyArrays: true, // Important: keeps records even if no user found
+    //     },
+    //   },
+
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ]);
 
     const total = await Proposal.countDocuments(query);
     const totalPages = Math.ceil(total / limit);
@@ -173,6 +234,7 @@ router.get("/search", async (req, res) => {
           { "items.equipment.equipmentname": searchRegex },
           { "items.equipment.model": searchRegex },
           { "items.equipment.brand": searchRegex },
+          { createdBy: searchRegex },
         ],
       };
     }
@@ -208,13 +270,79 @@ router.get("/search", async (req, res) => {
     }
 
     // Execute search with pagination
-    const proposals = await Proposal.find(baseQuery)
-      .populate("customer", "customername customercode")
-      .populate("items.equipment", "equipmentname model brand")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean(); // Use lean() for better performance
+    // const proposals = await Proposal.find(baseQuery)
+    //   .populate("customer", "customername customercode")
+    //   .populate("items.equipment", "equipmentname model brand")
+    //   .sort({ createdAt: -1 })
+    //   .skip(skip)
+    //   .limit(limit)
+    //   .lean(); // Use lean() for better performance
+    const proposals = await Proposal.aggregate([
+      { $match: baseQuery },
+
+      // Lookup for createdBy user details
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "employeeid",
+          as: "createdByUser",
+        },
+      },
+      {
+        $addFields: {
+          createdByUser: { $arrayElemAt: ["$createdByUser", 0] },
+        },
+      },
+
+      // Lookup for customer (preserving existing populate)
+    //   {
+    //     $lookup: {
+    //       from: "customers",
+    //       localField: "customer",
+    //       foreignField: "_id",
+    //       as: "customer",
+    //       pipeline: [{ $project: { customername: 1, customercode: 1 } }],
+    //     },
+    //   },
+    //   {
+    //     $addFields: {
+    //       customer: { $arrayElemAt: ["$customer", 0] },
+    //     },
+    //   },
+
+      // Lookup for items.equipment (preserving existing populate)
+    //   {
+    //     $lookup: {
+    //       from: "items",
+    //       localField: "items",
+    //       foreignField: "_id",
+    //       as: "items",
+    //       pipeline: [
+    //         {
+    //           $lookup: {
+    //             from: "equipments", // or whatever your equipment collection name is
+    //             localField: "equipment",
+    //             foreignField: "_id",
+    //             as: "equipment",
+    //             pipeline: [
+    //               { $project: { equipmentname: 1, model: 1, brand: 1 } },
+    //             ],
+    //           },
+    //         },
+    //         {
+    //           $addFields: {
+    //             equipment: { $arrayElemAt: ["$equipment", 0] },
+    //           },
+    //         },
+    //       ],
+    //     },
+    //   },
+
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ]);
 
     // Get total count for pagination
     const total = await Proposal.countDocuments(baseQuery);
@@ -493,156 +621,157 @@ router.get("/assign-list", async (req, res) => {
 });
 
 // Individual Proposal Assignment API
-router.post('/:proposalId/assign', async (req, res) => {
-    try {
-        const { assignedTo, notes = '' } = req.body;
-        const { proposalId } = req.params;
+router.post("/:proposalId/assign", async (req, res) => {
+  try {
+    const { assignedTo, notes = "" } = req.body;
+    const { proposalId } = req.params;
 
-
-        // Verify the Proposal exists
-        const proposalExists = await Proposal.findById(proposalId);
-        if (!proposalExists) {
-            return res.status(404).json({
-                success: false,
-                message: 'Proposal not found',
-                errorCode: 'PROPOSAL_NOT_FOUND'
-            });
-        }
-
-        // Verify the assigned user exists and is active
-        const assignedToUser = await User.findOne({ 
-            employeeid: assignedTo,
-            status: 'Active'
-        });
-        if (!assignedToUser) {
-            return res.status(404).json({
-                success: false,
-                message: 'Assigned user not found or inactive',
-                errorCode: 'ASSIGNED_USER_NOT_FOUND'
-            });
-        }
-
-        // Update the Proposal document - Override createdBy with assigning user's employeeId
-        const updatedProposal = await Proposal.findByIdAndUpdate(
-            proposalId,
-            {
-                $set: {
-                    createdBy: assignedTo,  // Override createdBy field
-                }
-            },
-            { 
-                new: true,
-                runValidators: true
-            }
-        );
-
-        if (!updatedProposal) {
-            return res.status(404).json({
-                success: false,
-                message: 'Failed to update proposal',
-                errorCode: 'UPDATE_FAILED'
-            });
-        }
-
-        res.json({
-            success: true,
-            message: 'Proposal assigned successfully',
-            data: {
-                _id: updatedProposal._id,
-                proposalNumber: updatedProposal.proposalNumber,
-                createdBy: updatedProposal.createdBy, // Now contains assigning user's employeeId
-            }
-        });
-
-    } catch (error) {
-        console.error('Proposal assignment error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error assigning proposal',
-            errorCode: 'SERVER_ERROR',
-            error: error.message
-        });
+    // Verify the Proposal exists
+    const proposalExists = await Proposal.findById(proposalId);
+    if (!proposalExists) {
+      return res.status(404).json({
+        success: false,
+        message: "Proposal not found",
+        errorCode: "PROPOSAL_NOT_FOUND",
+      });
     }
+
+    // Verify the assigned user exists and is active
+    const assignedToUser = await User.findOne({
+      employeeid: assignedTo,
+      status: "Active",
+    });
+    if (!assignedToUser) {
+      return res.status(404).json({
+        success: false,
+        message: "Assigned user not found or inactive",
+        errorCode: "ASSIGNED_USER_NOT_FOUND",
+      });
+    }
+
+    // Update the Proposal document - Override createdBy with assigning user's employeeId
+    const updatedProposal = await Proposal.findByIdAndUpdate(
+      proposalId,
+      {
+        $set: {
+          createdBy: assignedTo, // Override createdBy field
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!updatedProposal) {
+      return res.status(404).json({
+        success: false,
+        message: "Failed to update proposal",
+        errorCode: "UPDATE_FAILED",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Proposal assigned successfully",
+      data: {
+        _id: updatedProposal._id,
+        proposalNumber: updatedProposal.proposalNumber,
+        createdBy: updatedProposal.createdBy, // Now contains assigning user's employeeId
+      },
+    });
+  } catch (error) {
+    console.error("Proposal assignment error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error assigning proposal",
+      errorCode: "SERVER_ERROR",
+      error: error.message,
+    });
+  }
 });
 
-router.post('/bulk-assign', async (req, res) => {
-    try {
-        const { proposalIds, assignedTo } = req.body;
+router.post("/bulk-assign", async (req, res) => {
+  try {
+    const { proposalIds, assignedTo } = req.body;
 
-        // Validate required fields
-        if (!proposalIds || !Array.isArray(proposalIds) || proposalIds.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'proposalIds array is required and must not be empty',
-                errorCode: 'INVALID_PROPOSAL_IDS'
-            });
-        }
-
-        // Verify the assigned user exists and is active
-        const assignedToUser = await User.findOne({ 
-            employeeid: assignedTo,
-            status: 'Active'
-        });
-        if (!assignedToUser) {
-            return res.status(404).json({
-                success: false,
-                message: 'Assigned user not found or inactive',
-                errorCode: 'ASSIGNED_USER_NOT_FOUND'
-            });
-        }
-
-        // Verify all Proposals exist
-        const existingProposals = await Proposal.find({ 
-            _id: { $in: proposalIds } 
-        }).select('_id proposalNumber');
-
-        if (existingProposals.length !== proposalIds.length) {
-            const foundIds = existingProposals.map(p => p._id.toString());
-            const notFoundIds = proposalIds.filter(id => !foundIds.includes(id));
-            
-            return res.status(400).json({
-                success: false,
-                message: `Some proposals not found: ${notFoundIds.join(', ')}`,
-                errorCode: 'PROPOSALS_NOT_FOUND',
-                notFoundIds
-            });
-        }
-
-        // Perform bulk update - Override createdBy for all Proposals
-        const updateResult = await Proposal.updateMany(
-            { _id: { $in: proposalIds } },
-            {
-                $set: {
-                    createdBy: assignedTo,  // Override createdBy field
-                }
-            }
-        );
-
-        // Get updated Proposal numbers for response
-        const updatedProposals = await Proposal.find({ 
-            _id: { $in: proposalIds } 
-        }).select('_id proposalNumber createdBy');
-
-        res.json({
-            success: true,
-            message: `Successfully assigned ${updateResult.modifiedCount} proposals to ${assignedToUser.firstname} ${assignedToUser.lastname}`,
-            data: {
-                assignedCount: updateResult.modifiedCount,
-                failedCount: proposalIds.length - updateResult.modifiedCount,
-                totalRequested: proposalIds.length,
-                updatedProposals: updatedProposals
-            }
-        });
-
-    } catch (error) {
-        console.error('Bulk Proposal assignment error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error in bulk proposal assignment',
-            errorCode: 'SERVER_ERROR',
-            error: error.message
-        });
+    // Validate required fields
+    if (
+      !proposalIds ||
+      !Array.isArray(proposalIds) ||
+      proposalIds.length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "proposalIds array is required and must not be empty",
+        errorCode: "INVALID_PROPOSAL_IDS",
+      });
     }
+
+    // Verify the assigned user exists and is active
+    const assignedToUser = await User.findOne({
+      employeeid: assignedTo,
+      status: "Active",
+    });
+    if (!assignedToUser) {
+      return res.status(404).json({
+        success: false,
+        message: "Assigned user not found or inactive",
+        errorCode: "ASSIGNED_USER_NOT_FOUND",
+      });
+    }
+
+    // Verify all Proposals exist
+    const existingProposals = await Proposal.find({
+      _id: { $in: proposalIds },
+    }).select("_id proposalNumber");
+
+    if (existingProposals.length !== proposalIds.length) {
+      const foundIds = existingProposals.map((p) => p._id.toString());
+      const notFoundIds = proposalIds.filter((id) => !foundIds.includes(id));
+
+      return res.status(400).json({
+        success: false,
+        message: `Some proposals not found: ${notFoundIds.join(", ")}`,
+        errorCode: "PROPOSALS_NOT_FOUND",
+        notFoundIds,
+      });
+    }
+
+    // Perform bulk update - Override createdBy for all Proposals
+    const updateResult = await Proposal.updateMany(
+      { _id: { $in: proposalIds } },
+      {
+        $set: {
+          createdBy: assignedTo, // Override createdBy field
+        },
+      }
+    );
+
+    // Get updated Proposal numbers for response
+    const updatedProposals = await Proposal.find({
+      _id: { $in: proposalIds },
+    }).select("_id proposalNumber createdBy");
+
+    res.json({
+      success: true,
+      message: `Successfully assigned ${updateResult.modifiedCount} proposals to ${assignedToUser.firstname} ${assignedToUser.lastname}`,
+      data: {
+        assignedCount: updateResult.modifiedCount,
+        failedCount: proposalIds.length - updateResult.modifiedCount,
+        totalRequested: proposalIds.length,
+        updatedProposals: updatedProposals,
+      },
+    });
+  } catch (error) {
+    console.error("Bulk Proposal assignment error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error in bulk proposal assignment",
+      errorCode: "SERVER_ERROR",
+      error: error.message,
+    });
+  }
 });
 
 // Get all proposals

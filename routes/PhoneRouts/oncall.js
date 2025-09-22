@@ -50,10 +50,31 @@ router.get("/pagecall", async (req, res) => {
     }
 
     // Fetch data with pagination
-    const onCalls = await OnCall.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    // const onCalls = await OnCall.find(query)
+    //   .sort({ createdAt: -1 })
+    //   .skip(skip)
+    //   .limit(limit);
+
+    const onCalls = await OnCall.aggregate([
+      { $match: query },
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "employeeid",
+          as: "createdByUser",
+        },
+      },
+      {
+        $addFields: {
+          createdByUser: { $arrayElemAt: ["$createdByUser", 0] },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ]);
+
 
     const totalOnCalls = await OnCall.countDocuments(query);
     const totalPages = Math.ceil(totalOnCalls / limit);
@@ -104,6 +125,7 @@ router.get("/search", async (req, res) => {
           { "complaint.complaintDetails": searchRegex },
           { "complaint.priorityLevel": searchRegex },
           { CoNumber: searchRegex },
+          { createdBy: searchRegex },
         ],
       };
     }
@@ -148,12 +170,31 @@ router.get("/search", async (req, res) => {
     }
 
     // Execute search with pagination
-    const onCalls = await OnCall.find(baseQuery)
-      .populate("customer", "customername customercode")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    // const onCalls = await OnCall.find(baseQuery)
+    //   .populate("customer", "customername customercode")
+    //   .sort({ createdAt: -1 })
+    //   .skip(skip)
+    //   .limit(limit)
+    //   .lean();
+    const onCalls = await OnCall.aggregate([
+      { $match: baseQuery },
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "employeeid",
+          as: "createdByUser",
+        },
+      },
+      {
+        $addFields: {
+          createdByUser: { $arrayElemAt: ["$createdByUser", 0] },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ]);
 
     // Get total count for pagination
     const total = await OnCall.countDocuments(baseQuery);
@@ -402,78 +443,77 @@ router.get("/assign-list", async (req, res) => {
   }
 });
 
-router.post('/bulk-assign', async (req, res) => {
-    try {
-        const { onCallIds, assignedTo } = req.body;
+router.post("/bulk-assign", async (req, res) => {
+  try {
+    const { onCallIds, assignedTo } = req.body;
 
-        // Validate required fields
-        if (!onCallIds || !Array.isArray(onCallIds) || onCallIds.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'onCallIds array is required and must not be empty',
-                errorCode: 'INVALID_ONCALL_IDS'
-            });
-        }
-
-        if (!assignedTo) {
-            return res.status(404).json({
-                success: false,
-                message: 'Assigned user not found or inactive',
-                errorCode: 'ASSIGNED_USER_NOT_FOUND'
-            });
-        }
-
-        // Verify all OnCalls exist
-        const existingOnCalls = await OnCall.find({ 
-            _id: { $in: onCallIds } 
-        }).select('_id onCallNumber');
-
-        if (existingOnCalls.length !== onCallIds.length) {
-            const foundIds = existingOnCalls.map(oc => oc._id.toString());
-            const notFoundIds = onCallIds.filter(id => !foundIds.includes(id));
-            
-            return res.status(400).json({
-                success: false,
-                message: `Some OnCalls not found: ${notFoundIds.join(', ')}`,
-                errorCode: 'ONCALLS_NOT_FOUND',
-                notFoundIds
-            });
-        }
-
-        // Perform bulk update - Override createdBy for all OnCalls
-        const updateResult = await OnCall.updateMany(
-            { _id: { $in: onCallIds } },
-            {
-                $set: {
-                    createdBy: assignedTo,  // Override createdBy field
-                }
-            }
-        );
-
-        // Get updated OnCall numbers for response
-        const updatedOnCalls = await OnCall.find({ 
-            _id: { $in: onCallIds } 
-        }).select('_id onCallNumber createdBy assignedTo assignmentStatus');
-
-        res.json({
-            success: true,
-            message: `Successfully assigned ${updateResult.modifiedCount} OnCalls.`,
-            data: {
-                assignedCount: updateResult.modifiedCount,
-                failedCount: onCallIds.length - updateResult.modifiedCount,
-                totalRequested: onCallIds.length,
-            }
-        });
-
-    } catch (error) {
-        console.error('Bulk OnCall assignment error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error in bulk OnCall assignment',
-            errorCode: 'SERVER_ERROR',
-            error: error.message
-        });
+    // Validate required fields
+    if (!onCallIds || !Array.isArray(onCallIds) || onCallIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "onCallIds array is required and must not be empty",
+        errorCode: "INVALID_ONCALL_IDS",
+      });
     }
+
+    if (!assignedTo) {
+      return res.status(404).json({
+        success: false,
+        message: "Assigned user not found or inactive",
+        errorCode: "ASSIGNED_USER_NOT_FOUND",
+      });
+    }
+
+    // Verify all OnCalls exist
+    const existingOnCalls = await OnCall.find({
+      _id: { $in: onCallIds },
+    }).select("_id onCallNumber");
+
+    if (existingOnCalls.length !== onCallIds.length) {
+      const foundIds = existingOnCalls.map((oc) => oc._id.toString());
+      const notFoundIds = onCallIds.filter((id) => !foundIds.includes(id));
+
+      return res.status(400).json({
+        success: false,
+        message: `Some OnCalls not found: ${notFoundIds.join(", ")}`,
+        errorCode: "ONCALLS_NOT_FOUND",
+        notFoundIds,
+      });
+    }
+
+    // Perform bulk update - Override createdBy for all OnCalls
+    const updateResult = await OnCall.updateMany(
+      { _id: { $in: onCallIds } },
+      {
+        $set: {
+          createdBy: assignedTo, // Override createdBy field
+        },
+      }
+    );
+
+    // Get updated OnCall numbers for response
+    const updatedOnCalls = await OnCall.find({
+      _id: { $in: onCallIds },
+    }).select("_id onCallNumber createdBy assignedTo assignmentStatus");
+
+    res.json({
+      success: true,
+      message: `Successfully assigned ${updateResult.modifiedCount} OnCalls.`,
+      data: {
+        assignedCount: updateResult.modifiedCount,
+        failedCount: onCallIds.length - updateResult.modifiedCount,
+        totalRequested: onCallIds.length,
+      },
+    });
+  } catch (error) {
+    console.error("Bulk OnCall assignment error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error in bulk OnCall assignment",
+      errorCode: "SERVER_ERROR",
+      error: error.message,
+    });
+  }
 });
 
 router.post("/:onCallId/assign", async (req, res) => {
