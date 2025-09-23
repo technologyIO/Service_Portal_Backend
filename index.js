@@ -111,7 +111,7 @@ const serviceChargeExcelRoutes = require('./routes/Admin/ExcelDownload/ServiceCh
 const CmcNcmcPriceBulk = require('././BulkUpload/Admin/CmcNcmcPriceBulk');
 const DealerBulk = require('././BulkUpload/Master/DealerBulk');
 const BranchBulk = require('././BulkUpload/Master/BranchBulk');
-
+const activityLogsRouter = require('./routes/activityLogger/activityLogs');
 const path = require('path');
 const fs = require('fs');
 
@@ -239,7 +239,7 @@ app.use('/phone/oncall-cnote', onCallCNoteRouts);
 app.use('/phone/oncall', OnCallRoutes);
 app.use('/master/pm-doc-master', pmDocMasterRoutes);
 app.use('/api/notifications', notificationRoutes);
-
+app.use('/api/activity-logs', activityLogsRouter);
 // Bulk Upload 
 
 app.use('/bulk/equipment', EquipmentBulk);
@@ -259,6 +259,7 @@ app.use('/bulk/warranty-code', WarrantyCodeBulk);
 app.use('/bulk/cmc-ncmcprice', CmcNcmcPriceBulk);
 app.use('/bulk/dealer', DealerBulk);
 app.use('/bulk/branch', BranchBulk);
+
 
 
 

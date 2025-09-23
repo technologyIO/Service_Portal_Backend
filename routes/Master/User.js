@@ -13,14 +13,11 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
+const activityLogsRouter = require('../activityLogger/activityLogs');
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        // Use absolute path from project root
         const uploadDir = path.join(__dirname, '../../uploads');
-
-
-        // Ensure directory exists
         if (!fs.existsSync(uploadDir)) {
             fs.mkdirSync(uploadDir, { recursive: true });
             console.log('Created uploads directory');
@@ -33,7 +30,6 @@ const storage = multer.diskStorage({
         cb(null, uniqueName);
     }
 });
-
 
 // File filter to accept only images
 const fileFilter = (req, file, cb) => {
@@ -59,7 +55,9 @@ const transporter = nodemailer.createTransport({
 
 // In-memory storage for OTPs (in production, use Redis or database)
 const otpStore = new Map();
-
+const getUserFullName = (user) => {
+    return `${user.firstname || ''} ${user.lastname || ''}`.trim() || user.email || 'Unknown User';
+};
 // Middleware to get user by ID
 async function getUserById(req, res, next) {
     let user;
@@ -72,11 +70,9 @@ async function getUserById(req, res, next) {
     res.user = user;
     next();
 }
-// Middleware to get user by email
 async function getUserForLogin(req, res, next) {
     let user;
     try {
-        // Find user by employeeid or email
         if (req.body.employeeid) {
             user = await User.findOne({ employeeid: req.body.employeeid });
         } else if (req.body.email) {
@@ -84,14 +80,51 @@ async function getUserForLogin(req, res, next) {
         }
 
         if (!user) {
+            // Log failed login attempt
+            await activityLogsRouter.logActivity({
+                userId: 'system',
+                userName: 'System',
+                userEmail: 'system@skanray.com',
+                userRole: 'System',
+                action: 'login_failed',
+                description: 'Login attempt failed - User not found',
+                details: `Failed login attempt for: ${req.body.employeeid || req.body.email}`,
+                module: 'Authentication',
+                status: 'error',
+                severity: 'medium',
+                metadata: {
+                    loginIdentifier: req.body.employeeid || req.body.email,
+                    failureReason: 'User not found'
+                },
+                req
+            });
+
             return res.status(404).json({
                 message: 'User not found',
                 errorCode: 'USER_NOT_FOUND'
             });
         }
 
-        // Check if user is deactivated
         if (user.status === 'Deactive') {
+            // Log deactivated account login attempt
+            await activityLogsRouter.logActivity({
+                userId: user._id,
+                userName: getUserFullName(user),
+                userEmail: user.email,
+                userRole: user.role?.roleName || 'No Role',
+                action: 'login_failed',
+                description: 'Login attempt on deactivated account',
+                details: `Deactivated account login attempt by: ${getUserFullName(user)} (${user.employeeid})`,
+                module: 'Security',
+                status: 'warning',
+                severity: 'medium',
+                metadata: {
+                    accountStatus: 'Deactive',
+                    failureReason: 'Account deactivated'
+                },
+                req
+            });
+
             return res.status(403).json({
                 message: 'Your account has been deactivated. Please contact administrator.',
                 errorCode: 'ACCOUNT_DEACTIVATED',
@@ -113,7 +146,6 @@ function generateOTP() {
     return crypto.randomInt(1000, 9999).toString();
 }
 
-// 1. Send OTP to email
 router.post('/forgot-password', async (req, res) => {
     try {
         const { employeeid } = req.body;
@@ -125,16 +157,29 @@ router.post('/forgot-password', async (req, res) => {
             });
         }
 
-        // Find user by employee ID
         const user = await User.findOne({ employeeid });
         if (!user) {
+            // Log failed forgot password attempt
+            await activityLogsRouter.logActivity({
+                userId: 'system',
+                userName: 'System',
+                userEmail: 'system@skanray.com',
+                userRole: 'System',
+                action: 'forgot_password',
+                description: 'Forgot password attempt failed - User not found',
+                details: `Failed forgot password attempt for Employee ID: ${employeeid}`,
+                module: 'Authentication',
+                status: 'error',
+                severity: 'low',
+                req
+            });
+
             return res.status(404).json({
                 message: 'No account found with this Employee ID',
                 errorCode: 'USER_NOT_FOUND'
             });
         }
 
-        // Check if user has an email
         if (!user.email) {
             return res.status(400).json({
                 message: 'No email registered with this account',
@@ -142,18 +187,15 @@ router.post('/forgot-password', async (req, res) => {
             });
         }
 
-        // Generate OTP
         const otp = generateOTP();
-        const otpExpiry = Date.now() + 5 * 60 * 1000; // 5 minutes expiry
+        const otpExpiry = Date.now() + 5 * 60 * 1000;
 
-        // Store OTP temporarily
         otpStore.set(employeeid, {
             otp,
             expiry: otpExpiry,
             email: user.email
         });
 
-        // Send email with OTP
         const mailOptions = {
             from: 'webadmin@skanray-access.com',
             to: user.email,
@@ -163,10 +205,28 @@ router.post('/forgot-password', async (req, res) => {
 
         await transporter.sendMail(mailOptions);
 
+        // Log successful OTP send
+        await activityLogsRouter.logActivity({
+            userId: user._id,
+            userName: getUserFullName(user),
+            userEmail: user.email,
+            userRole: user.role?.roleName || 'No Role',
+            action: 'forgot_password',
+            description: 'Password reset OTP requested',
+            details: `OTP sent to email: ${user.email.replace(/(.{2}).+@/, "$1****@")}`,
+            module: 'Authentication',
+            status: 'success',
+            severity: 'info',
+            metadata: {
+                maskedEmail: user.email.replace(/(.{2}).+@/, "$1****@")
+            },
+            req
+        });
+
         res.json({
             success: true,
             message: 'OTP sent to registered email',
-            email: user.email.replace(/(.{2}).+@/, "$1****@") // mask email for display
+            email: user.email.replace(/(.{2}).+@/, "$1****@")
         });
 
     } catch (err) {
@@ -177,6 +237,7 @@ router.post('/forgot-password', async (req, res) => {
         });
     }
 });
+
 router.post('/reset-password-otp', async (req, res) => {
     try {
         const { resetToken, newPassword, confirmPassword } = req.body;
@@ -188,7 +249,6 @@ router.post('/reset-password-otp', async (req, res) => {
             });
         }
 
-        // Verify passwords match
         if (newPassword !== confirmPassword) {
             return res.status(400).json({
                 message: 'Passwords do not match',
@@ -196,8 +256,6 @@ router.post('/reset-password-otp', async (req, res) => {
             });
         }
 
-
-        // Verify reset token
         let decoded;
         try {
             decoded = jwt.verify(resetToken, "myservice-secret");
@@ -208,7 +266,6 @@ router.post('/reset-password-otp', async (req, res) => {
             });
         }
 
-        // Check token purpose
         if (decoded.purpose !== 'password_reset') {
             return res.status(401).json({
                 message: 'Invalid token purpose',
@@ -216,7 +273,6 @@ router.post('/reset-password-otp', async (req, res) => {
             });
         }
 
-        // Find user by employee ID
         const user = await User.findOne({ employeeid: decoded.employeeid });
         if (!user) {
             return res.status(404).json({
@@ -225,14 +281,27 @@ router.post('/reset-password-otp', async (req, res) => {
             });
         }
 
-        // Hash new password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-        // Update password
         user.password = hashedPassword;
         user.modifiedAt = new Date();
         await user.save();
+
+        // Log successful password reset
+        await activityLogsRouter.logActivity({
+            userId: user._id,
+            userName: getUserFullName(user),
+            userEmail: user.email,
+            userRole: user.role?.roleName || 'No Role',
+            action: 'password_reset',
+            description: 'Password reset completed via OTP',
+            details: 'Password successfully updated using OTP verification',
+            module: 'Authentication',
+            status: 'success',
+            severity: 'warning',
+            req
+        });
 
         res.json({
             success: true,
@@ -249,28 +318,61 @@ router.post('/reset-password-otp', async (req, res) => {
 });
 router.post('/verify-otp-pass', async (req, res) => {
     try {
-        const { employeeid, otp } = req.body; // Changed from email to employeeid
+        const { employeeid, otp } = req.body;
 
-        if (!employeeid || !otp) { // Changed validation
+        if (!employeeid || !otp) {
             return res.status(400).json({
                 message: 'Employee ID and OTP are required',
                 errorCode: 'MISSING_FIELDS'
             });
         }
 
-        // Get stored OTP data using employeeid instead of email
+        const user = await User.findOne({ employeeid });
         const otpData = otpStore.get(employeeid);
 
         if (!otpData) {
+            // Log failed OTP verification
+            if (user) {
+                await activityLogsRouter.logActivity({
+                    userId: user._id,
+                    userName: getUserFullName(user),
+                    userEmail: user.email,
+                    userRole: user.role?.roleName || 'No Role',
+                    action: 'otp_verify',
+                    description: 'OTP verification failed - OTP not found',
+                    details: 'OTP not found or expired',
+                    module: 'Authentication',
+                    status: 'error',
+                    severity: 'medium',
+                    req
+                });
+            }
+
             return res.status(400).json({
                 message: 'OTP not found or expired. Please request a new one.',
                 errorCode: 'OTP_NOT_FOUND'
             });
         }
 
-        // Rest of your verification logic remains the same...
         if (Date.now() > otpData.expiry) {
             otpStore.delete(employeeid);
+
+            if (user) {
+                await activityLogsRouter.logActivity({
+                    userId: user._id,
+                    userName: getUserFullName(user),
+                    userEmail: user.email,
+                    userRole: user.role?.roleName || 'No Role',
+                    action: 'otp_verify',
+                    description: 'OTP verification failed - OTP expired',
+                    details: 'OTP expired',
+                    module: 'Authentication',
+                    status: 'error',
+                    severity: 'low',
+                    req
+                });
+            }
+
             return res.status(400).json({
                 message: 'OTP expired. Please request a new one.',
                 errorCode: 'OTP_EXPIRED'
@@ -278,6 +380,22 @@ router.post('/verify-otp-pass', async (req, res) => {
         }
 
         if (otp !== otpData.otp) {
+            if (user) {
+                await activityLogsRouter.logActivity({
+                    userId: user._id,
+                    userName: getUserFullName(user),
+                    userEmail: user.email,
+                    userRole: user.role?.roleName || 'No Role',
+                    action: 'otp_verify',
+                    description: 'OTP verification failed - Invalid OTP',
+                    details: 'Invalid OTP entered',
+                    module: 'Authentication',
+                    status: 'error',
+                    severity: 'medium',
+                    req
+                });
+            }
+
             return res.status(400).json({
                 message: 'Invalid OTP',
                 errorCode: 'INVALID_OTP'
@@ -291,6 +409,23 @@ router.post('/verify-otp-pass', async (req, res) => {
         );
 
         otpStore.delete(employeeid);
+
+        // Log successful OTP verification
+        if (user) {
+            await activityLogsRouter.logActivity({
+                userId: user._id,
+                userName: getUserFullName(user),
+                userEmail: user.email,
+                userRole: user.role?.roleName || 'No Role',
+                action: 'otp_verify',
+                description: 'OTP verified successfully',
+                details: 'Password reset token generated',
+                module: 'Authentication',
+                status: 'success',
+                severity: 'info',
+                req
+            });
+        }
 
         res.json({
             success: true,
@@ -367,7 +502,6 @@ router.post('/reset-password', async (req, res) => {
     try {
         const { employeeid, oldPassword, newPassword } = req.body;
 
-        // Validate required fields
         if (!employeeid || !oldPassword || !newPassword) {
             return res.status(400).json({
                 message: 'Employee ID, old password and new password are required',
@@ -375,7 +509,6 @@ router.post('/reset-password', async (req, res) => {
             });
         }
 
-        // Find user by employee ID
         const user = await User.findOne({ employeeid });
         if (!user) {
             return res.status(404).json({
@@ -384,7 +517,6 @@ router.post('/reset-password', async (req, res) => {
             });
         }
 
-        // Check if user is active
         if (user.status !== 'Active') {
             return res.status(403).json({
                 message: 'Your account is deactivated. Please contact administrator.',
@@ -392,27 +524,50 @@ router.post('/reset-password', async (req, res) => {
             });
         }
 
-        // Verify old password
         const isMatch = await bcrypt.compare(oldPassword, user.password);
         if (!isMatch) {
+            // Log failed password change attempt
+            await activityLogsRouter.logActivity({
+                userId: user._id,
+                userName: getUserFullName(user),
+                userEmail: user.email,
+                userRole: user.role?.roleName || 'No Role',
+                action: 'password_change',
+                description: 'Password change failed - Invalid old password',
+                details: 'User provided incorrect old password',
+                module: 'Authentication',
+                status: 'error',
+                severity: 'medium',
+                req
+            });
+
             return res.status(400).json({
                 message: 'Old password is incorrect',
                 errorCode: 'INVALID_OLD_PASSWORD'
             });
         }
 
-
-
-        // Hash the new password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-        // Update password and modified date
         user.password = hashedPassword;
         user.modifiedAt = new Date();
-
-        // Save the updated user
         await user.save();
+
+        // Log successful password change
+        await activityLogsRouter.logActivity({
+            userId: user._id,
+            userName: getUserFullName(user),
+            userEmail: user.email,
+            userRole: user.role?.roleName || 'No Role',
+            action: 'password_change',
+            description: 'Password changed successfully',
+            details: 'User changed password using old password verification',
+            module: 'Authentication',
+            status: 'success',
+            severity: 'info',
+            req
+        });
 
         res.json({
             success: true,
@@ -423,8 +578,7 @@ router.post('/reset-password', async (req, res) => {
         console.error('Password reset error:', err);
         res.status(500).json({
             message: 'Error resetting password',
-            errorCode: 'SERVER_ERROR',
-            errorDetails: process.env.NODE_ENV === 'development' ? err.message : undefined
+            errorCode: 'SERVER_ERROR'
         });
     }
 });
@@ -466,57 +620,7 @@ router.delete('/user/bulk', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
-router.patch('/user/:id/status', getUserById, async (req, res) => {
-    try {
-        const { status } = req.body;
-        const user = res.user;
 
-        // Validate status
-        if (!status || !['Active', 'Deactive'].includes(status)) {
-            return res.status(400).json({
-                message: 'Status is required and must be either "Active" or "Deactive"',
-                errorCode: 'INVALID_STATUS'
-            });
-        }
-
-        // No change needed if status is same
-        if (user.status === status) {
-            return res.json({
-                message: `User is already ${status}`,
-                user,
-                warningCode: 'STATUS_UNCHANGED'
-            });
-        }
-
-        // Update status
-        user.status = status;
-        user.modifiedAt = new Date();
-
-        // If deactivating, clear device info to force logout
-        if (status === 'Deactive') {
-            user.deviceid = null;
-            user.deviceregistereddate = null;
-
-            // You might want to invalidate existing tokens here
-            // This would require maintaining a token blacklist
-        }
-
-        const updatedUser = await user.save();
-
-        res.json({
-            success: true,
-            message: `User ${status === 'Active' ? 'reactivated' : 'deactivated'} successfully`,
-            user: updatedUser,
-            statusChanged: true
-        });
-
-    } catch (err) {
-        res.status(500).json({
-            message: err.message,
-            errorCode: 'SERVER_ERROR'
-        });
-    }
-});
 
 // Middleware to get user by employeeid
 async function getUserByEmployeeId(req, res, next) {
@@ -563,7 +667,7 @@ router.get('/user', async (req, res) => {
 
 router.get('/user/technicians', async (req, res) => {
     try {
-        const technicians = await User.find({ 
+        const technicians = await User.find({
             status: 'Active',
             // Only include users with non-expired login
             $or: [
@@ -572,9 +676,9 @@ router.get('/user/technicians', async (req, res) => {
                 { loginexpirydate: { $gte: new Date() } }
             ]
         })
-        .select('firstname lastname email employeeid role.roleName department')
-        .sort({ firstname: 1 })
-        .lean();
+            .select('firstname lastname email employeeid role.roleName department')
+            .sort({ firstname: 1 })
+            .lean();
 
         // Transform data
         const transformedTechnicians = technicians.map(tech => ({
@@ -761,7 +865,26 @@ router.post('/user', upload.single('profileimage'), async (req, res) => {
         // Create and save user
         const newUser = new User(userData);
         const savedUser = await newUser.save();
-
+        await activityLogsRouter.logActivity({
+            userId: 'system', // You might want to pass admin user ID here
+            userName: 'Admin User',
+            userEmail: 'admin@skanray.com',
+            userRole: 'Admin',
+            action: 'create',
+            description: 'New user account created',
+            details: `Created user: ${getUserFullName(savedUser)} (${savedUser.employeeid}), Type: ${savedUser.usertype}, Role: ${savedUser.role?.roleName || 'No Role'}`,
+            module: 'User Management',
+            status: 'success',
+            severity: 'info',
+            relatedId: savedUser._id.toString(),
+            relatedModel: 'User',
+            metadata: {
+                newUserType: savedUser.usertype,
+                newUserRole: savedUser.role,
+                newUserDepartment: savedUser.department
+            },
+            req
+        });
         // Send response without sensitive data
         const userResponse = savedUser.toObject();
         delete userResponse.password;
@@ -833,7 +956,6 @@ router.post('/login/web', getUserForLogin, async (req, res) => {
     try {
         const user = res.user;
 
-        // Check if login expiry date exists
         if (!user.loginexpirydate) {
             return res.status(403).json({
                 message: 'You do not have a login expiry date. You cannot login.',
@@ -841,34 +963,88 @@ router.post('/login/web', getUserForLogin, async (req, res) => {
             });
         }
 
-        // Check if login expiry date has passed
         const currentDate = new Date();
         const expiryDate = new Date(user.loginexpirydate);
 
         if (currentDate > expiryDate) {
+            // Log expired login attempt
+            await activityLogsRouter.logActivity({
+                userId: user._id,
+                userName: getUserFullName(user),
+                userEmail: user.email,
+                userRole: user.role?.roleName || 'No Role',
+                action: 'login_failed',
+                description: 'Login failed - Account expired',
+                details: `Login expiry date: ${expiryDate.toDateString()}`,
+                module: 'Authentication',
+                status: 'warning',
+                severity: 'medium',
+                metadata: {
+                    expiryDate: expiryDate,
+                    loginType: 'web'
+                },
+                req
+            });
+
             return res.status(403).json({
                 message: 'Your login date has expired. Please contact admin.',
                 errorCode: 'LOGIN_EXPIRED'
             });
         }
 
-        // Verify password
         const isMatch = await bcrypt.compare(req.body.password, user.password);
         if (!isMatch) {
+            // Log failed password attempt
+            await activityLogsRouter.logActivity({
+                userId: user._id,
+                userName: getUserFullName(user),
+                userEmail: user.email,
+                userRole: user.role?.roleName || 'No Role',
+                action: 'login_failed',
+                description: 'Web login failed - Invalid password',
+                details: 'Incorrect password provided',
+                module: 'Authentication',
+                status: 'error',
+                severity: 'medium',
+                metadata: {
+                    loginType: 'web'
+                },
+                req
+            });
+
             return res.status(400).json({
                 message: 'Invalid password',
                 errorCode: 'INVALID_CREDENTIALS'
             });
         }
 
-        // Create token
         const token = jwt.sign(
             { id: user._id, email: user.email },
             "myservice-secret",
             { expiresIn: '8h' }
         );
 
-        // Return success response
+        // Log successful web login
+        await activityLogsRouter.logActivity({
+            userId: user._id,
+            userName: getUserFullName(user),
+            userEmail: user.email,
+            userRole: user.role?.roleName || 'No Role',
+            action: 'login',
+            description: 'User logged in via web portal',
+            details: `Successful web login. Role: ${user.role?.roleName || 'No Role'}, Department: ${user.department || 'N/A'}`,
+            module: 'Authentication',
+            status: 'success',
+            severity: 'info',
+            metadata: {
+                loginType: 'web',
+                usertype: user.usertype,
+                department: user.department,
+                tokenExpiry: '8h'
+            },
+            req
+        });
+
         res.json({
             success: true,
             token,
@@ -899,6 +1075,7 @@ router.post('/login/web', getUserForLogin, async (req, res) => {
         });
 
     } catch (err) {
+        await activityLogsRouter.quickLog.error(res.user, err, 'Authentication', req);
         res.status(500).json({
             message: err.message,
             errorCode: 'SERVER_ERROR'
@@ -912,7 +1089,6 @@ router.post('/login', getUserForLogin, async (req, res) => {
         const user = res.user;
         const currentDeviceId = req.body.deviceid;
 
-        // Check if login expiry date exists
         if (!user.loginexpirydate) {
             return res.status(403).json({
                 message: 'You do not have a login expiry date. You cannot login.',
@@ -920,27 +1096,63 @@ router.post('/login', getUserForLogin, async (req, res) => {
             });
         }
 
-        // Check if login expiry date has passed
         const currentDate = new Date();
         const expiryDate = new Date(user.loginexpirydate);
 
         if (currentDate > expiryDate) {
+            // Log expired mobile login attempt
+            await activityLogsRouter.logActivity({
+                userId: user._id,
+                userName: getUserFullName(user),
+                userEmail: user.email,
+                userRole: user.role?.roleName || 'No Role',
+                action: 'login_failed',
+                description: 'Mobile login failed - Account expired',
+                details: `Login expiry date: ${expiryDate.toDateString()}`,
+                module: 'Authentication',
+                status: 'warning',
+                severity: 'medium',
+                metadata: {
+                    expiryDate: expiryDate,
+                    loginType: 'mobile',
+                    deviceId: currentDeviceId
+                },
+                req
+            });
+
             return res.status(403).json({
                 message: 'Your login date has expired. Please contact admin.',
                 errorCode: 'LOGIN_EXPIRED'
             });
         }
 
-        // 1️⃣ Validate password
         const isMatch = await bcrypt.compare(req.body.password, user.password);
         if (!isMatch) {
+            // Log failed mobile password attempt
+            await activityLogsRouter.logActivity({
+                userId: user._id,
+                userName: getUserFullName(user),
+                userEmail: user.email,
+                userRole: user.role?.roleName || 'No Role',
+                action: 'login_failed',
+                description: 'Mobile login failed - Invalid password',
+                details: 'Incorrect password provided',
+                module: 'Authentication',
+                status: 'error',
+                severity: 'medium',
+                metadata: {
+                    loginType: 'mobile',
+                    deviceId: currentDeviceId
+                },
+                req
+            });
+
             return res.status(400).json({
                 message: 'Invalid password',
                 errorCode: 'INVALID_CREDENTIALS'
             });
         }
 
-        // 2️⃣ Check role and mobile access
         const roleId = user.role?.roleId;
         if (!roleId) {
             return res.status(403).json({
@@ -952,56 +1164,111 @@ router.post('/login', getUserForLogin, async (req, res) => {
         const roleData = await Role.findOne({ roleId });
 
         if (!roleData || !Array.isArray(roleData.mobileComponents) || roleData.mobileComponents.length === 0) {
+            // Log mobile access denied
+            await activityLogsRouter.logActivity({
+                userId: user._id,
+                userName: getUserFullName(user),
+                userEmail: user.email,
+                userRole: user.role?.roleName || 'No Role',
+                action: 'login_failed',
+                description: 'Mobile login denied - No mobile access',
+                details: 'User role does not have mobile app permissions',
+                module: 'Security',
+                status: 'warning',
+                severity: 'medium',
+                metadata: {
+                    loginType: 'mobile',
+                    roleId: roleId,
+                    deviceId: currentDeviceId
+                },
+                req
+            });
+
             return res.status(403).json({
                 message: "You don't have access to the mobile app. Please contact admin.",
                 errorCode: "MOBILE_ACCESS_DENIED"
             });
         }
 
-        // 3️⃣ Check device registration
         if (user.deviceid && user.deviceid !== currentDeviceId) {
+            // Log device mismatch
+            await activityLogsRouter.logActivity({
+                userId: user._id,
+                userName: getUserFullName(user),
+                userEmail: user.email,
+                userRole: user.role?.roleName || 'No Role',
+                action: 'login_failed',
+                description: 'Mobile login failed - Device mismatch',
+                details: `Attempted login from different device. Registered: ${user.deviceid}, Attempted: ${currentDeviceId}`,
+                module: 'Security',
+                status: 'warning',
+                severity: 'high',
+                metadata: {
+                    registeredDevice: user.deviceid,
+                    attemptedDevice: currentDeviceId,
+                    loginType: 'mobile'
+                },
+                req
+            });
+
             return res.status(403).json({
                 message: 'User is already logged in on another device',
                 errorCode: 'DEVICE_MISMATCH'
             });
         }
 
-        // 4️⃣ Calculate token expiry at 10 PM
-        const calculateExpiryAt4PM = () => {
+        const calculateExpiryAt10PM = () => {
             const now = new Date();
-            const today4PM = new Date(now);
-            today4PM.setHours(22, 0, 0, 0);
+            const today10PM = new Date(now);
+            today10PM.setHours(22, 0, 0, 0);
 
-            // If current time is after 10 PM today, set expiry to 10 PM tomorrow
-            if (now > today4PM) {
-                const tomorrow4PM = new Date(today4PM);
-                tomorrow4PM.setDate(tomorrow4PM.getDate() + 1);
-                return tomorrow4PM;
+            if (now > today10PM) {
+                const tomorrow10PM = new Date(today10PM);
+                tomorrow10PM.setDate(tomorrow10PM.getDate() + 1);
+                return tomorrow10PM;
             }
-
-            return today4PM;
+            return today10PM;
         };
 
-        const expiryTime = calculateExpiryAt4PM();
+        const expiryTime = calculateExpiryAt10PM();
         const expiryInSeconds = Math.floor((expiryTime - new Date()) / 1000);
 
-        // 5️⃣ Update device info
         user.deviceid = currentDeviceId;
         user.deviceregistereddate = new Date();
-        user.sessionExpiry = expiryTime; // Store session expiry in user document
+        user.sessionExpiry = expiryTime;
         await user.save();
 
-        // 6️⃣ Generate token with dynamic expiry
         const token = jwt.sign(
             {
                 id: user._id,
                 email: user.email,
-                exp: Math.floor(expiryTime.getTime() / 1000) // JWT exp in seconds since epoch
+                exp: Math.floor(expiryTime.getTime() / 1000)
             },
             "myservice-secret"
         );
 
-        // 7️⃣ Return user data with expiry info
+        // Log successful mobile login
+        await activityLogsRouter.logActivity({
+            userId: user._id,
+            userName: getUserFullName(user),
+            userEmail: user.email,
+            userRole: user.role?.roleName || 'No Role',
+            action: 'login',
+            description: 'User logged in via mobile app',
+            details: `Successful mobile login. Device registered: ${currentDeviceId}`,
+            module: 'Authentication',
+            status: 'success',
+            severity: 'info',
+            metadata: {
+                loginType: 'mobile',
+                usertype: user.usertype,
+                deviceId: currentDeviceId,
+                sessionExpiry: expiryTime,
+                department: user.department
+            },
+            req
+        });
+
         res.json({
             success: true,
             token,
@@ -1033,6 +1300,7 @@ router.post('/login', getUserForLogin, async (req, res) => {
         });
 
     } catch (err) {
+        await activityLogsRouter.quickLog.error(res.user, err, 'Authentication', req);
         res.status(500).json({
             message: err.message,
             errorCode: 'SERVER_ERROR'
@@ -1040,9 +1308,32 @@ router.post('/login', getUserForLogin, async (req, res) => {
     }
 });
 
+
 router.post('/logout', authenticateToken, async (req, res) => {
     try {
         const user = req.user;
+        const loginType = user.deviceid ? 'mobile' : 'web'; // Detect login type
+
+        // Log logout
+        await activityLogsRouter.logActivity({
+            userId: user._id,
+            userName: getUserFullName(user),
+            userEmail: user.email,
+            userRole: user.role?.roleName || 'No Role',
+            action: 'logout',
+            description: `User logged out from ${loginType}`,
+            details: user.deviceid ? `Device ${user.deviceid} session ended` : 'Web session ended',
+            module: 'Authentication',
+            status: 'success',
+            severity: 'info',
+            metadata: {
+                loginType: loginType,
+                deviceId: user.deviceid,
+                sessionDuration: user.deviceregistereddate ?
+                    Math.round((new Date() - new Date(user.deviceregistereddate)) / 1000 / 60) + ' minutes' : 'Unknown'
+            },
+            req
+        });
 
         // Clear device info and session expiry
         user.deviceid = null;
@@ -1055,6 +1346,7 @@ router.post('/logout', authenticateToken, async (req, res) => {
             message: 'Logged out successfully'
         });
     } catch (error) {
+        await activityLogsRouter.quickLog.error(req.user, error, 'Authentication', req);
         res.status(500).json({
             message: 'Logout failed',
             errorCode: 'LOGOUT_ERROR'
@@ -1063,15 +1355,74 @@ router.post('/logout', authenticateToken, async (req, res) => {
 });
 
 
+
+router.patch('/user/:id/status', getUserById, async (req, res) => {
+    try {
+        const { status, adminEmployeeId } = req.body; // Get admin employee ID from request body
+        const user = res.user;
+
+        if (!status || !['Active', 'Deactive'].includes(status)) {
+            return res.status(400).json({
+                message: 'Status is required and must be either "Active" or "Deactive"',
+                errorCode: 'INVALID_STATUS'
+            });
+        }
+
+        if (user.status === status) {
+            return res.json({
+                message: `User is already ${status}`,
+                user,
+                warningCode: 'STATUS_UNCHANGED'
+            });
+        }
+
+        const previousStatus = user.status;
+        user.status = status;
+        user.modifiedAt = new Date();
+
+        if (status === 'Deactive') {
+            user.deviceid = null;
+            user.deviceregistereddate = null;
+        }
+
+        const updatedUser = await user.save();
+
+        // Log status change with admin employee ID
+        await activityLogsRouter.quickLog.userStatusChange(adminEmployeeId, user, status, req);
+
+        res.json({
+            success: true,
+            message: `User ${status === 'Active' ? 'reactivated' : 'deactivated'} successfully`,
+            user: updatedUser,
+            statusChanged: true,
+            actionPerformedBy: adminEmployeeId || 'System'
+        });
+
+    } catch (err) {
+        await activityLogsRouter.quickLog.error(null, err, 'User Management', req);
+        res.status(500).json({
+            message: err.message,
+            errorCode: 'SERVER_ERROR'
+        });
+    }
+});
+
+// Device removal with admin employee ID from payload
 router.post('/remove-device', async (req, res) => {
     try {
-        const { userId } = req.body; // frontend se userId ayega
+        const { userId, adminEmployeeId } = req.body;
 
         if (!userId) {
             return res.status(400).json({ message: 'User ID is required' });
         }
 
-        // Find user and clear device information
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const clearedDeviceId = user.deviceid;
+
         const updatedUser = await User.findByIdAndUpdate(
             userId,
             {
@@ -1080,22 +1431,28 @@ router.post('/remove-device', async (req, res) => {
                     deviceregistereddate: null
                 }
             },
-            { new: true } // Return updated document
+            { new: true }
         );
 
-        if (!updatedUser) {
-            return res.status(404).json({ message: 'User not found' });
-        }
+        // Log device removal with admin employee ID
+        await activityLogsRouter.quickLog.deviceRemove(adminEmployeeId, user, req);
 
         res.json({
+            success: true,
             message: 'Device ID cleared successfully',
-            user: updatedUser
+            user: updatedUser,
+            clearedDeviceId: clearedDeviceId,
+            actionPerformedBy: adminEmployeeId || 'System'
         });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        await activityLogsRouter.quickLog.error(null, err, 'Device Management', req);
+        res.status(500).json({
+            success: false,
+            message: err.message,
+            errorCode: 'SERVER_ERROR'
+        });
     }
 });
-
 
 
 // UPDATE a user
@@ -1204,6 +1561,7 @@ router.put('/user/:id', upload.single('profileimage'), getUserById, checkDuplica
         user.modifiedAt = new Date();
 
         const updatedUser = await user.save();
+        await activityLogsRouter.logUserActivity(req, res);
 
         // Prepare response without sensitive data
         const userResponse = updatedUser.toObject();
