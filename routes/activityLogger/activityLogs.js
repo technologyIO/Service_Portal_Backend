@@ -571,7 +571,7 @@ const quickLog = {
     }
 };
 
-// ===== Your existing routes remain the same =====
+ 
 // GET /api/activity-logs
 router.get('/', async (req, res) => {
     try {
