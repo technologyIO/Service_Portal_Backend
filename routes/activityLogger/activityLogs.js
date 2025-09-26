@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const User = require('../../Model/MasterSchema/UserSchema');
 const router = express.Router();
 
-// ===== MONGODB SCHEMA - Same as your current schema =====
+
 const activityLogSchema = new mongoose.Schema({
     // User Information
     user: {
@@ -145,7 +145,6 @@ activityLogSchema.index({ status: 1, timestamp: -1 });
 
 const ActivityLog = mongoose.model('ActivityLog', activityLogSchema);
 
-// ===== UTILITY FUNCTIONS =====
 
 // Create system ObjectId for consistent system user
 const SYSTEM_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
