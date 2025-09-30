@@ -240,8 +240,8 @@ app.use('/phone/oncall', OnCallRoutes);
 app.use('/master/pm-doc-master', pmDocMasterRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/activity-logs', activityLogsRouter);
-// Bulk Upload 
 
+// Bulk Upload 
 app.use('/bulk/equipment', EquipmentBulk);
 app.use('/bulk/aerb', AerbBulk);
 app.use('/bulk/product', ProductBulk);
@@ -263,8 +263,7 @@ app.use('/bulk/branch', BranchBulk);
 
 
 
-// Excel Download 
-// Master Excel
+// Master Excel Download  
 app.use('/excel/users', userExcelRoutes);
 app.use('/excel/aerb', aerbExcelRoutes);
 app.use('/excel/dealers', dealerExcelRoutes);
@@ -280,14 +279,14 @@ app.use('/excel/warrantycodes', warrantyCodeExcelRoutes);
 app.use('/excel/reportedproblems', reportedProblemExcelRoutes);
 app.use('/excel/replacedpartcodes', replacedPartCodeExcelRoutes);
 app.use('/excel/pm', pmExcelRoutes);
-// Upload Excel
+// Upload Excel Download
 app.use('/excel/customers', customerExcelRoutes);
 app.use('/excel/hubstock', hubStockExcelRoutes);
 app.use('/excel/dealerstock', dealerStockExcelRoutes);
 app.use('/excel/amccontracts', amcContractExcelRoutes);
 app.use('/excel/pendingcomplaints', pendingComplaintsExcelRoutes);
 app.use('/excel/pendinginstallations', pendingInstallationExcelRoutes);
-// Admin Excel
+// Admin Excel Download
 app.use('/excel/geo', geoExcelRoutes);
 app.use('/excel/countries', countryExcelRoutes);
 app.use('/excel/regions', regionExcelRoutes);
