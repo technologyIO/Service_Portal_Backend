@@ -140,6 +140,7 @@ const corsOptions = {
       "capacitor://localhost",
       "https://localhost",
       "http://192.168.100.71:3000",
+      "https://service.insideoutprojects.in",
     ];
 
     if (!origin || allowedOrigins.includes(origin)) {
