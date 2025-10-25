@@ -140,7 +140,7 @@ async function checkDuplicateSerialNumber(req, res, next) {
     }
     next();
 }
-
+ 
 router.get('/equipment/filter-options', async (req, res) => {
     try {
         const equipment = await Equipment.find({}, {
@@ -1415,7 +1415,18 @@ router.put('/equipment/:id', getEquipmentById, async (req, res) => {
         res.status(400).json({ message: err.message });
     }
 });
-
+router.delete('/all', async (req, res) => { // note: changed path to /all
+  try {
+    const result = await Equipment.deleteMany({});
+    res.status(200).json({
+      message: 'All equipment data deleted successfully',
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Error deleting equipments:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 // DELETE equipment
 router.delete('/equipment/:id', async (req, res) => {
     try {
@@ -1470,6 +1481,7 @@ router.get('/searchequipment', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 
 module.exports = router;

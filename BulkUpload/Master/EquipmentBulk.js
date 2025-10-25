@@ -95,7 +95,15 @@ const FIELD_MAPPINGS = {
     "equipment_serial",
     "machine_serial",
   ],
-  equipmentid: ["equipment", "equipmentid", "equipment_id", "equipment id", "machine_id", "machineid"],
+  equipmentid: [
+    "equipment",
+    "equipmentid",
+    "equipment id",
+    "equipment (id)",      // ⬅️ ADD THIS
+    "equipment(id)",       // ⬅️ ADD THIS TOO (no space)
+    "machineid",
+    "machine id"
+  ],
   currentcustomer: [
     "currentcustomer", "current_customer", "customer_code", "customercode", "customer", "custcode", "curcustomer",
   ],
@@ -168,17 +176,17 @@ const FIELD_MAPPINGS = {
     "dealer", "dealer_name", "dealername", "distributor", "partner", "vendor",
   ],
   palnumber: ["pal number", "palnumber", "pal_number", "pal no", "pal_no", "pal"],
-  installationreportno: [
-    "ir number",
-    "irnumber",
-    "ir_number",
-    "installationreportno",
-    "installation_report_no",
-    "installation report no",
-    "installation_no",
-    "install_report_no",
-    "ir_no",
-  ],
+installationreportno: [
+  "ir number",
+  "irnumber",
+  "ir number",
+  "installationreportno",
+  "installation report no",
+  "installation report no",  // ⬅️ ADD THIS
+  "installationno",
+  "install reportno",
+  "irno",
+],
   status: [
     "status",
     "equipment_status",
@@ -237,32 +245,40 @@ function generateEquipmentId(serialnumber, materialcode) {
 }
 
 function normalizeFieldNames(record) {
-  const normalized = {}
-  const recordKeysLower = {}
+  const normalized = {};
+  const recordKeysLower = {};
 
+  // Store lowercase mapping with cleaned keys
   Object.keys(record).forEach((key) => {
-    recordKeysLower[key.toLowerCase().trim()] = record[key]
-  })
+    // Clean the key: remove spaces, parentheses, dots, dashes
+    const cleanKey = key
+      .toLowerCase()
+      .trim()
+      .replace(/[\(\)\.\-_\s]/g, '');  // ⬅️ Remove (), ., -, _, spaces
+    
+    recordKeysLower[cleanKey] = record[key];
+  });
 
   for (const [standardField, variations] of Object.entries(FIELD_MAPPINGS)) {
     for (const variation of variations) {
-      const variationLower = variation.toLowerCase().trim()
-
-      const matchingKey = Object.keys(recordKeysLower).find((key) => {
-        const keyNormalized = key.replace(/[_\s\-.]/g, "")
-        const variationNormalized = variationLower.replace(/[_\s\-.]/g, "")
-        return key === variationLower || keyNormalized === variationNormalized
-      })
-
-      if (matchingKey && recordKeysLower[matchingKey] != null && recordKeysLower[matchingKey] !== "") {
-        normalized[standardField] = recordKeysLower[matchingKey]
-        break
+      // Clean variation the same way
+      const cleanVariation = variation
+        .toLowerCase()
+        .trim()
+        .replace(/[\(\)\.\-_\s]/g, '');
+      
+      if (recordKeysLower[cleanVariation] !== null && 
+          recordKeysLower[cleanVariation] !== "" && 
+          recordKeysLower[cleanVariation] !== undefined) {
+        normalized[standardField] = recordKeysLower[cleanVariation];
+        break;
       }
     }
   }
 
-  return normalized
+  return normalized;
 }
+
 
 function getDetailedChanges(existingRecord, newRecord) {
   const fieldsToCompare = [
@@ -1300,7 +1316,12 @@ async function processFileAsync(jobId, filePath, fileExtension) {
           }
         } else {
           // Create new equipment
-          processedRecord.equipmentid = processedRecord.serialnumber
+          // ✅ Use equipmentid from uploaded file (frontend)
+          // If not provided, then use serialnumber as fallback
+          if (!processedRecord.equipmentid || processedRecord.equipmentid.toString().trim() === "") {
+            processedRecord.equipmentid = processedRecord.serialnumber  // Fallback
+          }
+
           if (!processedRecord.status || processedRecord.status.toString().trim() === "") {
             processedRecord.status = "Active"
           }
@@ -1323,6 +1344,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
           })
           response.summary.operationBreakdown.created++
         }
+
 
         validRecords.push(processedRecord)
         processedSerials.add(processedRecord.serialnumber)
