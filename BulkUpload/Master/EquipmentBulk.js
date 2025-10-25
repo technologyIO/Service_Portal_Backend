@@ -1054,12 +1054,17 @@ async function updateJobProgress(jobId, updateData) {
   }
 }
 
+
+
+
+
+
 async function processFileAsync(jobId, filePath, fileExtension) {
   const startTime = Date.now()
 
 
 
-  
+
   const response = {
     status: "processing",
     startTime: new Date(),
