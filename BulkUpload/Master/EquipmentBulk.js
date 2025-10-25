@@ -1054,9 +1054,7 @@ async function updateJobProgress(jobId, updateData) {
   }
 }
 
-// MAIN PROCESSING FUNCTION - Updated with chunking and optimization
 async function processFileAsync(jobId, filePath, fileExtension) {
-  let session = null
   const startTime = Date.now()
 
   const response = {
@@ -1346,85 +1344,82 @@ async function processFileAsync(jobId, filePath, fileExtension) {
       failedCount: response.summary.operationBreakdown.failed,
     })
 
-    // Start database transaction
-    session = await mongoose.startSession()
-    const equipmentProcessStartTime = Date.now()
+    // Process equipment creation and updates (WITHOUT transactions)
+    const equipmentProcessStartTime = Date.now();
 
-    await session.withTransaction(async () => {
-      // Process equipment creation
-      if (recordsToCreate.length > 0) {
-        console.log(`Creating ${recordsToCreate.length} new equipment records`)
+    // Process equipment creation
+    if (recordsToCreate.length > 0) {
+      console.log(`Creating ${recordsToCreate.length} new equipment records`)
 
-        for (let i = 0; i < recordsToCreate.length; i += CONFIG.EQUIPMENT_BATCH_SIZE) {
-          const batch = recordsToCreate.slice(i, i + CONFIG.EQUIPMENT_BATCH_SIZE)
+      for (let i = 0; i < recordsToCreate.length; i += CONFIG.EQUIPMENT_BATCH_SIZE) {
+        const batch = recordsToCreate.slice(i, i + CONFIG.EQUIPMENT_BATCH_SIZE)
 
-          try {
-            await retryOperation(async () => {
-              await Equipment.insertMany(batch, { session, ordered: false })
-            })
-          } catch (bulkError) {
-            if (bulkError.writeErrors) {
-              bulkError.writeErrors.forEach((err) => {
-                const index = err.index
-                if (batch[index]) {
-                  const serialnumber = batch[index].serialnumber
-                  const errorResult = response.equipmentResults.find((r) => r.serialnumber === serialnumber)
-                  if (errorResult) {
-                    errorResult.status = "Failed"
-                    errorResult.reason = "Database write error"
-                    errorResult.category = ERROR_CATEGORIES.DATABASE_ERROR
-                    errorResult.error = err.errmsg || "Database write error"
-                    errorResult.willGeneratePMs = false
-                    response.summary.operationBreakdown.failed++
-                    response.summary.operationBreakdown.created--
-                  }
+        try {
+          await retryOperation(async () => {
+            await Equipment.insertMany(batch, { ordered: false })
+          })
+        } catch (bulkError) {
+          if (bulkError.writeErrors) {
+            bulkError.writeErrors.forEach((err) => {
+              const index = err.index
+              if (batch[index]) {
+                const serialnumber = batch[index].serialnumber
+                const errorResult = response.equipmentResults.find((r) => r.serialnumber === serialnumber)
+                if (errorResult) {
+                  errorResult.status = "Failed"
+                  errorResult.reason = "Database write error"
+                  errorResult.category = ERROR_CATEGORIES.DATABASE_ERROR
+                  errorResult.error = err.errmsg || "Database write error"
+                  errorResult.willGeneratePMs = false
+                  response.summary.operationBreakdown.failed++
+                  response.summary.operationBreakdown.created--
                 }
-              })
-            }
+              }
+            })
           }
         }
       }
+    }
 
-      // Process equipment updates
-      if (recordsToUpdate.length > 0) {
-        console.log(`Updating ${recordsToUpdate.length} existing equipment records`)
+    // Process equipment updates
+    if (recordsToUpdate.length > 0) {
+      console.log(`Updating ${recordsToUpdate.length} existing equipment records`)
 
-        for (let i = 0; i < recordsToUpdate.length; i += CONFIG.EQUIPMENT_BATCH_SIZE) {
-          const batch = recordsToUpdate.slice(i, i + CONFIG.EQUIPMENT_BATCH_SIZE)
-          const equipmentOps = batch.map((record) => ({
-            updateOne: {
-              filter: { serialnumber: record.serialnumber },
-              update: { $set: record },
-            },
-          }))
+      for (let i = 0; i < recordsToUpdate.length; i += CONFIG.EQUIPMENT_BATCH_SIZE) {
+        const batch = recordsToUpdate.slice(i, i + CONFIG.EQUIPMENT_BATCH_SIZE)
+        const equipmentOps = batch.map((record) => ({
+          updateOne: {
+            filter: { serialnumber: record.serialnumber },
+            update: { $set: record },
+          },
+        }))
 
-          try {
-            await retryOperation(async () => {
-              await Equipment.bulkWrite(equipmentOps, { session, ordered: false })
-            })
-          } catch (bulkError) {
-            if (bulkError.writeErrors) {
-              bulkError.writeErrors.forEach((err) => {
-                const index = err.index
-                if (batch[index]) {
-                  const serialnumber = batch[index].serialnumber
-                  const errorResult = response.equipmentResults.find((r) => r.serialnumber === serialnumber)
-                  if (errorResult) {
-                    errorResult.status = "Failed"
-                    errorResult.reason = "Database update error"
-                    errorResult.category = ERROR_CATEGORIES.DATABASE_ERROR
-                    errorResult.error = err.errmsg || "Database update error"
-                    errorResult.willGeneratePMs = false
-                    response.summary.operationBreakdown.failed++
-                    response.summary.operationBreakdown.updated--
-                  }
+        try {
+          await retryOperation(async () => {
+            await Equipment.bulkWrite(equipmentOps, { ordered: false })
+          })
+        } catch (bulkError) {
+          if (bulkError.writeErrors) {
+            bulkError.writeErrors.forEach((err) => {
+              const index = err.index
+              if (batch[index]) {
+                const serialnumber = batch[index].serialnumber
+                const errorResult = response.equipmentResults.find((r) => r.serialnumber === serialnumber)
+                if (errorResult) {
+                  errorResult.status = "Failed"
+                  errorResult.reason = "Database update error"
+                  errorResult.category = ERROR_CATEGORIES.DATABASE_ERROR
+                  errorResult.error = err.errmsg || "Database update error"
+                  errorResult.willGeneratePMs = false
+                  response.summary.operationBreakdown.failed++
+                  response.summary.operationBreakdown.updated--
                 }
-              })
-            }
+              }
+            })
           }
         }
       }
-    })
+    }
 
     response.summary.performance.equipmentProcessTime = Date.now() - equipmentProcessStartTime
 
@@ -1478,11 +1473,10 @@ async function processFileAsync(jobId, filePath, fileExtension) {
           const progressPercentage = 75 + Math.round((recordIndex / recordsForPMGeneration.length) * 15);
 
           const memUsage = checkMemoryUsage();
-          if (memUsage.usagePercentage > 60) { // Reduced threshold
+          if (memUsage.usagePercentage > 60) {
             console.log(`High memory usage detected: ${memUsage.usagePercentage}%. Running cleanup.`);
             aggressiveMemoryCleanup();
           }
-
 
           await updateJobProgress(jobId, {
             progressPercentage,
@@ -1810,7 +1804,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
     response.endTime = new Date()
     response.duration = `${Math.round(response.summary.performance.totalTime / 1000)}s`
 
-    // FIXED: Save final results using chunking strategy to avoid BSON limit
+    // Save final results using chunking strategy to avoid BSON limit
     console.log(`Saving results for job ${jobId}: ${response.equipmentResults.length} equipment results`);
 
     await saveJobResultsInChunks(
@@ -1854,11 +1848,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
       ],
     })
   } finally {
-    // Cleanup
-    if (session) {
-      await session.endSession()
-    }
-
+    // Cleanup temp file
     if (filePath) {
       cleanupTempFile(filePath)
     }
@@ -1867,6 +1857,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
     console.log(`Final memory usage for job ${jobId}: ${finalMemUsage.heapUsed}MB (${finalMemUsage.usagePercentage}%)`)
   }
 }
+
 
 // API Routes (keeping all existing routes)
 router.post("/start", upload.single("file"), async (req, res) => {
