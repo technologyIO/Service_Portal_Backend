@@ -1057,6 +1057,9 @@ async function updateJobProgress(jobId, updateData) {
 async function processFileAsync(jobId, filePath, fileExtension) {
   const startTime = Date.now()
 
+
+
+  
   const response = {
     status: "processing",
     startTime: new Date(),
@@ -1857,6 +1860,7 @@ async function processFileAsync(jobId, filePath, fileExtension) {
     console.log(`Final memory usage for job ${jobId}: ${finalMemUsage.heapUsed}MB (${finalMemUsage.usagePercentage}%)`)
   }
 }
+
 
 
 // API Routes (keeping all existing routes)
