@@ -335,7 +335,7 @@ router.post('/sendComplaintEmail', async (req, res) => {
     let finalpincode = 'N/A';
 
     if (foundCustomer) {
-      finalHospitalName = foundCustomer.hospitalname || 'N/A';
+      finalHospitalName = foundCustomer.customername || 'N/A';
       finalCity = foundCustomer.city || 'N/A';
       finalPhone = foundCustomer.telephone || 'N/A';
       finalEmail = foundCustomer.email || 'N/A';
@@ -430,7 +430,7 @@ router.post('/sendComplaintEmail', async (req, res) => {
         <div class="greeting">Please create a new complaint as below</div>
         
         <div class="field">
-          Complaint Type : <span class="highlight-yellow">${combinedData.complaintType}</span>
+          Complaint Type : <span >${combinedData.complaintType}</span>
         </div>
         
         <div class="field">
@@ -458,7 +458,7 @@ router.post('/sendComplaintEmail', async (req, res) => {
         </div>
         
         <div class="field">
-          Problem reported : <span class="highlight-green">${combinedData.problemType} | ${combinedData.problemName}</span>
+          Problem reported : <span  >${combinedData.problemType} | ${combinedData.problemName}</span>
         </div>
         
         <div class="field">
@@ -488,9 +488,7 @@ router.post('/sendComplaintEmail', async (req, res) => {
         ` : ''}
       </div>
       
-      <div class="vendor-section">
-        Vendor Details ✓ Vendor Code / Vendor Name / City
-      </div>
+       
     </div>
   </body>
   </html>
@@ -574,6 +572,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
       city,
       user, // Complete user object from frontend
       spareRequested,
+      spareRequestedDescription,
       remarks,
       serviceEngineerMobile,
       serviceEngineerEmail,
@@ -696,7 +695,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
             <div class="greeting">Kindly update the notification as below</div>
             
             <div class="field">
-              Notification No: <span class="highlight-yellow">${notification_no}</span>
+              Notification No: <span >${notification_no}</span>
             </div>
             
             <div class="field">
@@ -704,7 +703,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
             </div>
             
             <div class="field">
-              Description : <span class="highlight-yellow">${description}</span>
+              Description : <span >${description}</span>
             </div>
             
             <div class="field">
@@ -712,7 +711,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
             </div>
             
             <div class="field">
-              Customer : ${customer} Name : <span class="highlight-yellow">${finalHospitalName}</span>
+              Customer : ${customer} Name : <span >${finalHospitalName}</span>
             </div>
             
             <div class="field">
@@ -722,7 +721,10 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
             
             
             <div class="field">
-              Spare Required : <span class="highlight-red">${spareRequested || 'N/A'}</span>
+              Spare Required : <span >${spareRequested || 'N/A'}</span>
+            </div>
+            <div class="field">
+              Spare Description : <span >${spareRequestedDescription || 'N/A'}</span>
             </div>
             
             <div class="field">
@@ -742,9 +744,7 @@ router.post('/sendUpdatedComplaintEmail', async (req, res) => {
             </div>
           </div>
           
-          <div class="vendor-section">
-            Vendor Details ✓ Vendor Code / Vendor Name / City
-          </div>
+          
         </div>
       </body>
       </html>
@@ -1935,7 +1935,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
     if (userInfo?.usertype === "skanray") {
       installedBySection = `
         <div style="font-size: 14px; line-height: 1.6;">
-          <span class="install-label">Installed by:</span> <span class="install-data">${userInfo?.employeeid || "N/A"}</span><br />
+          <span class="install-label">Serviced by:</span> <span class="install-data">${userInfo?.employeeid || "N/A"}</span><br />
           <span class="install-label">Engineer:</span> <span class="install-data">${userInfo?.firstName || ""} ${userInfo?.lastName || ""}</span><br />
           <span class="install-label"></span> <span class="install-data">Skanray Technologies Limited</span><br />
           <span class="install-label">States:</span> <span class="install-data">${stateNamesText}</span>
@@ -1944,7 +1944,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
     } else {
       installedBySection = `
         <div style="font-size: 14px; line-height: 1.6;">
-          <span class="install-label">Installed by:</span> <span class="install-data">${userInfo?.employeeid || "N/A"}</span><br />
+          <span class="install-label">Serviced by:</span> <span class="install-data">${userInfo?.employeeid || "N/A"}</span><br />
           <span class="install-label">Engineer:</span> <span class="install-data">${userInfo?.firstName || ""} ${userInfo?.lastName || ""}</span><br />
           <span class="install-label"></span> <span class="install-data">${userInfo?.dealerName || ""}</span><br />
           <span class="install-label">Dealer:</span> <span class="install-data">${userInfo?.dealerCode || ""}</span>
@@ -1967,7 +1967,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
             ? userInfo.branch.join(", ")
             : "";
         return `
-      <span style="font-weight: bold; font-size: 8px;">Installed by:</span> <span style="font-size: 8px;">${employeeId}</span><br />
+      <span style="font-weight: bold; font-size: 8px;">Serviced by:</span> <span style="font-size: 8px;">${employeeId}</span><br />
       <span style="font-weight: bold; font-size: 8px;">Engineer:</span> <span style="font-size: 8px;">${firstName} ${lastName}</span><br />
       <span style="font-size: 8px;">Skanray Technologies Limited</span><br />
       <span style="font-weight: bold; font-size: 8px;">States:</span> <span style="font-size: 8px;">${stateNamesText}</span>
@@ -1975,7 +1975,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
       } else {
         // For dealer users, show dealer code (existing logic)
         return `
-      <span style="font-weight: bold; font-size: 8px;">Installed by:</span> <span style="font-size: 8px;">${employeeId}</span><br />
+      <span style="font-weight: bold; font-size: 8px;">Serviced by:</span> <span style="font-size: 8px;">${employeeId}</span><br />
       <span style="font-weight: bold; font-size: 8px;">Engineer:</span> <span style="font-size: 8px;">${firstName} ${lastName}</span><br />
       <span style="font-size: 8px;">${dealerName}</span><br />
       <span style="font-weight: bold; font-size: 8px;">Dealer:</span> <span style="font-size: 8px;">${dealerCode}</span>
@@ -2059,7 +2059,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
             <div class="greeting">Kindly Close the notification as below</div>
             
             <div class="field">
-              Notification No: <span class="highlight-yellow">${complaintNumber}</span>
+              Notification No: <span >${complaintNumber}</span>
             </div>
             
             <div class="field">
@@ -2067,7 +2067,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
             </div>
             
             <div class="field">
-              Description : <span class="highlight-yellow">${description}</span>
+              Description : <span >${description}</span>
             </div>
             
             <div class="field">
@@ -2097,9 +2097,7 @@ router.post("/verifyOtpAndSendFinalEmail", async (req, res) => {
             <div class="field">${engineerTitle} Email : ${userInfo?.email || 'N/A'}</div>
           </div>
           
-          <div class="vendor-section">
-            Vendor Details ✓ Vendor Code / Vendor Name / City
-          </div>
+           
         </div>
       </body>
       </html>

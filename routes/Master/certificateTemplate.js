@@ -90,7 +90,7 @@ module.exports = function getCertificateHTML(data) {
     // For Skanray users, show state names instead of dealer code
     const stateNamesText = userInfo.stateNames ? userInfo.stateNames.join(", ") : "";
     installedBySection = `
-      <span class="install-label">Installed by:</span> <span class="install-data">${employeeId}</span><br />
+      <span class="install-label">Serviced by:</span> <span class="install-data">${employeeId}</span><br />
       <span class="install-label">Engineer:</span> <span class="install-data">${firstName} ${lastName}</span><br />
       <span class="install-label"></span> <span class="install-data">Skanray Technologies Limited</span><br />
       <span class="install-label">States:</span> <span class="install-data">${stateNamesText}</span>
@@ -98,7 +98,7 @@ module.exports = function getCertificateHTML(data) {
   } else {
     // For dealer users, show dealer code (existing logic)
     installedBySection = `
-      <span class="install-label">Installed by:</span> <span class="install-data">${employeeId}</span><br />
+      <span class="install-label">Serviced by:</span> <span class="install-data">${employeeId}</span><br />
       <span class="install-label">Engineer:</span> <span class="install-data">${firstName} ${lastName}</span><br />
       <span class="install-label"></span> <span class="install-data">${dealerName}</span><br />
       <span class="install-label">Dealer:</span> <span class="install-data">${dealerCode}</span>

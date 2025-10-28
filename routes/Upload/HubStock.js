@@ -238,7 +238,6 @@ router.get('/hubstocks/material-list', async (req, res) => {
 });
 
 
-// Example route: /collections/hubstocks/check-material/:materialcode
 router.get('/hubstocks/check-material/:materialcode', async (req, res) => {
     try {
         const { materialcode } = req.params;
@@ -252,7 +251,7 @@ router.get('/hubstocks/check-material/:materialcode', async (req, res) => {
         // 2) Fetch matching documents from DealerStock (only active)
         const dealerStockData = await DealerStock.find(
             { materialcode, status: { $ne: "Inactive" } },
-            { dealercity: 1, unrestrictedquantity: 1, _id: 0 }
+            { dealername: 1, dealercity: 1, unrestrictedquantity: 1, _id: 0 }
         );
 
         // 3) Send both results back
@@ -261,6 +260,7 @@ router.get('/hubstocks/check-material/:materialcode', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+
 
 
 // GET HubStock by ID

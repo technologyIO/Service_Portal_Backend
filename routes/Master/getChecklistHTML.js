@@ -53,7 +53,7 @@ const getChecklistHTML = ({
     // For Skanray users, show state names instead of dealer code
     const stateNamesText = userInfo.stateNames ? userInfo.stateNames.join(", ") : "";
     serviceEngineerSection = `
-      <span class="install-label">Installed by:</span> <span class="install-data">${userInfo.employeeid || ""}</span><br />
+      <span class="install-label">Serviced by:</span> <span class="install-data">${userInfo.employeeid || ""}</span><br />
       <span class="install-label">Engineer:</span> <span class="install-data">${serviceEngineer || ""}</span><br />
       <span class="install-label"></span> <span class="install-data">Skanray Technologies Limited</span><br />
       <span class="install-label">States:</span> <span class="install-data">${stateNamesText}</span>
@@ -61,7 +61,7 @@ const getChecklistHTML = ({
   } else {
     // For dealer users, show dealer code
     serviceEngineerSection = `
-      <span class="install-label">Installed by:</span> <span class="install-data">${userInfo?.employeeid || ""}</span><br />
+      <span class="install-label">Serviced by:</span> <span class="install-data">${userInfo?.employeeid || ""}</span><br />
       <span class="install-label">Engineer:</span> <span class="install-data">${serviceEngineer || ""}</span><br />
       <span class="install-label"></span> <span class="install-data">${userInfo?.dealerName || ""}</span><br />
       <span class="install-label">Dealer:</span> <span class="install-data">${userInfo?.dealerCode || ""}</span>
@@ -273,12 +273,12 @@ const getChecklistHTML = ({
   <td class="cell section-title">Customer Code:</td>
   <td class="cell field-data">${customer?.customercodeid || "NA"}</td>
 
-  <td class="cell section-title">Hospital Name:</td>
+  <td class="cell section-title">Name 1:</td>
   <td class="cell field-data">${customer?.hospitalname || "NA"}</td>
 </tr>
 
           <tr>
-             <td class="cell section-title">Customer Name:</td>
+             <td class="cell section-title">Name 2:</td>
              <td class="cell field-data">${customer?.customername || "NA"}</td>
              <td class="cell"></td>
              <td class="cell"></td>

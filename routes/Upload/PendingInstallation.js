@@ -237,7 +237,6 @@ router.get('/pendinginstallations/filter', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
-
 // BULK DELETE Pending Installation entries - PLACE THIS BEFORE THE /:id ROUTES
 router.delete('/pendinginstallations/bulk', async (req, res) => {
     try {

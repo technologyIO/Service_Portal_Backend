@@ -87,6 +87,261 @@ router.get('/customer/filter-options', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+// POST - Request customer contact change
+router.post('/customer/request-change', async (req, res) => {
+    try {
+        const {
+            customercodeid,
+            customername,
+            currentMobile,
+            currentEmail,
+            newMobile,
+            newEmail,
+            employeeName,
+            employeeId
+        } = req.body;
+
+        // Validation
+        if (!customercodeid || !customername || !employeeName || !employeeId) {
+            return res.status(400).json({
+                message: 'Customer code, customer name, employee name and employee ID are required'
+            });
+        }
+
+        if (!newMobile && !newEmail) {
+            return res.status(400).json({
+                message: 'At least one contact field (mobile or email) must be provided'
+            });
+        }
+
+        // Get CIC recipients
+        const cicRecipients = await getCicRecipients();
+
+        if (cicRecipients.length === 0) {
+            return res.status(500).json({
+                message: 'No CIC recipients configured. Please contact administrator.'
+            });
+        }
+
+        // Prepare email content
+        const changesHTML = `
+            ${newMobile ? `<tr>
+                <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; font-family: Arial, sans-serif; font-size: 14px; color: #424242;">Mobile Number</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; font-family: Arial, sans-serif; font-size: 14px; color: #757575;">${currentMobile || 'Not set'}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; font-family: Arial, sans-serif; font-size: 14px; color: #1565c0; font-weight: 600;">${newMobile}</td>
+            </tr>` : ''}
+            ${newEmail ? `<tr>
+                <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; font-family: Arial, sans-serif; font-size: 14px; color: #424242;">Email Address</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; font-family: Arial, sans-serif; font-size: 14px; color: #757575;">${currentEmail || 'Not set'}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; font-family: Arial, sans-serif; font-size: 14px; color: #1565c0; font-weight: 600;">${newEmail}</td>
+            </tr>` : ''}
+        `;
+
+        const emailHTML = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Customer Contact Update Request</title>
+            </head>
+            <body style="margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; background-color: #f5f5f5;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f5f5; padding: 40px 20px;">
+                    <tr>
+                        <td align="center">
+                            <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 2px; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);">
+                                
+                                <!-- Header -->
+                                <tr>
+                                    <td style="padding: 40px 40px 20px 40px; border-bottom: 3px solid #1565c0;">
+                                        <h1 style="margin: 0; font-family: Arial, sans-serif; font-size: 24px; font-weight: 600; color: #212121; line-height: 1.4;">
+                                            Customer Contact Update Request
+                                        </h1>
+                                        <p style="margin: 8px 0 0 0; font-family: Arial, sans-serif; font-size: 14px; color: #757575;">
+                                            Request Date: ${new Date().toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            timeZone: 'Asia/Kolkata'
+        })} at ${new Date().toLocaleTimeString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Asia/Kolkata'
+        })}
+                                        </p>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Content -->
+                                <tr>
+                                    <td style="padding: 40px;">
+                                        <p style="margin: 0 0 24px 0; font-family: Arial, sans-serif; font-size: 14px; color: #424242; line-height: 1.6;">
+                                            Dear CIC Team,
+                                        </p>
+                                        
+                                        <p style="margin: 0 0 32px 0; font-family: Arial, sans-serif; font-size: 14px; color: #424242; line-height: 1.6;">
+                                            An employee has submitted a request to update customer contact information. Please review and process the following details:
+                                        </p>
+
+                                        <!-- Customer Information -->
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; border: 1px solid #e0e0e0; border-radius: 2px;">
+                                            <tr>
+                                                <td style="padding: 16px; background-color: #fafafa; border-bottom: 1px solid #e0e0e0;">
+                                                    <p style="margin: 0; font-family: Arial, sans-serif; font-size: 12px; font-weight: 600; color: #616161; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                        Customer Information
+                                                    </p>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 20px;">
+                                                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                                                        <tr>
+                                                            <td width="140" style="padding: 8px 0; font-family: Arial, sans-serif; font-size: 14px; color: #757575; vertical-align: top;">
+                                                                Customer Name:
+                                                            </td>
+                                                            <td style="padding: 8px 0; font-family: Arial, sans-serif; font-size: 14px; color: #212121; font-weight: 600;">
+                                                                ${customername}
+                                                            </td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td width="140" style="padding: 8px 0; font-family: Arial, sans-serif; font-size: 14px; color: #757575; vertical-align: top;">
+                                                                Customer Code:
+                                                            </td>
+                                                            <td style="padding: 8px 0; font-family: Arial, sans-serif; font-size: 14px; color: #212121; font-weight: 600;">
+                                                                ${customercodeid}
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+
+                                        <!-- Requested Changes -->
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; border: 1px solid #e0e0e0; border-radius: 2px;">
+                                            <tr>
+                                                <td style="padding: 16px; background-color: #fafafa; border-bottom: 1px solid #e0e0e0;">
+                                                    <p style="margin: 0; font-family: Arial, sans-serif; font-size: 12px; font-weight: 600; color: #616161; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                        Requested Changes
+                                                    </p>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 0;">
+                                                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+                                                        <thead>
+                                                            <tr style="background-color: #fafafa;">
+                                                                <th style="padding: 12px; border-bottom: 2px solid #e0e0e0; font-family: Arial, sans-serif; font-size: 13px; font-weight: 600; color: #616161; text-align: left; text-transform: uppercase; letter-spacing: 0.3px;">
+                                                                    Field
+                                                                </th>
+                                                                <th style="padding: 12px; border-bottom: 2px solid #e0e0e0; font-family: Arial, sans-serif; font-size: 13px; font-weight: 600; color: #616161; text-align: left; text-transform: uppercase; letter-spacing: 0.3px;">
+                                                                    Current Value
+                                                                </th>
+                                                                <th style="padding: 12px; border-bottom: 2px solid #e0e0e0; font-family: Arial, sans-serif; font-size: 13px; font-weight: 600; color: #616161; text-align: left; text-transform: uppercase; letter-spacing: 0.3px;">
+                                                                    Requested Value
+                                                                </th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            ${changesHTML}
+                                                        </tbody>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+
+                                        <!-- Employee Information -->
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; border: 1px solid #e0e0e0; border-radius: 2px;">
+                                            <tr>
+                                                <td style="padding: 16px; background-color: #fafafa; border-bottom: 1px solid #e0e0e0;">
+                                                    <p style="margin: 0; font-family: Arial, sans-serif; font-size: 12px; font-weight: 600; color: #616161; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                        Requested By
+                                                    </p>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 20px;">
+                                                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                                                        <tr>
+                                                            <td width="140" style="padding: 8px 0; font-family: Arial, sans-serif; font-size: 14px; color: #757575; vertical-align: top;">
+                                                                Employee Name:
+                                                            </td>
+                                                            <td style="padding: 8px 0; font-family: Arial, sans-serif; font-size: 14px; color: #212121; font-weight: 600;">
+                                                                ${employeeName}
+                                                            </td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td width="140" style="padding: 8px 0; font-family: Arial, sans-serif; font-size: 14px; color: #757575; vertical-align: top;">
+                                                                Employee ID:
+                                                            </td>
+                                                            <td style="padding: 8px 0; font-family: Arial, sans-serif; font-size: 14px; color: #212121; font-weight: 600;">
+                                                                ${employeeId}
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+
+                                        <!-- Action Notice -->
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #fff3e0; border-left: 4px solid #ff9800; border-radius: 2px;">
+                                            <tr>
+                                                <td style="padding: 16px;">
+                                                    <p style="margin: 0; font-family: Arial, sans-serif; font-size: 13px; color: #e65100; line-height: 1.6;">
+                                                        <strong>Action Required:</strong> Please verify the information and update the customer record in the system accordingly.
+                                                    </p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Footer -->
+                                <tr>
+                                    <td style="padding: 32px 40px; background-color: #fafafa; border-top: 1px solid #e0e0e0;">
+                                        <p style="margin: 0 0 8px 0; font-family: Arial, sans-serif; font-size: 12px; color: #757575; line-height: 1.5;">
+                                            This is an automated notification from Skanray Access System.
+                                        </p>
+                                        <p style="margin: 0; font-family: Arial, sans-serif; font-size: 11px; color: #9e9e9e;">
+                                            © ${new Date().getFullYear()} Skanray Technologies Ltd. All rights reserved.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+        `;
+
+        // Email options
+        const mailOptions = {
+            from: 'webadmin@skanray-access.com',
+            to: cicRecipients.join(', '),
+            subject: `Customer Contact Update Request - ${customername} (${customercodeid})`,
+            html: emailHTML
+        };
+
+        // Send email
+        await transporter.sendMail(mailOptions);
+
+        res.status(200).json({
+            message: 'Change request sent successfully to CIC team',
+            recipientCount: cicRecipients.length
+        });
+
+    } catch (error) {
+        console.error('Error processing change request:', error);
+        res.status(500).json({
+            message: 'Failed to send change request',
+            error: error.message
+        });
+    }
+});
+
+
+
+
 
 // GET customers with filters
 router.get('/customer/filter', async (req, res) => {
@@ -445,7 +700,7 @@ router.post('/customer/send-email', async (req, res) => {
 
         // Email options
         const mailOptions = {
-            from: 'webladmin@skanray-access.com',
+            from: 'webadmin@skanray-access.com',
             to: finalRecipients.join(', '),
             subject: 'New Customer Creation',
             html: emailContent
@@ -467,7 +722,7 @@ router.post('/customer/send-email', async (req, res) => {
             },
             emailDetails: {
                 subject: 'New Customer Creation',
-                from: 'webladmin@skanray-access.com',
+                from: 'webadmin@skanray-access.com',
                 sentAt: new Date().toISOString()
             }
         });

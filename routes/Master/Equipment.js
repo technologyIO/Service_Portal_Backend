@@ -1070,7 +1070,7 @@ router.post("/equipment/bulk", async (req, res) => {
         response.currentPhase = 'installation-pdf-generation';
         sendUpdate(response);
 
-        // 🔥 FIX: Create enhanced equipment list with keys from equipmentPayloads
+        // Create enhanced equipment list with keys from equipmentPayloads
         const enhancedEquipmentList = equipmentPayloads.map(equipment => ({
             materialdescription: equipment.materialdescription || "",
             serialnumber: equipment.serialnumber || "",
@@ -1079,7 +1079,7 @@ router.post("/equipment/bulk", async (req, res) => {
             materialcode: equipment.materialcode || ""
         }));
 
-        // 🔥 FIX: Extract palnumber from first equipment payload
+        // Extract palnumber from first equipment payload
         const palnumber = equipmentPayloads[0]?.palnumber || "";
 
         console.log('Enhanced Equipment List with Keys:', enhancedEquipmentList);
@@ -1091,8 +1091,7 @@ router.post("/equipment/bulk", async (req, res) => {
             installationreportno: reportNo,
             abnormalCondition: req.body.abnormalCondition || "",
             voltageData: req.body.voltageData || {},
-            palnumber: palnumber, // 🔥 FIX: Pass the palnumber here
-            // Include equipment used and calibration date in the PDF
+            palnumber: palnumber,
             equipmentUsedSerial: equipmentPayloads[0]?.equipmentUsedSerial || "",
             calibrationDueDate: equipmentPayloads[0]?.calibrationDueDate || ""
         });
@@ -1110,7 +1109,7 @@ router.post("/equipment/bulk", async (req, res) => {
         response.currentPhase = 'equipment-processing';
         sendUpdate(response);
 
-        // 🔥 FIX: Separate attachments for customer and internal emails
+        // Separate attachments for customer and internal emails
         const customerAttachments = [{
             filename: `InstallationReport_${reportNo}.pdf`,
             content: installationBuffer
@@ -1215,12 +1214,12 @@ router.post("/equipment/bulk", async (req, res) => {
                             documentRevNo,
                             formatChlNo,
                             formatRevNo,
-                            userInfo: pdfData.userInfo, // Add userInfo parameter for service engineer details
+                            userInfo: pdfData.userInfo,
                         });
 
                         const checklistBuffer = await generateSimplePdf(checklistHtml);
                         if (checklistBuffer) {
-                            // 🔥 FIX: Add checklist only to internal attachments, not customer
+                            // Add checklist only to internal attachments, not customer
                             internalAttachments.push({
                                 filename: `Checklist_${serialNumber}.pdf`,
                                 content: checklistBuffer
@@ -1228,17 +1227,37 @@ router.post("/equipment/bulk", async (req, res) => {
                         }
                     }
 
-                    // Update equipment in database with the calibration and equipment info
+                    // 🔥 SAVE/UPDATE EQUIPMENT IN DATABASE WITH ALL INSTALLATION DATA
                     await Equipment.findOneAndUpdate(
                         { serialnumber: serialNumber },
                         {
                             $set: {
+                                materialdescription: equipment.materialdescription || "",
+                                materialcode: equipment.materialcode || "",
+                                status: equipment.status || "Installed",
+                                currentcustomer: equipment.currentcustomer || "",
+                                endcustomer: equipment.endcustomer ||  "",
+                                equipmentid: equipment.equipmentid || equipment.key || "",
+                                custWarrantystartdate: equipment.custWarrantystartdate || "",
+                                custWarrantyenddate: equipment.custWarrantyenddate || "",
+                                dealerwarrantystartdate: equipment.dealerwarrantystartdate || "",
+                                dealerwarrantyenddate: equipment.dealerwarrantyenddate || "",
+                                dealer: equipment.dealer || "",
+                                palnumber: equipment.palnumber || palnumber,
+                                installationreportno: reportNo,
                                 equipmentUsedSerial: equipment.equipmentUsedSerial || "",
                                 calibrationDueDate: equipment.calibrationDueDate || "",
-                                key: equipment.key || ""
+                                key: equipment.key || "",
+                                modifiedAt: new Date()
+                            },
+                            $setOnInsert: {
+                                createdAt: new Date()
                             }
                         },
-                        { new: true }
+                        { 
+                            new: true, 
+                            upsert: true // Creates new document if doesn't exist
+                        }
                     );
 
                     equipmentResult.status = 'Completed';
@@ -1270,21 +1289,22 @@ router.post("/equipment/bulk", async (req, res) => {
         const internalEmailText = `Please find attached the installation report and checklists for the following equipment serial numbers: ${serialNumbersText}`;
 
         try {
-            // 🔥 FIX: 1. Send ONLY Installation Report to customer's email
+            // 1. Send ONLY Installation Report to customer's email
             if (pdfData.email) {
                 await transporter.sendMail({
                     from: 'webadmin@skanray-access.com',
                     to: pdfData.email,
                     subject: customerEmailSubject,
                     text: customerEmailText,
-                    attachments: customerAttachments, // Only installation report
+                    attachments: customerAttachments,
                     disableFileAccess: true,
                     disableUrlAccess: true
                 });
             }
+            
             const cicRecipients = await getCicRecipients();
 
-            // 🔥 FIX: 2. Send Installation Report + Checklists to internal emails
+            // 2. Send Installation Report + Checklists to internal emails
             if (pdfData.userInfo) {
                 const toEmails = [
                     pdfData.userInfo?.dealerEmail,
@@ -1294,7 +1314,7 @@ router.post("/equipment/bulk", async (req, res) => {
                         : pdfData.userInfo.manageremail
                             ? [pdfData.userInfo.manageremail]
                             : []),
-                    ...cicRecipients  // CIC recipients from database
+                    ...cicRecipients
                 ].filter(Boolean);
 
                 if (toEmails.length > 0) {
@@ -1303,7 +1323,7 @@ router.post("/equipment/bulk", async (req, res) => {
                         to: toEmails,
                         subject: internalEmailSubject,
                         text: internalEmailText,
-                        attachments: internalAttachments, // Installation report + checklists
+                        attachments: internalAttachments,
                         disableFileAccess: true,
                         disableUrlAccess: true
                     });
@@ -1331,6 +1351,7 @@ router.post("/equipment/bulk", async (req, res) => {
         res.end();
     }
 });
+
 
 
 
@@ -1429,15 +1450,32 @@ router.delete('/all', async (req, res) => { // note: changed path to /all
 });
 // DELETE equipment
 router.delete('/equipment/:id', async (req, res) => {
-    try {
-        const deletedEquipment = await Equipment.deleteOne({ _id: req.params.id })
-        if (deletedEquipment.deletedCount === 0) {
-            res.status(404).json({ message: "Equipment Not Found" })
-        }
-        res.json({ message: 'Deleted Equipment' });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+  try {
+    // 1️⃣ Find the equipment by ID
+    const equipment = await Equipment.findById(req.params.id);
+
+    if (!equipment) {
+      return res.status(404).json({ message: 'Equipment Not Found' });
     }
+
+    // 2️⃣ Get the serial number before deleting
+    const serialNumber = equipment.serialnumber;
+
+    // 3️⃣ Delete all PMs that have matching serial number
+    const deletedPMs = await PM.deleteMany({ serialNumber });
+
+    // 4️⃣ Delete the equipment itself
+    await Equipment.deleteOne({ _id: req.params.id });
+
+    // 5️⃣ Send response
+    res.json({
+      message: 'Equipment and related PM records deleted successfully',
+      deletedPMCount: deletedPMs.deletedCount,
+    });
+  } catch (err) {
+    console.error('Delete Error:', err);
+    res.status(500).json({ message: 'Server Error', error: err.message });
+  }
 });
 
 router.get('/searchequipment', async (req, res) => {

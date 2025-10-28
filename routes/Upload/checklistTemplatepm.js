@@ -54,7 +54,7 @@ const getChecklistHTMLPM = ({
 
     serviceEngineerSection = `
     <div class="install-section">
-      <div><strong>Installed by:</strong> (${userInfo.employeeid || ""})</div>
+      <div><strong>Serviced by:</strong> (${userInfo.employeeid || ""})</div>
       <div>Engineer: ${userInfo.firstname || ""} ${userInfo.lastname || ""} </div>
       <div>Skanray Technologies Limited</div>
       <div>States: ${stateNamesText}</div>
@@ -64,7 +64,7 @@ const getChecklistHTMLPM = ({
     // ✅ Dealer users → show dealer info
     serviceEngineerSection = `
     <div class="install-section">
-      <div><strong>Installed by:</strong></div>
+      <div><strong>Serviced by:</strong></div>
       <div>Engineer: ${userInfo.firstname || ""} ${userInfo.lastname || ""} (${userInfo.employeeid || ""})</div>
       <div>Dealer: ${userInfo.dealerName || "N/A"} (${userInfo.dealerCode || "N/A"})</div>
     </div>
