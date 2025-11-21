@@ -7,7 +7,7 @@ const Aerb = require('../../Model/MasterSchema/AerbSchema');
 const Product = require('../../Model/MasterSchema/ProductSchema');
 const PMDocMaster = require('../../Model/MasterSchema/pmDocMasterSchema');
 const Customer = require('../../Model/UploadSchema/CustomerSchema');
-const mongoose = require('mongoose');
+const mongoose = require('mongoose'); 
 
 // Middleware to get a PendingInstallation by ID
 async function getPendingInstallationById(req, res, next) {
@@ -23,6 +23,8 @@ async function getPendingInstallationById(req, res, next) {
     res.pendingInstallation = pendingInstallation;
     next();
 }
+ 
+
 
 // Middleware to check for duplicate invoiceno
 async function checkDuplicateInvoiceNo(req, res, next) {

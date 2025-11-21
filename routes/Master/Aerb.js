@@ -92,7 +92,7 @@ router.delete('/aerb/bulk', async (req, res) => {
     } catch (err) {
         console.error('Bulk delete error:', err);
         res.status(500).json({ message: err.message });
-    }
+    } 
 });
 
 // GET Aerb entry by ID
@@ -106,7 +106,7 @@ router.get('/aerb/check/:materialcode', async (req, res) => {
 
         if (!materialcode || materialcode.trim() === "") {
             return res.status(400).json({ message: "Material code is required" });
-        }
+        } 
 
         const aerb = await Aerb.findOne({
             materialcode: materialcode.trim(),
