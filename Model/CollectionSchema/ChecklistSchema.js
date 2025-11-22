@@ -25,7 +25,7 @@ const CheckListSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    prodGroup: {
+    subgrp: {
         type: String,
         required: true
     },

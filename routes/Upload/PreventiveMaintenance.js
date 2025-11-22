@@ -1437,22 +1437,24 @@ router.get("/checklist/by-part/:partnoid", async (req, res) => {
         .json({ message: "Product not found for the provided part number" });
     }
 
-    // Get the product group from the found product
-    const productGroup = product.productgroup;
+    // Extract sub-group from product
+    const subGroup = product.subgrp;   // <-- actual matching field
 
-    // Find checklists where prodGroup matches the product group
-    const checklists = await CheckList.find({ prodGroup: productGroup }).select(
-      "checklisttype checkpointtype checkpoint prodGroup result status createdAt modifiedAt resulttype endVoltage startVoltage"
-    );
+    // Find checklists where subgrp matches
+    const checklists = await CheckList.find({ subgrp: subGroup })
+      .select(
+        "checklisttype checkpointtype checkpoint subgrp result status createdAt modifiedAt resulttype endVoltage startVoltage"
+      );
 
     res.json({
-      productGroup,
+      subGroup,
       checklists,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
+
 
 router.get("/docs/by-part/:partnoid", async (req, res) => {
   try {

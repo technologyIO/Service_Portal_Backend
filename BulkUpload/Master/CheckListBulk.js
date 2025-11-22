@@ -41,7 +41,7 @@ const upload = multer({
   }
 });
 
-// **FIXED:** Field mappings to match exact schema field names
+// **FIXED:** Field mappings - 'subgrp' as key to match schema
 const FIELD_MAPPINGS = {
   'checklisttype': new Set([
     'checklisttype', 'checklist_type', 'checklist-type',
@@ -62,8 +62,10 @@ const FIELD_MAPPINGS = {
     'checkpointname', 'checkpoint_name', 'checkpoint-name',
     'point', 'checkname', 'check_name'
   ]),
-  // **FIXED:** Change to prodGroup to match schema
-  'prodGroup': new Set([
+  // **FIXED:** Changed key to 'subgrp' to match schema
+  'subgrp': new Set([
+    'subgroup',        // Matches your Excel column "Subgroup"
+    'subgrp', 'sub_grp', 'sub-grp',
     'prodgroup', 'prod_group', 'prod-group',
     'productgroup', 'product_group', 'product-group',
     'group', 'category', 'productcategory'
@@ -77,7 +79,6 @@ const FIELD_MAPPINGS = {
     'outcometype', 'outcome_type', 'resultcategory',
     'result_category', 'outputtype', 'output_type'
   ]),
-  // **FIXED:** Change to startVoltage and endVoltage to match schema
   'startVoltage': new Set([
     'startvoltage', 'start_voltage', 'start-voltage',
     'initialvoltage', 'initial_voltage', 'beginvoltage',
@@ -89,6 +90,8 @@ const FIELD_MAPPINGS = {
     'to_voltage', 'lastvoltage', 'last_voltage'
   ])
 };
+
+
 
 // Optimized normalizeFieldName with memoization
 const normalizedFieldCache = new Map();
@@ -214,13 +217,13 @@ function checkForChanges(existingRecord, newRecord, providedFields) {
   };
 }
 
-// **FIXED:** Generate comprehensive unique identifier for proper duplicate detection
+// **FIXED:** Generate comprehensive unique identifier using subgrp
 function generateUniqueKey(record) {
   // Use all 4 fields for comprehensive duplicate detection
-  return `${(record.checkpoint || '').toLowerCase()}_${(record.checkpointtype || '').toLowerCase()}_${(record.checklisttype || '').toLowerCase()}_${(record.prodGroup || '').toLowerCase()}`;
+  return `${(record.checkpoint || '').toLowerCase()}_${(record.checkpointtype || '').toLowerCase()}_${(record.checklisttype || '').toLowerCase()}_${(record.subgrp || '').toLowerCase()}`;
 }
 
-// Record validation to match CheckList schema requirements
+
 function validateRecord(record, headerMapping) {
   const cleanedRecord = {};
   const providedFields = [];
@@ -237,8 +240,8 @@ function validateRecord(record, headerMapping) {
     providedFields.push(schemaField);
   }
 
-  // **FIXED:** Updated required fields to match schema exactly
-  const requiredFields = ['checklisttype', 'status', 'checkpointtype', 'checkpoint', 'prodGroup', 'resulttype'];
+  // **FIXED:** Updated required fields with 'subgrp'
+  const requiredFields = ['checklisttype', 'status', 'checkpointtype', 'checkpoint', 'subgrp', 'resulttype'];
   for (const field of requiredFields) {
     if (!cleanedRecord[field]) {
       errors.push(`${field} is required`);
@@ -256,7 +259,7 @@ function validateRecord(record, headerMapping) {
     'status': 50,
     'checkpointtype': 200,
     'checkpoint': 500,
-    'prodGroup': 200,
+    'subgrp': 200,  // Changed from prodGroup
     'result': 1000,
     'resulttype': 200,
     'startVoltage': 50,
@@ -269,13 +272,14 @@ function validateRecord(record, headerMapping) {
     }
   }
 
-  // **FIXED:** Set timestamps properly
+  // Set timestamps properly
   const now = new Date();
   cleanedRecord.createdAt = now;
   cleanedRecord.modifiedAt = now;
 
   return { cleanedRecord, errors, providedFields };
 }
+
 
 // MAIN ROUTE - CheckList Bulk Upload
 router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) => {
@@ -359,7 +363,7 @@ router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) =>
     response.headerMapping = headerMapping;
 
     // **FIXED:** Check for required fields with correct field names
-    const requiredFields = ['checklisttype', 'status', 'checkpointtype', 'checkpoint', 'prodGroup', 'resulttype'];
+    const requiredFields = ['checklisttype', 'status', 'checkpointtype', 'checkpoint', 'subgrp', 'resulttype'];
     const hasRequiredFields = requiredFields.every(field =>
       Object.values(headerMapping).includes(field)
     );
@@ -409,7 +413,7 @@ router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) =>
 
           recordResult.checkpoint = cleanedRecord.checkpoint || 'Unknown';
           recordResult.checklisttype = cleanedRecord.checklisttype || 'Unknown';
-          recordResult.prodgroup = cleanedRecord.prodGroup || 'Unknown';
+          recordResult.prodgroup = cleanedRecord.subgrp || 'Unknown';  // Display field can stay as prodgroup
 
           if (errors.length > 0) {
             recordResult.status = 'Failed';
@@ -450,14 +454,16 @@ router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) =>
       // Process valid records in bulk
       if (validRecords.length > 0) {
         // **ENHANCED:** Find existing records using comprehensive matching
+        // **ENHANCED:** Find existing records using comprehensive matching with subgrp
         const existingRecords = await CheckList.find({
           $or: validRecords.map(r => ({
             checkpoint: r.cleanedRecord.checkpoint,
             checkpointtype: r.cleanedRecord.checkpointtype,
             checklisttype: r.cleanedRecord.checklisttype,
-            prodGroup: r.cleanedRecord.prodGroup
+            subgrp: r.cleanedRecord.subgrp  // Changed from prodGroup
           }))
         }).lean();
+
 
         console.log(`Found ${existingRecords.length} existing records in database`);
 
@@ -512,7 +518,7 @@ router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) =>
             // **FIXED:** Ensure all required fields are present before creating
             bulkCreateOps.push({
               insertOne: {
-                document: { 
+                document: {
                   ...cleanedRecord,
                   createdAt: now,
                   modifiedAt: now
@@ -536,12 +542,12 @@ router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) =>
           for (let i = 0; i < operations.length; i += BULK_WRITE_BATCH_SIZE) {
             const chunk = operations.slice(i, i + BULK_WRITE_BATCH_SIZE);
             try {
-              const result = await CheckList.bulkWrite(chunk, { 
-                ordered: false, 
-                setDefaultsOnInsert: true 
+              const result = await CheckList.bulkWrite(chunk, {
+                ordered: false,
+                setDefaultsOnInsert: true
               });
-              
-              console.log(`${operationType} BulkWrite Result (Chunk ${Math.floor(i/BULK_WRITE_BATCH_SIZE) + 1}):`, {
+
+              console.log(`${operationType} BulkWrite Result (Chunk ${Math.floor(i / BULK_WRITE_BATCH_SIZE) + 1}):`, {
                 insertedCount: result.insertedCount,
                 matchedCount: result.matchedCount,
                 modifiedCount: result.modifiedCount,
@@ -556,12 +562,12 @@ router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) =>
                 result.writeErrors.forEach(error => {
                   console.error(`${operationType} Write Error:`, error.errmsg);
                   totalErrors++;
-                  
+
                   // Find the corresponding result record and mark it as failed
                   const failedDoc = error.op?.insertOne?.document || error.op?.updateOne?.update?.$set;
                   if (failedDoc) {
-                    const failedResult = batchResults.find(r => 
-                      r.checkpoint === failedDoc.checkpoint && 
+                    const failedResult = batchResults.find(r =>
+                      r.checkpoint === failedDoc.checkpoint &&
                       r.checklisttype === failedDoc.checklisttype
                     );
                     if (failedResult) {
@@ -569,7 +575,7 @@ router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) =>
                       failedResult.status = 'Failed';
                       failedResult.action = 'Database operation failed';
                       failedResult.error = error.errmsg;
-                      
+
                       // Adjust counters
                       if (previousStatus === 'Created') batchCreated--;
                       if (previousStatus === 'Updated') batchUpdated--;
@@ -581,7 +587,7 @@ router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) =>
             } catch (bulkError) {
               console.error(`${operationType} BulkWrite Error:`, bulkError.message);
               totalErrors++;
-              
+
               // Mark all records in this chunk as failed
               const startIdx = i;
               const endIdx = Math.min(i + BULK_WRITE_BATCH_SIZE, operations.length);
@@ -589,8 +595,8 @@ router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) =>
                 const op = operations[j];
                 const doc = op.insertOne?.document || op.updateOne?.update?.$set;
                 if (doc) {
-                  const failedResult = batchResults.find(r => 
-                    r.checkpoint === doc.checkpoint && 
+                  const failedResult = batchResults.find(r =>
+                    r.checkpoint === doc.checkpoint &&
                     r.checklisttype === doc.checklisttype
                   );
                   if (failedResult && failedResult.status !== 'Failed') {
@@ -598,7 +604,7 @@ router.post('/checklist-bulk-upload', upload.single('file'), async (req, res) =>
                     failedResult.status = 'Failed';
                     failedResult.action = 'Bulk operation failed';
                     failedResult.error = bulkError.message;
-                    
+
                     // Adjust counters
                     if (previousStatus === 'Created') batchCreated--;
                     if (previousStatus === 'Updated') batchUpdated--;

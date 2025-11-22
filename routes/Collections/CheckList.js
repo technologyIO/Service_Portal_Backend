@@ -158,21 +158,21 @@ router.get('/checklistbymaterial/:materialCode', async (req, res) => {
             return res.status(404).json({ message: 'Product not found' });
         }
 
-        // Extract the product group from the found product
-        const productGroup = product.productgroup;
+        // Extract sub-group from product
+        const subGroup = product.subgrp;   // <-- yahi tumhara actual match field hai
 
-        // Find all checklists where prodGroup matches the product group and status is not Inactive
+        // Find checklists matching same sub-group and not inactive
         const checklists = await CheckList.find({
-            prodGroup: productGroup,
+            subgrp: subGroup,               // <-- yaha match karo
             status: { $ne: "Inactive" }
         });
 
-        // Return the product group and the matching checklists
-        res.status(200).json({ productGroup, checklists });
+        res.status(200).json({ subGroup, checklists });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });
+
 
 
 
