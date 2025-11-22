@@ -140,6 +140,7 @@ const corsOptions = {
       "capacitor://localhost",
       "https://localhost",
       "http://192.168.100.71:3000",
+      "http://localhost:3002",
       "https://service.insideoutprojects.in",
     ];
 
@@ -308,7 +309,7 @@ app.get('/', (req, res) => {
   res.send('Hello World!');
 });
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

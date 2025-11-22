@@ -96,12 +96,24 @@ router.get('/export-products', async (req, res) => {
             }
         }
 
-        // Fetch product data with query
-        const productData = await Product.find(query).sort({ createdAt: -1 }).lean();
+        // Fetch product data with query - explicitly select all fields including dates
+        const productData = await Product.find(query)
+            .select('productgroup partnoid product subgrp frequency status dateoflaunch endofsaledate endofsupportdate exsupportavlb installationcheckliststatusboolean pmcheckliststatusboolean createdAt modifiedAt')
+            .sort({ createdAt: -1 })
+            .lean();
 
         if (!productData || productData.length === 0) {
             return res.status(404).json({ message: 'No product data found' });
         }
+
+        // Debug: Log first record to check date fields
+        console.log('Sample product data - checking date fields:', {
+            partnoid: productData[0]?.partnoid,
+            dateoflaunch: productData[0]?.dateoflaunch,
+            endofsaledate: productData[0]?.endofsaledate,
+            endofsupportdate: productData[0]?.endofsupportdate,
+            exsupportavlb: productData[0]?.exsupportavlb
+        });
 
         // Create Excel workbook
         const workbook = new ExcelJS.Workbook();
@@ -226,6 +238,26 @@ router.get('/export-products', async (req, res) => {
             message: 'Error exporting product data to Excel',
             error: error.message
         });
+    }
+});
+
+// Test endpoint to check actual database fields
+router.get('/test-product-dates', async (req, res) => {
+    try {
+        const product = await Product.findOne().lean();
+        res.json({
+            message: 'Sample product from database',
+            allFields: Object.keys(product || {}),
+            dateFields: {
+                dateoflaunch: product?.dateoflaunch,
+                endofsaledate: product?.endofsaledate,
+                endofsupportdate: product?.endofsupportdate,
+                exsupportavlb: product?.exsupportavlb
+            },
+            fullProduct: product
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
