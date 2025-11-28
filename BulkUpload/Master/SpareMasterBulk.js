@@ -63,7 +63,14 @@ const FIELD_MAPPINGS = {
         'spare_type', 'part_type', 'classification'
     ]),
     'rate': new Set([
-        'rate', 'mrp', 'rate_mrp', 'rateMrp', 'price', 'cost',
+        'rate', 'mrp', 'rate_mrp', 'ratemrp', 'ratemrp', 'ratemrp',
+        'ratemrp', // keep one if you like; duplicates are ignored by Set
+        'ratemrp', // key point is that "ratemrp" exists
+        'ratemrp',
+        'ratemrp',
+        'ratemrp',
+        'ratemrp',
+        'rateMrp', 'price', 'cost',
         'amount', 'value', 'selling_price', 'sellingprice'
     ]),
     'dp': new Set([
@@ -72,7 +79,8 @@ const FIELD_MAPPINGS = {
     ]),
     'charges': new Set([
         'charges', 'exchange_price', 'exchangeprice', 'exchange',
-        'service_charges', 'servicecharges', 'additional_charges'
+        'service_charges', 'servicecharges', 'additional_charges',
+        'chargesexchangeprice'
     ]),
     'spareiamegurl': new Set([
         'spareiamegurl', 'spare_image_url', 'spareimageurl', 'image_url',
@@ -83,6 +91,7 @@ const FIELD_MAPPINGS = {
         'active_status', 'part_status', 'item_status'
     ])
 };
+
 
 
 // Optimized normalizeFieldName with memoization
@@ -222,35 +231,6 @@ function cleanCharges(value) {
     return value;
 }
 
-// Function to check for changes between existing and new records
-function checkForChanges(existingRecord, newRecord, providedFields) {
-    const changes = [];
-    let hasChanges = false;
-
-    for (const field of providedFields) {
-        const oldValue = existingRecord[field] || '';
-        const newValue = newRecord[field] || '';
-
-        if (oldValue !== newValue) {
-            hasChanges = true;
-            changes.push({
-                field,
-                oldValue,
-                newValue
-            });
-        }
-    }
-
-    return {
-        hasChanges,
-        changeDetails: changes
-    };
-}
-
-// Generate unique identifier for SpareMaster records (using PartNumber as unique key)
-function generateUniqueKey(record) {
-    return `${record.PartNumber}`.toLowerCase();
-}
 // Updated: Record validation to match schema requirements - FIXED status handling
 function validateRecord(record, headerMapping) {
     const cleanedRecord = {};
@@ -362,8 +342,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     const PARALLEL_BATCHES = 3;
     const BULK_WRITE_BATCH_SIZE = 500;
 
-    // Initialize response object with optimized structure
-    // Initialize response object with optimized structure - UPDATED with status tracking
+    // Initialize response object - No duplication checking
     const response = {
         status: 'processing',
         startTime: new Date(),
@@ -376,14 +355,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             created: 0,
             updated: 0,
             failed: 0,
-            duplicatesInFile: 0,
-            existingRecords: 0,
-            skippedTotal: 0,
-            noChangesSkipped: 0,
-            statusUpdates: {
-                total: 0,
-                byStatus: {}
-            }
+            skippedTotal: 0
         },
         headerMapping: {},
         errors: [],
@@ -463,19 +435,16 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
         // Send initial response
         res.write(JSON.stringify(response) + '\n');
 
-        const processedUniqueKeys = new Set();
         let currentRow = 0;
 
-        // Process data in parallel batches
-        // Process data in parallel batches - UPDATED with status handling
-        const processBatch = async (batch, batchIndex) => {
+        // Process data in parallel batches - All records will be inserted
+        const processBatch = async (batch) => {
             const batchResults = [];
             const validRecords = [];
             let batchCreated = 0;
             let batchUpdated = 0;
             let batchFailed = 0;
             let batchSkipped = 0;
-            let batchStatusUpdates = 0;
 
             // Process each record in the batch
             for (const record of batch) {
@@ -490,8 +459,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     action: '',
                     error: null,
                     warnings: [],
-                    assignedStatus: null, // Track assigned status
-                    statusChanged: false // Track if status was changed
+                    assignedStatus: null
                 };
 
                 try {
@@ -515,22 +483,8 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                         continue;
                     }
 
-                    // Generate unique key for duplicate checking (using PartNumber)
-                    const uniqueKey = generateUniqueKey(cleanedRecord);
-
-                    // Check for duplicates within the file
-                    if (processedUniqueKeys.has(uniqueKey)) {
-                        recordResult.status = 'Skipped';
-                        recordResult.error = 'Duplicate Part Number in file';
-                        recordResult.action = 'Skipped due to file duplicate';
-                        recordResult.warnings.push('Part Number already processed in this file');
-                        batchResults.push(recordResult);
-                        batchSkipped++;
-                        continue;
-                    }
-
-                    processedUniqueKeys.add(uniqueKey);
-                    validRecords.push({ cleanedRecord, recordResult, providedFields, uniqueKey });
+                    // No duplicate checking - all records will be inserted
+                    validRecords.push({ cleanedRecord, recordResult, providedFields });
 
                 } catch (err) {
                     recordResult.status = 'Failed';
@@ -541,102 +495,30 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 }
             }
 
-            // Process valid records in bulk
+            // Process valid records in bulk - Insert all without duplication check
             if (validRecords.length > 0) {
-                // Find existing records in bulk using PartNumber
-                const partNumbers = validRecords.map(r => r.cleanedRecord.PartNumber);
-                const existingRecords = await SpareMaster.find({
-                    PartNumber: { $in: partNumbers }
-                }).lean();
-
-                const existingRecordsMap = new Map();
-                existingRecords.forEach(rec => {
-                    const key = generateUniqueKey(rec);
-                    existingRecordsMap.set(key, rec);
-                });
-
-                // Prepare bulk operations
+                // Prepare bulk insert operations for all valid records
                 const bulkCreateOps = [];
-                const bulkUpdateOps = [];
-                const now = new Date();
 
-                for (const { cleanedRecord, recordResult, providedFields, uniqueKey } of validRecords) {
-                    const existingRecord = existingRecordsMap.get(uniqueKey);
-
-                    if (existingRecord) {
-                        response.summary.existingRecords++;
-
-                        // Handle status for existing records
-                        const statusFromFile = providedFields.includes('status');
-                        if (!statusFromFile) {
-                            // Keep existing status if not provided in file
-                            cleanedRecord.Status = existingRecord.Status;
-                            recordResult.assignedStatus = existingRecord.Status;
-                        } else if (cleanedRecord.Status !== existingRecord.Status) {
-                            recordResult.statusChanged = true;
-                            batchStatusUpdates++;
-                        }
-
-                        const comparisonResult = checkForChanges(existingRecord, cleanedRecord, providedFields.map(f => getSchemaFieldName(f)));
-
-                        if (comparisonResult.hasChanges) {
-                            const updateData = {
-                                ...cleanedRecord,
-                                updatedAt: now
-                            };
-
-                            bulkUpdateOps.push({
-                                updateOne: {
-                                    filter: { _id: existingRecord._id },
-                                    update: { $set: updateData }
-                                }
-                            });
-
-                            const changesList = comparisonResult.changeDetails.map(change =>
-                                `${change.field}: "${change.oldValue}" → "${change.newValue}"`
-                            ).join(', ');
-
-                            recordResult.status = 'Updated';
-                            recordResult.action = 'Updated existing record';
-                            recordResult.changeDetails = comparisonResult.changeDetails;
-                            recordResult.changesText = changesList;
-                            recordResult.warnings.push(`Changes detected: ${changesList}`);
-
-                            if (recordResult.statusChanged) {
-                                recordResult.warnings.push(`Status changed: ${existingRecord.Status} → ${cleanedRecord.Status}`);
+                for (const { cleanedRecord, recordResult } of validRecords) {
+                    bulkCreateOps.push({
+                        insertOne: {
+                            document: {
+                                ...cleanedRecord
                             }
-
-                            batchUpdated++;
-                        } else {
-                            recordResult.status = 'Skipped';
-                            recordResult.action = 'No changes detected';
-                            recordResult.changeDetails = [];
-                            recordResult.changesText = 'No changes detected';
-                            recordResult.warnings.push('Record already exists with identical data');
-
-                            batchSkipped++;
                         }
-                    } else {
-                        bulkCreateOps.push({
-                            insertOne: {
-                                document: {
-                                    ...cleanedRecord
-                                }
-                            }
-                        });
+                    });
 
-                        recordResult.status = 'Created';
-                        recordResult.action = 'Created new record';
-                        recordResult.changeDetails = [];
-                        recordResult.changesText = 'New record created';
+                    recordResult.status = 'Created';
+                    recordResult.action = 'Created new record';
+                    recordResult.changeDetails = [];
+                    recordResult.changesText = 'New record created';
 
-                        batchCreated++;
-                    }
-
+                    batchCreated++;
                     batchResults.push(recordResult);
                 }
 
-                // Execute bulk operations in smaller chunks
+                // Execute bulk insert operations in smaller chunks
                 const executeBulkWrite = async (operations) => {
                     for (let i = 0; i < operations.length; i += BULK_WRITE_BATCH_SIZE) {
                         const chunk = operations.slice(i, i + BULK_WRITE_BATCH_SIZE);
@@ -647,17 +529,15 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                             if (bulkError.writeErrors) {
                                 bulkError.writeErrors.forEach(error => {
                                     const failedRecord = batchResults.find(r => {
-                                        const errorDoc = error.op?.insertOne?.document || error.op?.updateOne?.update?.$set;
+                                        const errorDoc = error.op?.insertOne?.document;
                                         return errorDoc && r.partnumber === errorDoc.PartNumber;
                                     });
                                     if (failedRecord) {
-                                        const previousStatus = failedRecord.status;
                                         failedRecord.status = 'Failed';
                                         failedRecord.action = 'Bulk operation failed';
                                         failedRecord.error = error.errmsg;
                                         batchFailed++;
-                                        if (previousStatus === 'Created') batchCreated--;
-                                        if (previousStatus === 'Updated') batchUpdated--;
+                                        batchCreated--;
                                     }
                                 });
                             }
@@ -665,11 +545,10 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                     }
                 };
 
-                // Execute create and update operations in parallel
-                await Promise.all([
-                    bulkCreateOps.length > 0 ? executeBulkWrite(bulkCreateOps) : Promise.resolve(),
-                    bulkUpdateOps.length > 0 ? executeBulkWrite(bulkUpdateOps) : Promise.resolve()
-                ]);
+                // Execute create operations
+                if (bulkCreateOps.length > 0) {
+                    await executeBulkWrite(bulkCreateOps);
+                }
             }
 
             return {
@@ -677,8 +556,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 batchCreated,
                 batchUpdated,
                 batchFailed,
-                batchSkipped,
-                batchStatusUpdates
+                batchSkipped
             };
         };
 
@@ -712,21 +590,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
                 response.summary.updated += completedBatch.batchUpdated;
                 response.summary.failed += completedBatch.batchFailed;
                 response.summary.skippedTotal += completedBatch.batchSkipped;
-                response.summary.duplicatesInFile += completedBatch.batchResults.filter(
-                    r => r.status === 'Skipped' && r.error === 'Duplicate Part Number in file'
-                ).length;
-                response.summary.noChangesSkipped += completedBatch.batchResults.filter(
-                    r => r.status === 'Skipped' && r.action === 'No changes detected'
-                ).length;
-                const statusChanges = completedBatch.batchResults.filter(r => r.statusChanged);
-                response.summary.statusUpdates.total += statusChanges.length;
-                statusChanges.forEach(change => {
-                    const status = change.assignedStatus;
-                    if (!response.summary.statusUpdates.byStatus[status]) {
-                        response.summary.statusUpdates.byStatus[status] = 0;
-                    }
-                    response.summary.statusUpdates.byStatus[status]++;
-                });
                 response.results.push(...completedBatch.batchResults);
 
                 res.write(JSON.stringify({
@@ -758,12 +621,6 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             response.summary.updated += completedBatch.batchUpdated;
             response.summary.failed += completedBatch.batchFailed;
             response.summary.skippedTotal += completedBatch.batchSkipped;
-            response.summary.duplicatesInFile += completedBatch.batchResults.filter(
-                r => r.status === 'Skipped' && r.error === 'Duplicate Part Number in file'
-            ).length;
-            response.summary.noChangesSkipped += completedBatch.batchResults.filter(
-                r => r.status === 'Skipped' && r.action === 'No changes detected'
-            ).length;
             response.results.push(...completedBatch.batchResults);
 
             res.write(JSON.stringify({
@@ -789,11 +646,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
             `Created: ${response.summary.created}, ` +
             `Updated: ${response.summary.updated}, ` +
             `Failed: ${response.summary.failed}, ` +
-            `File Duplicates: ${response.summary.duplicatesInFile}, ` +
-            `Existing Records: ${response.summary.existingRecords}, ` +
-            `No Changes Skipped: ${response.summary.noChangesSkipped}, ` +
-            `Total Skipped: ${response.summary.skippedTotal}, ` +
-            `Status Updates: ${response.summary.statusUpdates.total}`;
+            `Total Skipped: ${response.summary.skippedTotal}`;
 
         res.write(JSON.stringify(response) + '\n');
         res.end();
